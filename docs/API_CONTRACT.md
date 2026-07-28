@@ -16,7 +16,7 @@ any companion client methods for them merge (no stubs).
 
 Default base: `https://api.tokito.dev`.
 
-## Companion sync (M2 — implement in tokito-ai + client together)
+## Companion sync (**implemented** in `tokito-ai` + this client)
 
 All routes require `Authorization: Bearer <jwt>` unless noted.
 
@@ -92,5 +92,4 @@ Desktop (or future cloud agent) posts a pending proposal card:
 
 Desktop polls decisions and applies locally.
 
-When these land, mirror the sections into `tokito-ai/docs/API.md` in the same
-milestone PR pair.
+Canonical server docs: `tokito-ai/docs/API.md`. Keep both documents aligned.
