@@ -1,0 +1,27 @@
+/target/
+**/*.rs.bk
+*.pdb
+
+.env
+.env.*
+!.env.example
+*.log
+
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# React Native / Node
+apps/mobile/node_modules/
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/android/app/build/
+apps/mobile/android/.gradle/
+apps/mobile/*.jsbundle
+apps/mobile/coverage/
+apps/mobile/.expo/
+
+# UniFFI generated (regenerated in CI / M1)
+crates/ffi/generated/
+*.uniffi.rs
