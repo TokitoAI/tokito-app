@@ -1,46 +1,53 @@
 import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { HttpCloudClient } from "./api/cloudHttp.js";
 import { AuthService } from "./auth/AuthService.js";
 import type { AuthState } from "./auth/AuthService.js";
-import { SecureSessionStore } from "./auth/sessionStore.js";
-import { isNativeCompanionAvailable, NativeCompanionClient } from "./native/bridge.js";
-import { DEFAULT_CLOUD_BASE, normalizeBaseUrl } from "./cloud.js";
+import { MemorySessionStore, SecureSessionStore } from "./auth/sessionStore.js";
+import { normalizeBaseUrl } from "./cloud.js";
+import { ProjectDetailScreen } from "./screens/ProjectDetailScreen.js";
+import { ProjectListScreen } from "./screens/ProjectListScreen.js";
+import { SchematicViewerScreen } from "./screens/SchematicViewerScreen.js";
 import { SignInScreen } from "./screens/SignInScreen.js";
-import { SignedInScreen } from "./screens/SignedInScreen.js";
 import { colors } from "./theme.js";
 
+type Route =
+  | { name: "projects" }
+  | { name: "project"; id: string }
+  | { name: "svg"; projectId: string; artifact: string };
+
 export type AppProps = {
-  /** Override cloud base (empty → production). */
   cloudBaseUrl?: string;
+  /** Force memory session store (Node / tests). */
+  useMemoryStore?: boolean;
 };
 
-export default function App({ cloudBaseUrl = "" }: AppProps): JSX.Element {
+export default function App({
+  cloudBaseUrl = "",
+  useMemoryStore = false,
+}: AppProps): JSX.Element {
   const baseUrl = normalizeBaseUrl(cloudBaseUrl);
-  const nativeReady = isNativeCompanionAvailable();
-
+  const client = useMemo(() => new HttpCloudClient(baseUrl), [baseUrl]);
   const auth = useMemo(() => {
-    if (!nativeReady) {
-      return null;
-    }
-    const client = new NativeCompanionClient(baseUrl);
-    return new AuthService(client, new SecureSessionStore());
-  }, [baseUrl, nativeReady]);
+    const store = useMemoryStore ? new MemorySessionStore() : new SecureSessionStore();
+    return new AuthService(client, store);
+  }, [client, useMemoryStore]);
 
   const [booting, setBooting] = useState(true);
   const [state, setState] = useState<AuthState>({ status: "signed_out" });
+  const [route, setRoute] = useState<Route>({ name: "projects" });
   const [bootError, setBootError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (auth === null) {
-      setBooting(false);
-      return;
-    }
     setBooting(true);
     setBootError(null);
     try {
       const next = await auth.restore();
       setState(next);
+      if (next.status === "signed_out") {
+        setRoute({ name: "projects" });
+      }
     } catch (err) {
       setBootError(err instanceof Error ? err.message : "Failed to restore session");
       setState({ status: "signed_out" });
@@ -53,20 +60,7 @@ export default function App({ cloudBaseUrl = "" }: AppProps): JSX.Element {
     void refresh();
   }, [refresh]);
 
-  if (!nativeReady) {
-    return (
-      <View style={styles.root}>
-        <Text style={styles.brand}>Tokito</Text>
-        <Text style={styles.body}>
-          Native UniFFI module is not linked in this build. Use a device/simulator
-          build that includes `tokito-companion-ffi` (ubrn / staticlib). Base URL:{" "}
-          {baseUrl || DEFAULT_CLOUD_BASE}
-        </Text>
-      </View>
-    );
-  }
-
-  if (booting || auth === null) {
+  if (booting) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.accent} size="large" />
@@ -74,11 +68,10 @@ export default function App({ cloudBaseUrl = "" }: AppProps): JSX.Element {
     );
   }
 
-  if (bootError !== null && state.status === "signed_out") {
+  if (state.status === "signed_out") {
     return (
       <View style={styles.root}>
-        <Text style={styles.brand}>Tokito</Text>
-        <Text style={styles.error}>{bootError}</Text>
+        {bootError !== null ? <Text style={styles.error}>{bootError}</Text> : null}
         <SignInScreen
           auth={auth}
           onSignedIn={() => {
@@ -89,54 +82,58 @@ export default function App({ cloudBaseUrl = "" }: AppProps): JSX.Element {
     );
   }
 
-  if (state.status === "signed_in") {
+  const token = state.session.token;
+
+  if (route.name === "svg") {
     return (
-      <SignedInScreen
-        account={state.account}
-        auth={auth}
-        onSignedOut={() => {
-          setState({ status: "signed_out" });
-        }}
+      <SchematicViewerScreen
+        client={client}
+        token={token}
+        projectId={route.projectId}
+        artifactName={route.artifact}
+        onBack={() => setRoute({ name: "project", id: route.projectId })}
+      />
+    );
+  }
+
+  if (route.name === "project") {
+    return (
+      <ProjectDetailScreen
+        client={client}
+        token={token}
+        projectId={route.id}
+        onBack={() => setRoute({ name: "projects" })}
+        onOpenSvg={(artifact) =>
+          setRoute({ name: "svg", projectId: route.id, artifact })
+        }
       />
     );
   }
 
   return (
-    <SignInScreen
-      auth={auth}
-      onSignedIn={() => {
-        void refresh();
+    <ProjectListScreen
+      client={client}
+      token={token}
+      accountEmail={state.account.email}
+      accountPlan={state.account.plan}
+      onOpenProject={(id) => setRoute({ name: "project", id })}
+      onSignOut={() => {
+        void (async () => {
+          await auth.signOut();
+          setState({ status: "signed_out" });
+        })();
       }}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: 24,
-    paddingTop: 72,
-    gap: 12,
-  },
+  root: { flex: 1, backgroundColor: colors.bg },
   center: {
     flex: 1,
     backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
   },
-  brand: {
-    color: colors.text,
-    fontSize: 36,
-    fontWeight: "700",
-  },
-  body: {
-    color: colors.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 14,
-  },
+  error: { color: colors.danger, padding: 16 },
 });
