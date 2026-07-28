@@ -12,6 +12,9 @@
 .DS_Store
 Thumbs.db
 
+# Generated UniFFI bindings (CI / scripts/generate-bindings.sh)
+bindings/
+
 # React Native / Node
 apps/mobile/node_modules/
 apps/mobile/ios/Pods/
