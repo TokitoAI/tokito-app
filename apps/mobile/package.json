@@ -2,17 +2,24 @@
   "name": "@tokito/companion-mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Tokito Companion React Native (TypeScript) shell — native module binds UniFFI in M1",
+  "description": "Tokito Companion React Native (TypeScript) shell — UniFFI auth via tokito-companion-ffi",
+  "main": "src/App.tsx",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "node --import tsx --test src/cloud.test.ts",
+    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts",
     "forbid-js": "node scripts/forbid-js.mjs"
   },
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "expo-secure-store": "^14.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.9"
+  },
   "devDependencies": {
+    "@types/react": "^18.3.18",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
