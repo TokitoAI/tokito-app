@@ -3,7 +3,7 @@
 | Milestone | Scope | Status |
 |---|---|---|
 | **M0** | Repo bootstrap, CI, core auth client + fixtures, docs, board epic | Done |
-| **M1** | RN+TS auth shell, secure token store, UniFFI bindings | Next |
+| **M1** | RN+TS auth shell, secure token store, UniFFI bindings | Done |
 | **M2** | `tokito-ai` `/v1/companion/*` + matching core client | Blocked on M1 optional; can parallel after contract freeze |
 | **M3** | Desktop “Share to Companion” publish path | After M2 |
 | **M4** | Project list + BOM review UI | After M2 |

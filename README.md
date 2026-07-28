@@ -15,10 +15,11 @@ exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
 
 ```
 crates/core/     # typed Tokito Cloud clients (auth live; companion sync in M2+)
-crates/ffi/      # blocking facade for UniFFI / RN
-apps/mobile/     # React Native + TypeScript (shell grows in M1+)
+crates/ffi/      # UniFFI CompanionClient (cdylib/staticlib) for RN
+apps/mobile/     # React Native + TypeScript auth shell
 docs/            # architecture, API contract, hooks
 memory/          # agent notebook
+scripts/generate-bindings.sh  # Kotlin UniFFI smoke (gitignored output)
 ```
 
 ## Development
@@ -28,6 +29,7 @@ memory/          # agent notebook
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
+bash scripts/generate-bindings.sh   # Linux: proves UniFFI surface
 
 # TypeScript shell
 cd apps/mobile && npm ci && npm run forbid-js && npm run typecheck && npm run lint && npm test
