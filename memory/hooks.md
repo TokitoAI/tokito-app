@@ -14,7 +14,7 @@
 canonical shapes in `docs/API_CONTRACT.md`. Implement server + client in
 coordinated PRs; never stub.
 
-**Desktop publish (M3):** Reuse `project_archive` / export SVG+BOM; push with
+**Desktop publish (M3, Done):** Reuse `project_archive` / export SVG+BOM; push with
 `CloudSettings.cloud_token` to companion routes.
 
 **How to apply:** when changing a wire shape, update `tokito-ai/docs/API.md`
