@@ -40,7 +40,7 @@ type TokitoCompanionFfiNative = {
     token: string,
     projectId: string,
     name: string,
-  ): Promise<{ contentType: string; body: string; bodyBase64: string }>;
+  ): Promise<{ contentType: string; bodyBase64: string }>;
 };
 
 /** UniFFI-backed Expo native module (Android). Throws if not linked into the binary. */

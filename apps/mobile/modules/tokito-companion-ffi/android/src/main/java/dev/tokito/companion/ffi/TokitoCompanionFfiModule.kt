@@ -145,7 +145,7 @@ class TokitoCompanionFfiModule : Module() {
         val art = CompanionClient(baseUrl).getArtifact(token, projectId, name)
         mapOf(
           "contentType" to art.contentType,
-          "body" to String(art.body, Charsets.UTF_8),
+          // Always base64 — JS decodes text when appropriate (SVG). Never mojibake binary.
           "bodyBase64" to Base64.encodeToString(art.body, Base64.NO_WRAP),
         )
       }
@@ -156,7 +156,9 @@ class TokitoCompanionFfiModule : Module() {
     return try {
       block()
     } catch (err: CompanionException) {
-      throw CodedException(err::class.java.simpleName, err.message ?: "companion error", err)
+      // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
+      val code = err::class.java.simpleName
+      throw CodedException(code, err.message ?: code, err)
     } catch (err: Exception) {
       throw CodedException("Unexpected", err.message ?: "unexpected native error", err)
     }

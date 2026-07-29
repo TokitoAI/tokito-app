@@ -12,16 +12,19 @@ Cargo workspace with two members plus a TypeScript RN shell:
   `tokito_ui::Tokens::dark`. Phosphor + Inter. Tablet ≥768dp master/detail.
   - **`modules/tokito-companion-ffi`** — Expo local module: JNA + UniFFI Kotlin +
     `libtokito_companion_ffi.so` in jniLibs. Autolinked into the APK.
-  - **`NativeCompanionClient`** — **production device path** (`createCloudClient`).
-  - **`HttpCloudClient`** — Node/CI tests only (same wire contract; not shipped
-    as the device cloud path).
+  - **`NativeCompanionClient`** — **only** cloud path on Android/iOS.
+  - **`HttpCloudClient`** — Node/CI unit tests only.
+
+**Android release** (`.github/workflows/android-release.yml`):
+
+- Upload-signed APK + AAB (Play-quality keystore in GitHub Actions secrets —
+  `ANDROID_UPLOAD_*`). Never debug-keystore for release.
+- Cloud base remains `https://api.tokito.dev` (tokito-ai).
+- CI fails if JS bundle or UniFFI `.so` missing, or if APK cert is Android Debug.
 
 **Versions:** Rust 1.88+ (`rust-version`), edition 2021. UniFFI **0.29.5**.
 reqwest 0.12 + rustls (no OpenSSL).
 
-**Cloud default:** `https://api.tokito.dev`, same resolution order as desktop
-(`override` → `TOKITO_CLOUD_BASE_URL` → default). UI displays the resolved host.
-
-**How to apply:** keep auth error enums aligned with
-`tokito/src/services/cloud.rs` and `CompanionError` in ffi. APK CI must fail if
-`libtokito_companion_ffi.so` is missing from the package.
+**How to apply:** keep auth error enums aligned with desktop. Device builds must
+not fall back to JS HTTP. Keystore backup lives on the operator machine under
+`~/.tokito-secrets/` (not in git).

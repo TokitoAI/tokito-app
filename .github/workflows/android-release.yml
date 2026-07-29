@@ -1,0 +1,173 @@
+name: android-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*-pre*"
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    name: release APK + AAB (UniFFI, upload-signed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+
+      - name: Build UniFFI Android .so + Kotlin bindings
+        working-directory: ${{ github.workspace }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          # Device ABIs only (Play App Bundle / APK); skip emulator x86_64 for speed
+          TOKITO_ANDROID_TARGETS: arm64-v8a,armeabi-v7a
+        run: bash scripts/build-android-ffi.sh
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Configure Play-quality release signing
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: node scripts/configure-android-release.mjs
+
+      - name: Assemble release APK + bundle AAB
+        working-directory: apps/mobile/android
+        env:
+          NODE_ENV: production
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+        timeout-minutes: 45
+
+      - name: Stage artifacts
+        id: stage
+        run: |
+          set -euo pipefail
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n1)
+          AAB=$(find android/app/build/outputs/bundle/release -name '*.aab' | head -n1)
+          test -n "$APK"
+          test -n "$AAB"
+          TAG_SAFE="${GITHUB_REF_NAME:-local}"
+          APK_OUT="${GITHUB_WORKSPACE}/TokitoCompanion-${TAG_SAFE}.apk"
+          AAB_OUT="${GITHUB_WORKSPACE}/TokitoCompanion-${TAG_SAFE}.aab"
+          cp "$APK" "$APK_OUT"
+          cp "$AAB" "$AAB_OUT"
+          cp "$APK" "${GITHUB_WORKSPACE}/tokito-companion.apk"
+          cp "$AAB" "${GITHUB_WORKSPACE}/tokito-companion.aab"
+          echo "apk=$APK_OUT" >> "$GITHUB_OUTPUT"
+          echo "aab=$AAB_OUT" >> "$GITHUB_OUTPUT"
+
+          unzip -l "$APK_OUT" | grep -E 'index.android.bundle|assets/index' || {
+            echo "ERROR: JS bundle not packaged in APK"
+            exit 1
+          }
+          unzip -l "$APK_OUT" | grep -E 'libtokito_companion_ffi\.so' || {
+            echo "ERROR: UniFFI native library missing from APK"
+            exit 1
+          }
+
+          # Must be signed with upload cert, not Android debug
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" \
+            verify --print-certs "$APK_OUT" | tee /tmp/apk-certs.txt
+          if grep -qi 'CN=Android Debug' /tmp/apk-certs.txt; then
+            echo "ERROR: APK is still debug-signed"
+            exit 1
+          fi
+          ls -lh "$APK_OUT" "$AAB_OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tokito-companion-release
+          path: |
+            tokito-companion.apk
+            tokito-companion.aab
+          if-no-files-found: error
+
+      - name: Create GitHub pre-release / release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PRERELEASE_ARGS=()
+          if [[ "$TAG" == *"-pre"* || "$TAG" == *"-rc"* ]]; then
+            PRERELEASE_ARGS+=(--prerelease)
+          fi
+          NOTES="$(cat <<EOF
+          ## Tokito Companion \`${TAG}\`
+
+          Play-quality **upload-signed** build (same keystore track as Play Console uploads).
+          Cloud: **\`https://api.tokito.dev\`** (tokito-ai) via UniFFI.
+
+          | Artifact | Use |
+          |---|---|
+          | \`TokitoCompanion-${TAG}.apk\` | Direct install / QA sideload |
+          | \`TokitoCompanion-${TAG}.aab\` | Google Play upload |
+
+          | | |
+          |---|---|
+          | Package | \`dev.tokito.companion\` |
+          | Native | \`libtokito_companion_ffi.so\` (UniFFI) |
+          | Bundle | embedded \`index.android.bundle\` |
+          | Signing | upload keystore (not Android Debug) |
+
+          Uninstall older debug-signed Companion builds before installing — signature changes.
+
+          EOF
+          )"
+          gh release create "$TAG" \
+            "${PRERELEASE_ARGS[@]}" \
+            --title "Tokito Companion ${TAG}" \
+            --notes "$NOTES" \
+            "TokitoCompanion-${TAG}.apk" \
+            "TokitoCompanion-${TAG}.aab"
+
+      - name: Note (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Download the tokito-companion-release artifact (APK + AAB)."
+          echo "Tag vX.Y.Z or vX.Y.Z-pre.N to publish a GitHub release."

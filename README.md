@@ -40,20 +40,21 @@ cd apps/mobile && npx expo start
 Default cloud base: `https://api.tokito.dev` (override with `TOKITO_CLOUD_BASE_URL`
 or `app.json` → `expo.extra.cloudBaseUrl`).
 
-## Android APK (sideload)
+## Android release (Play-quality signing, live API)
 
-**Current install:** the latest **`v*-pre*`** pre-release on
-[Releases](https://github.com/VtronTokito/tokito-companion/releases)
-(asset `TokitoCompanion-<tag>.apk`).
+**Current install / Play upload:** latest GitHub release asset
+`TokitoCompanion-<tag>.apk` / `.aab` on
+[Releases](https://github.com/VtronTokito/tokito-companion/releases).
 
-CI workflow [android-debug](.github/workflows/android-debug.yml):
+CI [android-release](.github/workflows/android-release.yml):
 
-- Builds **`assembleRelease`** with embedded `index.android.bundle` (no Metro).
-- Links **UniFFI** `libtokito_companion_ffi.so` (real Rust cloud client).
-- Signs with the debug keystore for sideload (not Play Store).
-- Publish by tagging: `git tag v0.1.2-pre.N && git push origin v0.1.2-pre.N`
+- `assembleRelease` + `bundleRelease` with embedded JS + UniFFI `.so`
+- **Upload keystore** signing (GitHub secrets `ANDROID_UPLOAD_*`) — not Android Debug
+- Cloud: `https://api.tokito.dev` (tokito-ai)
+- Tag: `git tag v0.1.2-pre.N && git push origin v0.1.2-pre.N`
 
-Do **not** install older than `v0.1.2-pre.1` (missing UniFFI and/or JS bundle).
+Uninstall any older **debug-signed** Companion before installing upload-signed
+builds (signature mismatch).
 
 Package id: `dev.tokito.companion`. UI tokens match desktop `tokito_ui` dark
 palette (mint accent, brand tile, Phosphor icons). Tablets ≥768dp get a

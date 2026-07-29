@@ -30,12 +30,11 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
 - **No JavaScript app sources** under `apps/mobile/src` (TypeScript only). CI
   `forbid-js` enforces this. Expo tooling may use root configs
   (`babel.config.js`, etc.) and `.mjs` under `apps/mobile/scripts/`.
-- **Android APK** is built by `.github/workflows/android-debug.yml` as
-  **`assembleRelease`** (embedded JS bundle — no Metro) with **UniFFI**
-  `libtokito_companion_ffi.so` linked via the Expo module
-  `modules/tokito-companion-ffi` (Mozilla Kotlin bindings + JNA). Debug
-  signing is only for sideload pre-releases. UI tokens/icons mirror
-  `tokito_ui` (`Tokens::dark`, brand tile `#07101E`, Phosphor Regular, mint/indigo).
+- **Android release** is built by `.github/workflows/android-release.yml`:
+  **`assembleRelease` + `bundleRelease`**, UniFFI
+  `libtokito_companion_ffi.so`, **upload keystore** signing (GitHub secrets
+  `ANDROID_UPLOAD_*` — Play-quality, not debug). Cloud stays
+  `https://api.tokito.dev`. UI tokens/icons mirror `tokito_ui`.
 - **No stub clients or stub HTTP routes.** Device builds must use UniFFI
   (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
   If a `/v1/companion/*` method is not implemented server-side yet, do not
@@ -54,3 +53,4 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
 | [memory/hooks.md](memory/hooks.md) | Cross-repo hook points |
 | [memory/milestones.md](memory/milestones.md) | M0–M6 PR series |
 | [memory/auth-contract.md](memory/auth-contract.md) | Auth wire contract facts |
+| [memory/signing.md](memory/signing.md) | Android upload keystore / Play signing |
