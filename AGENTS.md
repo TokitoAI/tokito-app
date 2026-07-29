@@ -30,8 +30,10 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
 - **No JavaScript app sources** under `apps/mobile/src` (TypeScript only). CI
   `forbid-js` enforces this. Expo tooling may use root configs
   (`babel.config.js`, etc.) and `.mjs` under `apps/mobile/scripts/`.
-- **Android debug APK** is built by `.github/workflows/android-debug.yml`
-  (`expo prebuild` + `assembleDebug`) and published as a GitHub pre-release.
+- **Android APK** is built by `.github/workflows/android-debug.yml` as
+  **`assembleRelease`** (embedded JS bundle — no Metro) with debug signing for
+  sideload, published as a GitHub pre-release. UI tokens/icons mirror
+  `tokito_ui` (`Tokens::dark`, brand tile `#07101E`, Phosphor Regular, mint/indigo).
 - **No stub clients or stub HTTP routes.** If a `/v1/companion/*` method is not
   implemented server-side yet, do not ship a fake client that returns canned
   success — wait for the `tokito-ai` PR and land client + server together.

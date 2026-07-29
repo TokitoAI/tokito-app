@@ -8,17 +8,26 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  ArrowClockwise,
+  FolderSimple,
+  SignOut,
+} from "phosphor-react-native";
 import type { HttpCloudClient, ProjectListItem } from "../api/cloudHttp.js";
 import { CompanionError } from "../native/types.js";
-import { colors } from "../theme.js";
+import { tokens } from "../theme.js";
+import { BrandTile, Card, ErrorText, Muted } from "../ui/primitives.js";
 
 export interface ProjectListScreenProps {
   client: HttpCloudClient;
   token: string;
   accountEmail: string;
   accountPlan: string;
+  selectedId?: string | null;
   onOpenProject: (id: string) => void;
   onSignOut: () => void;
+  /** When embedded as tablet master pane, tighten chrome. */
+  embedded?: boolean;
 }
 
 export function ProjectListScreen({
@@ -26,8 +35,10 @@ export function ProjectListScreen({
   token,
   accountEmail,
   accountPlan,
+  selectedId = null,
   onOpenProject,
   onSignOut,
+  embedded = false,
 }: ProjectListScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,77 +68,117 @@ export function ProjectListScreen({
   }, [reload]);
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, embedded && styles.rootEmbedded]}>
       <View style={styles.header}>
-        <View style={styles.flex}>
-          <Text style={styles.brand}>Tokito</Text>
-          <Text style={styles.sub}>
-            {accountEmail} · {accountPlan}
-          </Text>
+        <View style={styles.brandRow}>
+          <BrandTile size={36} />
+          <View style={styles.flex}>
+            <Text style={styles.brand}>Tokito</Text>
+            <Text style={styles.sub} numberOfLines={1}>
+              {accountEmail} · {accountPlan}
+            </Text>
+          </View>
         </View>
-        <Pressable onPress={onSignOut}>
-          <Text style={styles.link}>Sign out</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Refresh projects"
+            onPress={() => void reload()}
+            style={styles.iconBtn}
+          >
+            <ArrowClockwise size={20} color={tokens.accent} weight="regular" />
+          </Pressable>
+          <Pressable accessibilityLabel="Sign out" onPress={onSignOut} style={styles.iconBtn}>
+            <SignOut size={20} color={tokens.text2} weight="regular" />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.row}>
+        <FolderSimple size={18} color={tokens.text} weight="regular" />
         <Text style={styles.h2}>Projects</Text>
-        <Pressable onPress={() => void reload()}>
-          <Text style={styles.link}>Refresh</Text>
-        </Pressable>
       </View>
 
       {loading ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />
+        <ActivityIndicator color={tokens.accent} style={{ marginTop: tokens.space5 }} />
       ) : null}
-      {error !== null ? <Text style={styles.error}>{error}</Text> : null}
+      {error !== null ? <ErrorText>{error}</ErrorText> : null}
 
       {!loading && projects.length === 0 && error === null ? (
-        <Text style={styles.empty}>
-          No synced projects yet. On desktop: project kebab → Share to Companion.
-        </Text>
+        <Card style={{ marginTop: tokens.space3 }}>
+          <Muted>
+            No synced projects yet. On desktop: project kebab → Share to Companion.
+          </Muted>
+        </Card>
       ) : null}
 
       <FlatList
         data={projects}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ gap: 10, paddingBottom: 40 }}
-        renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => onOpenProject(item.id)}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            <Text style={styles.cardMeta}>
-              {item.slug} · {item.updated_at}
-            </Text>
-          </Pressable>
-        )}
+        contentContainerStyle={{ gap: tokens.space2, paddingBottom: 40 }}
+        renderItem={({ item }) => {
+          const selected = selectedId === item.id;
+          return (
+            <Card
+              onPress={() => onOpenProject(item.id)}
+              style={selected ? styles.cardSelected : undefined}
+            >
+              <Text style={styles.cardTitle}>{item.name}</Text>
+              <Text style={styles.cardMeta}>
+                {item.slug} · {item.updated_at}
+              </Text>
+            </Card>
+          );
+        }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 20, paddingTop: 56 },
-  header: { flexDirection: "row", alignItems: "flex-start", marginBottom: 20 },
+  root: {
+    flex: 1,
+    backgroundColor: tokens.bg,
+    paddingHorizontal: tokens.space5,
+    paddingTop: 56,
+  },
+  rootEmbedded: {
+    backgroundColor: tokens.bgChrome,
+    borderRightWidth: 1,
+    borderRightColor: tokens.border,
+    paddingTop: 40,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: tokens.space5,
+    gap: tokens.space3,
+  },
+  brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: tokens.space3 },
   flex: { flex: 1 },
-  brand: { color: colors.text, fontSize: 28, fontWeight: "700" },
-  sub: { color: colors.textMuted, marginTop: 4, fontSize: 13 },
+  brand: { color: tokens.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+  sub: { color: tokens.text2, marginTop: 2, fontSize: 12 },
+  headerActions: { flexDirection: "row", gap: tokens.space1 },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.card,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   row: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    gap: tokens.space2,
+    marginBottom: tokens.space3,
   },
-  h2: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  link: { color: colors.accent, fontSize: 14 },
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
+  h2: { color: tokens.text, fontSize: 16, fontWeight: "600" },
+  cardSelected: {
+    borderColor: tokens.accent,
+    backgroundColor: tokens.accentSoft,
   },
-  cardTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
-  cardMeta: { color: colors.textMuted, marginTop: 6, fontSize: 12 },
-  empty: { color: colors.textMuted, lineHeight: 20, marginTop: 8 },
-  error: { color: colors.danger, marginBottom: 8 },
+  cardTitle: { color: tokens.text, fontSize: 16, fontWeight: "600" },
+  cardMeta: { color: tokens.text2, marginTop: 6, fontSize: 12 },
 });

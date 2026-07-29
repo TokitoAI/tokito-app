@@ -8,6 +8,14 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  ArrowLeft,
+  Check,
+  Circuitry,
+  ListBullets,
+  Sparkle,
+  X,
+} from "phosphor-react-native";
 import type {
   BomLine,
   HttpCloudClient,
@@ -15,7 +23,14 @@ import type {
   Proposal,
 } from "../api/cloudHttp.js";
 import { CompanionError } from "../native/types.js";
-import { colors } from "../theme.js";
+import { tokens } from "../theme.js";
+import {
+  Card,
+  ErrorText,
+  Muted,
+  PrimaryButton,
+  SectionLabel,
+} from "../ui/primitives.js";
 
 export interface ProjectDetailScreenProps {
   client: HttpCloudClient;
@@ -23,6 +38,8 @@ export interface ProjectDetailScreenProps {
   projectId: string;
   onBack: () => void;
   onOpenSvg: (artifactName: string) => void;
+  /** Hide back when shown in tablet split pane. */
+  showBack?: boolean;
 }
 
 export function ProjectDetailScreen({
@@ -31,6 +48,7 @@ export function ProjectDetailScreen({
   projectId,
   onBack,
   onOpenSvg,
+  showBack = true,
 }: ProjectDetailScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,16 +115,27 @@ export function ProjectDetailScreen({
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Pressable onPress={onBack}>
-        <Text style={styles.link}>← Projects</Text>
-      </Pressable>
+      {showBack ? (
+        <Pressable onPress={onBack} style={styles.back}>
+          <ArrowLeft size={18} color={tokens.accent} weight="regular" />
+          <Text style={styles.link}>Projects</Text>
+        </Pressable>
+      ) : null}
       <Text style={styles.title}>{detail?.name ?? "Project"}</Text>
-      {loading ? <ActivityIndicator color={colors.accent} /> : null}
-      {error !== null ? <Text style={styles.error}>{error}</Text> : null}
+      {detail !== null ? (
+        <Text style={styles.meta}>
+          {detail.slug} · {detail.updated_at}
+        </Text>
+      ) : null}
+      {loading ? <ActivityIndicator color={tokens.accent} /> : null}
+      {error !== null ? <ErrorText>{error}</ErrorText> : null}
 
-      <Text style={styles.h2}>BOM</Text>
+      <View style={styles.sectionHead}>
+        <ListBullets size={16} color={tokens.text} weight="regular" />
+        <SectionLabel>BOM</SectionLabel>
+      </View>
       {bomLines.length === 0 && !loading ? (
-        <Text style={styles.muted}>No BOM lines in snapshot.</Text>
+        <Muted>No BOM lines in snapshot.</Muted>
       ) : null}
       {bomLines.map((item, i) => (
         <View key={`${item.ref}-${i}`} style={styles.row}>
@@ -117,80 +146,94 @@ export function ProjectDetailScreen({
         </View>
       ))}
 
-      <Text style={styles.h2}>Schematics</Text>
+      <View style={styles.sectionHead}>
+        <Circuitry size={16} color={tokens.text} weight="regular" />
+        <SectionLabel>Schematics</SectionLabel>
+      </View>
       {svgArtifacts.map((a) => (
-        <Pressable key={a.name} style={styles.card} onPress={() => onOpenSvg(a.name)}>
+        <Card key={a.name} onPress={() => onOpenSvg(a.name)} style={styles.cardGap}>
           <Text style={styles.cardTitle}>{a.name}</Text>
-          <Text style={styles.muted}>{a.bytes} bytes</Text>
-        </Pressable>
+          <Muted>{`${a.bytes} bytes · SVG`}</Muted>
+        </Card>
       ))}
-      {svgArtifacts.length === 0 && !loading ? (
-        <Text style={styles.muted}>No SVG artifacts yet.</Text>
-      ) : null}
+      {svgArtifacts.length === 0 && !loading ? <Muted>No SVG artifacts yet.</Muted> : null}
 
-      <Text style={styles.h2}>Pending proposals</Text>
-      {proposals.length === 0 && !loading ? (
-        <Text style={styles.muted}>Nothing pending.</Text>
-      ) : null}
+      <View style={styles.sectionHead}>
+        <Sparkle size={16} color={tokens.text} weight="regular" />
+        <SectionLabel>Pending proposals</SectionLabel>
+      </View>
+      {proposals.length === 0 && !loading ? <Muted>Nothing pending.</Muted> : null}
       {proposals.map((p) => (
-        <View key={p.id} style={styles.card}>
+        <Card key={p.id} style={styles.cardGap}>
           <Text style={styles.cardTitle}>{p.title}</Text>
-          <Text style={styles.muted}>{p.summary}</Text>
+          <Muted>{p.summary}</Muted>
           <View style={styles.actions}>
-            <Pressable
-              style={styles.btn}
+            <PrimaryButton
+              label="Approve"
+              busy={busyId === p.id}
               disabled={busyId === p.id}
               onPress={() => void decide(p.id, "approve")}
-            >
-              <Text style={styles.btnText}>Approve</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btn, styles.btnDanger]}
+              style={styles.actionBtn}
+            />
+            <PrimaryButton
+              label="Reject"
+              danger
+              busy={busyId === p.id}
               disabled={busyId === p.id}
               onPress={() => void decide(p.id, "reject")}
-            >
-              <Text style={styles.btnText}>Reject</Text>
-            </Pressable>
+              style={styles.actionBtn}
+            />
           </View>
-        </View>
+          <View style={styles.actionIcons}>
+            <Check size={14} color={tokens.success} weight="bold" />
+            <X size={14} color={tokens.danger} weight="bold" />
+          </View>
+        </Card>
       ))}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  content: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 40, gap: 8 },
-  link: { color: colors.accent, marginBottom: 8 },
-  title: { color: colors.text, fontSize: 24, fontWeight: "700", marginBottom: 8 },
-  h2: { color: colors.text, fontSize: 16, fontWeight: "600", marginTop: 12 },
-  muted: { color: colors.textMuted, fontSize: 13 },
-  error: { color: colors.danger },
+  root: { flex: 1, backgroundColor: tokens.bg },
+  content: {
+    paddingHorizontal: tokens.space5,
+    paddingTop: 56,
+    paddingBottom: 48,
+    gap: tokens.space2,
+  },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: tokens.space2,
+    marginBottom: tokens.space2,
+  },
+  link: { color: tokens.accent, fontWeight: "500" },
+  title: {
+    color: tokens.text,
+    fontSize: 26,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+  },
+  meta: { color: tokens.text2, fontSize: 13, marginBottom: tokens.space2 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: tokens.space2,
+    marginTop: tokens.space4,
+  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  rowRef: { color: colors.textMuted, width: "40%" },
-  rowVal: { color: colors.text, flex: 1, textAlign: "right" },
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-  },
-  cardTitle: { color: colors.text, fontWeight: "600" },
-  actions: { flexDirection: "row", gap: 8, marginTop: 10 },
-  btn: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 12,
     paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: tokens.border,
   },
-  btnDanger: { backgroundColor: colors.danger },
-  btnText: { color: colors.text, fontWeight: "600" },
+  rowRef: { color: tokens.text2, width: "40%", fontSize: 13 },
+  rowVal: { color: tokens.text, flex: 1, textAlign: "right", fontSize: 13 },
+  cardGap: { marginTop: tokens.space2 },
+  cardTitle: { color: tokens.text, fontWeight: "600", marginBottom: 4 },
+  actions: { flexDirection: "row", gap: tokens.space2, marginTop: tokens.space3 },
+  actionBtn: { flex: 1 },
+  actionIcons: { display: "none" },
 });

@@ -1,8 +1,16 @@
 import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { HttpCloudClient } from "./api/cloudHttp.js";
 import { AuthService } from "./auth/AuthService.js";
 import type { AuthState } from "./auth/AuthService.js";
@@ -14,7 +22,8 @@ import { ProjectDetailScreen } from "./screens/ProjectDetailScreen.js";
 import { ProjectListScreen } from "./screens/ProjectListScreen.js";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen.js";
 import { SignInScreen } from "./screens/SignInScreen.js";
-import { colors } from "./theme.js";
+import { TABLET_MIN_WIDTH, tokens } from "./theme.js";
+import { BrandTile, PrimaryButton } from "./ui/primitives.js";
 
 type Route =
   | { name: "projects" }
@@ -36,6 +45,15 @@ export default function App({
   cloudBaseUrl = defaultCloudBaseUrl(),
   useMemoryStore = false,
 }: AppProps): JSX.Element {
+  const { width } = useWindowDimensions();
+  const tablet = width >= TABLET_MIN_WIDTH;
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
   const baseUrl = normalizeBaseUrl(cloudBaseUrl);
   const client = useMemo(() => new HttpCloudClient(baseUrl), [baseUrl]);
   const auth = useMemo(() => {
@@ -47,7 +65,6 @@ export default function App({
   const [state, setState] = useState<AuthState>({ status: "signed_out" });
   const [route, setRoute] = useState<Route>({ name: "projects" });
   const [bootError, setBootError] = useState<string | null>(null);
-  /** Session still on disk but restore failed (network) — offer retry, don't wipe. */
   const [restoreBlocked, setRestoreBlocked] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -68,7 +85,6 @@ export default function App({
             ? err.message
             : "Failed to restore session";
       setBootError(message);
-      // Keep signed_out UI only when we know the session is gone; otherwise retry.
       if (err instanceof CompanionError && err.kind === "Unauthorized") {
         setState({ status: "signed_out" });
         setRestoreBlocked(false);
@@ -84,11 +100,12 @@ export default function App({
     void refresh();
   }, [refresh]);
 
-  if (booting) {
+  if (!fontsLoaded || booting) {
     return (
       <View style={styles.center}>
         <StatusBar style="light" />
-        <ActivityIndicator color={colors.accent} size="large" />
+        <BrandTile size={56} />
+        <ActivityIndicator color={tokens.accent} size="large" style={{ marginTop: 24 }} />
       </View>
     );
   }
@@ -97,11 +114,10 @@ export default function App({
     return (
       <View style={styles.centerPad}>
         <StatusBar style="light" />
+        <BrandTile size={48} />
         <Text style={styles.brand}>Tokito</Text>
         <Text style={styles.error}>{bootError ?? "Could not reach Tokito Cloud"}</Text>
-        <Pressable style={styles.button} onPress={() => void refresh()}>
-          <Text style={styles.buttonText}>Retry</Text>
-        </Pressable>
+        <PrimaryButton label="Retry" onPress={() => void refresh()} style={{ marginTop: 8, minWidth: 160 }} />
         <Pressable
           onPress={() => {
             void (async () => {
@@ -134,6 +150,12 @@ export default function App({
   }
 
   const token = state.session.token;
+  const selectedId =
+    route.name === "project" || route.name === "svg"
+      ? route.name === "project"
+        ? route.id
+        : route.projectId
+      : null;
 
   if (route.name === "svg") {
     return (
@@ -147,6 +169,55 @@ export default function App({
           onBack={() => setRoute({ name: "project", id: route.projectId })}
         />
       </>
+    );
+  }
+
+  if (tablet) {
+    const detailId = route.name === "project" ? route.id : null;
+    const masterWidth = Math.min(380, Math.max(300, Math.floor(width * 0.34)));
+    return (
+      <View style={styles.split}>
+        <StatusBar style="light" />
+        <View style={[styles.master, { width: masterWidth }]}>
+          <ProjectListScreen
+            client={client}
+            token={token}
+            accountEmail={state.account.email}
+            accountPlan={state.account.plan}
+            selectedId={selectedId}
+            embedded
+            onOpenProject={(id) => setRoute({ name: "project", id })}
+            onSignOut={() => {
+              void (async () => {
+                await auth.signOut();
+                setState({ status: "signed_out" });
+              })();
+            }}
+          />
+        </View>
+        <View style={styles.detail}>
+          {detailId !== null ? (
+            <ProjectDetailScreen
+              client={client}
+              token={token}
+              projectId={detailId}
+              showBack={false}
+              onBack={() => setRoute({ name: "projects" })}
+              onOpenSvg={(artifact) =>
+                setRoute({ name: "svg", projectId: detailId, artifact })
+              }
+            />
+          ) : (
+            <View style={styles.emptyDetail}>
+              <BrandTile size={64} />
+              <Text style={styles.emptyTitle}>Select a project</Text>
+              <Text style={styles.emptyBody}>
+                Synced reviews appear here after desktop Share to Companion.
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
     );
   }
 
@@ -188,31 +259,35 @@ export default function App({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: tokens.bg },
   center: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: tokens.bg,
     alignItems: "center",
     justifyContent: "center",
   },
   centerPad: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: tokens.bg,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
     gap: 12,
   },
-  brand: { color: colors.text, fontSize: 32, fontWeight: "700" },
-  error: { color: colors.danger, textAlign: "center", marginTop: 8 },
-  errorPad: { color: colors.danger, padding: 16 },
-  button: {
-    marginTop: 8,
-    backgroundColor: colors.accent,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+  brand: { color: tokens.text, fontSize: 28, fontWeight: "700" },
+  error: { color: tokens.danger, textAlign: "center", marginTop: 8 },
+  errorPad: { color: tokens.danger, padding: 16 },
+  link: { color: tokens.accent, marginTop: 8, fontSize: 14 },
+  split: { flex: 1, flexDirection: "row", backgroundColor: tokens.bg },
+  master: {},
+  detail: { flex: 1 },
+  emptyDetail: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: tokens.space3,
+    padding: tokens.space5,
   },
-  buttonText: { color: colors.text, fontWeight: "600", fontSize: 16 },
-  link: { color: colors.accent, marginTop: 8, fontSize: 14 },
+  emptyTitle: { color: tokens.text, fontSize: 20, fontWeight: "600" },
+  emptyBody: { color: tokens.text2, textAlign: "center", maxWidth: 320, lineHeight: 20 },
 });

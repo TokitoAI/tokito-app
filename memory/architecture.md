@@ -7,10 +7,11 @@ Cargo workspace with two members plus a TypeScript RN shell:
 - **`tokito-companion-ffi`** (`crates/ffi`) — UniFFI `CompanionClient` Object
   (`cdylib` + `staticlib` + `lib`) over a process-wide Tokio runtime. Generate
   Kotlin with `scripts/generate-bindings.sh` (output gitignored).
-- **`apps/mobile`** — Expo SDK 52 + React Native + TypeScript: `AuthService`,
-  secure session store, OTP sign-in, project list / BOM / proposals / SVG viewer.
-  Android package `dev.tokito.companion`; debug APK via GitHub Actions
-  (`android-debug.yml` → `expo prebuild` + `assembleDebug`).
+- **`apps/mobile`** — Expo SDK 52 + React Native + TypeScript. Tokens mirror
+  `tokito_ui::Tokens::dark` (mint `#08C9AA`, indigo `#5456F0`, brand tile
+  `#07101E`). Phosphor icons via `phosphor-react-native`. Inter fonts.
+  Tablet ≥768dp uses master/detail split. APK via `assembleRelease` (embedded
+  bundle) in `android-debug.yml`.
   - **`HttpCloudClient`** (`src/api/cloudHttp.ts`) — real `fetch` client with the
     same wire contracts as core (used by the shell + Node CI without native
     UniFFI linked). Maps network/404/503 companion failures to `CompanionError`.
