@@ -7,11 +7,13 @@ Cargo workspace with two members plus a TypeScript RN shell:
 - **`tokito-companion-ffi`** (`crates/ffi`) — UniFFI `CompanionClient` Object
   (`cdylib` + `staticlib` + `lib`) over a process-wide Tokio runtime. Generate
   Kotlin with `scripts/generate-bindings.sh` (output gitignored).
-- **`apps/mobile`** — React Native + TypeScript: `AuthService`, secure session
-  store, OTP sign-in, project list / BOM / proposals / SVG viewer.
+- **`apps/mobile`** — Expo SDK 52 + React Native + TypeScript: `AuthService`,
+  secure session store, OTP sign-in, project list / BOM / proposals / SVG viewer.
+  Android package `dev.tokito.companion`; debug APK via GitHub Actions
+  (`android-debug.yml` → `expo prebuild` + `assembleDebug`).
   - **`HttpCloudClient`** (`src/api/cloudHttp.ts`) — real `fetch` client with the
     same wire contracts as core (used by the shell + Node CI without native
-    UniFFI linked).
+    UniFFI linked). Maps network/404/503 companion failures to `CompanionError`.
   - **`NativeCompanionClient`** — UniFFI bridge when the native module is present.
 
 **Versions:** Rust 1.88+ (`rust-version`), edition 2021. UniFFI **0.29.5**.

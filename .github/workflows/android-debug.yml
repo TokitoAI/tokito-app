@@ -1,0 +1,130 @@
+name: android-debug
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*-pre*"
+      - "v*-debug*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: assembleDebug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Assemble debug APK
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Stage APK
+        id: apk
+        run: |
+          SRC=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -n1)
+          test -n "$SRC"
+          DEST="${GITHUB_WORKSPACE}/tokito-companion-debug.apk"
+          cp "$SRC" "$DEST"
+          echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          ls -lh "$DEST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tokito-companion-debug-apk
+          path: tokito-companion-debug.apk
+          if-no-files-found: error
+
+      - name: Create GitHub pre-release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          NOTES="$(cat <<EOF
+          ## Tokito Companion debug APK (pre-release)
+
+          Sideload this **debug**-signed APK on Android (enable install from unknown sources).
+
+          - Package: \`dev.tokito.companion\`
+          - Cloud: \`https://api.tokito.dev\`
+          - Build: debug (\`assembleDebug\`)
+
+          ### Notes
+          - OTP sign-in uses live Tokito Cloud auth.
+          - Companion sync (\`/v1/companion/*\`) must be deployed on the API for project list / BOM / proposals / SVG.
+          - Not Play Store / release-signed.
+
+          EOF
+          )"
+          gh release create "$TAG" \
+            --prerelease \
+            --title "Tokito Companion ${TAG}" \
+            --notes "$NOTES" \
+            tokito-companion-debug.apk
+
+      - name: Create floating pre-release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          TAG="debug-latest"
+          NOTES="$(cat <<EOF
+          ## Tokito Companion debug APK
+
+          Floating pre-release rebuilt from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
+
+          Install \`tokito-companion-debug.apk\` (debug-signed). Package: \`dev.tokito.companion\`.
+
+          Companion sync requires \`tokito-ai\` with \`/v1/companion/*\` live on the configured API base.
+          As of this build, production \`api.tokito.dev\` may still return 404 for companion routes until redeployed.
+
+          EOF
+          )"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" tokito-companion-debug.apk --clobber
+            gh release edit "$TAG" --prerelease --notes "$NOTES" --title "Tokito Companion debug (latest)"
+          else
+            gh release create "$TAG" \
+              --prerelease \
+              --title "Tokito Companion debug (latest)" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA" \
+              tokito-companion-debug.apk
+          fi

@@ -17,13 +17,13 @@ bindings/
 
 # React Native / Node
 apps/mobile/node_modules/
-apps/mobile/ios/Pods/
-apps/mobile/ios/build/
-apps/mobile/android/app/build/
-apps/mobile/android/.gradle/
+apps/mobile/ios/
+apps/mobile/android/
 apps/mobile/*.jsbundle
 apps/mobile/coverage/
 apps/mobile/.expo/
+apps/mobile/dist/
+*.apk
 
 # UniFFI generated (regenerated in CI / M1)
 crates/ffi/generated/

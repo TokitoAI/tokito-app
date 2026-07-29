@@ -27,8 +27,11 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
 
 ## Rules
 
-- **No JavaScript app sources** under `apps/mobile` (TypeScript only). CI
-  `forbid-js` enforces this. Tooling may use `.mjs` under `apps/mobile/scripts/`.
+- **No JavaScript app sources** under `apps/mobile/src` (TypeScript only). CI
+  `forbid-js` enforces this. Expo tooling may use root configs
+  (`babel.config.js`, etc.) and `.mjs` under `apps/mobile/scripts/`.
+- **Android debug APK** is built by `.github/workflows/android-debug.yml`
+  (`expo prebuild` + `assembleDebug`) and published as a GitHub pre-release.
 - **No stub clients or stub HTTP routes.** If a `/v1/companion/*` method is not
   implemented server-side yet, do not ship a fake client that returns canned
   success — wait for the `tokito-ai` PR and land client + server together.

@@ -59,8 +59,11 @@ export class CompanionError extends Error {
     return new CompanionError("Unauthorized", "session expired");
   }
 
-  static unavailable(): CompanionError {
-    return new CompanionError("Unavailable", "this sign-in method is not available right now");
+  static unavailable(message?: string): CompanionError {
+    return new CompanionError(
+      "Unavailable",
+      message ?? "this sign-in method is not available right now",
+    );
   }
 
   static network(msg: string): CompanionError {

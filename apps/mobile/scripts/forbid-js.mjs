@@ -2,7 +2,9 @@ import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+/** App sources only — Expo tooling configs may live at the package root. */
+const srcRoot = fileURLToPath(new URL("../src", import.meta.url));
+const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 
 /** @param {string} dir @param {string[]} out */
 function walk(dir, out) {
@@ -19,12 +21,12 @@ function walk(dir, out) {
 }
 
 const found = [];
-walk(root, found);
+walk(srcRoot, found);
 
 if (found.length > 0) {
-  console.error("JavaScript sources are forbidden under apps/mobile. Offenders:");
-  for (const p of found) console.error(`  ${relative(root, p)}`);
+  console.error("JavaScript sources are forbidden under apps/mobile/src. Offenders:");
+  for (const p of found) console.error(`  ${relative(packageRoot, p)}`);
   process.exit(1);
 }
 
-console.log("forbid-js: ok (no .js/.jsx under apps/mobile)");
+console.log("forbid-js: ok (no .js/.jsx under apps/mobile/src)");

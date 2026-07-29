@@ -80,7 +80,22 @@ async function readStatus(res: Response): Promise<string | undefined> {
 async function mapError(res: Response): Promise<CompanionError> {
   const status = await readStatus(res);
   if (res.status === 401) return CompanionError.unauthorized();
-  if (res.status === 503) return CompanionError.unavailable();
+  if (res.status === 503) {
+    if (status === "companion_unavailable") {
+      return CompanionError.unavailable(
+        "Companion sync is not enabled on this server yet",
+      );
+    }
+    return CompanionError.unavailable();
+  }
+  if (res.status === 404) {
+    return CompanionError.unavailable(
+      "Companion API not found on this server (deploy tokito-ai with /v1/companion/*)",
+    );
+  }
+  if (res.status === 403) {
+    return CompanionError.unauthorized();
+  }
   if (res.status === 429) {
     return status === "rate_limited"
       ? CompanionError.rateLimited()
@@ -89,6 +104,15 @@ async function mapError(res: Response): Promise<CompanionError> {
   if (res.status === 502) return CompanionError.sendFailed();
   if (status === "invalid_code") return CompanionError.invalidCode();
   return CompanionError.unexpected();
+}
+
+async function request(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw CompanionError.network(msg);
+  }
 }
 
 export class HttpCloudClient implements CompanionClientPort {
@@ -103,7 +127,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async otpRequest(email: string): Promise<void> {
-    const res = await fetch(`${this.base}/v1/auth/otp/request`, {
+    const res = await request(`${this.base}/v1/auth/otp/request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: email.trim() }),
@@ -112,7 +136,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async otpVerify(email: string, code: string): Promise<Session> {
-    const res = await fetch(`${this.base}/v1/auth/otp/verify`, {
+    const res = await request(`${this.base}/v1/auth/otp/verify`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: email.trim(), code: code.trim() }),
@@ -122,7 +146,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async oauthExchange(code: string): Promise<Session> {
-    const res = await fetch(`${this.base}/v1/auth/oauth/exchange`, {
+    const res = await request(`${this.base}/v1/auth/oauth/exchange`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code: code.trim() }),
@@ -132,7 +156,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async me(token: string): Promise<Account> {
-    const res = await fetch(`${this.base}/v1/auth/me`, {
+    const res = await request(`${this.base}/v1/auth/me`, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw await mapError(res);
@@ -140,7 +164,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async listProjects(token: string): Promise<ProjectListItem[]> {
-    const res = await fetch(`${this.base}/v1/companion/projects`, {
+    const res = await request(`${this.base}/v1/companion/projects`, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw await mapError(res);
@@ -149,7 +173,7 @@ export class HttpCloudClient implements CompanionClientPort {
   }
 
   async getProject(token: string, projectId: string): Promise<ProjectDetail> {
-    const res = await fetch(`${this.base}/v1/companion/projects/${projectId}`, {
+    const res = await request(`${this.base}/v1/companion/projects/${projectId}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw await mapError(res);
@@ -162,7 +186,7 @@ export class HttpCloudClient implements CompanionClientPort {
     status?: string,
   ): Promise<Proposal[]> {
     const q = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
-    const res = await fetch(
+    const res = await request(
       `${this.base}/v1/companion/projects/${projectId}/proposals${q}`,
       { headers: { authorization: `Bearer ${token}` } },
     );
@@ -178,7 +202,7 @@ export class HttpCloudClient implements CompanionClientPort {
     decision: "approve" | "reject",
     note?: string,
   ): Promise<Proposal> {
-    const res = await fetch(
+    const res = await request(
       `${this.base}/v1/companion/projects/${projectId}/proposals/${proposalId}/decision`,
       {
         method: "POST",
@@ -198,7 +222,7 @@ export class HttpCloudClient implements CompanionClientPort {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; body: string }> {
-    const res = await fetch(
+    const res = await request(
       `${this.base}/v1/companion/projects/${projectId}/artifacts/${encodeURIComponent(name)}`,
       { headers: { authorization: `Bearer ${token}` } },
     );
