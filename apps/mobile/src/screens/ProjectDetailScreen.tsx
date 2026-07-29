@@ -21,16 +21,16 @@ import type {
   HttpCloudClient,
   ProjectDetail,
   Proposal,
-} from "../api/cloudHttp.js";
-import { CompanionError } from "../native/types.js";
-import { tokens } from "../theme.js";
+} from "../api/cloudHttp";
+import { CompanionError } from "../native/types";
+import { tokens } from "../theme";
 import {
   Card,
   ErrorText,
   Muted,
   PrimaryButton,
   SectionLabel,
-} from "../ui/primitives.js";
+} from "../ui/primitives";
 
 export interface ProjectDetailScreenProps {
   client: HttpCloudClient;

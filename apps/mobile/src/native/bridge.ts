@@ -6,8 +6,8 @@
  * `isNativeCompanionAvailable()` is false and the UI shows a link-native hint.
  */
 
-import type { Account, CompanionClientPort, Session } from "./types.js";
-import { CompanionError } from "./types.js";
+import type { Account, CompanionClientPort, Session } from "./types";
+import { CompanionError } from "./types";
 
 type NativeClient = {
   baseUrl: () => string;

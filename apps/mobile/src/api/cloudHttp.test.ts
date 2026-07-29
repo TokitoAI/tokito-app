@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
-import { HttpCloudClient } from "./cloudHttp.js";
-import { CompanionError } from "../native/types.js";
+import { HttpCloudClient } from "./cloudHttp";
+import { CompanionError } from "../native/types";
 
 describe("HttpCloudClient", () => {
   it("normalizes base url", () => {
