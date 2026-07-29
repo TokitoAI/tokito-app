@@ -1,16 +1,14 @@
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 group = 'dev.tokito.companion'
 version = '0.1.2'
 
 def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
-if (expoModulesCorePlugin.exists()) {
-  apply from: expoModulesCorePlugin
-  applyKotlinExpoModulesCorePlugin()
-  useDefaultAndroidSdkVersions()
-  useExpoPublishing()
-}
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useDefaultAndroidSdkVersions()
+useExpoPublishing()
 
 android {
   namespace "dev.tokito.companion.ffi"
@@ -19,18 +17,20 @@ android {
     versionName "0.1.2"
     consumerProguardFiles 'proguard-rules.pro'
   }
-  lintOptions {
-    abortOnError false
-  }
   sourceSets {
     main {
       jniLibs.srcDirs = ['src/main/jniLibs']
     }
   }
+  packaging {
+    jniLibs {
+      keepDebugSymbols += ['**/libtokito_companion_ffi.so']
+    }
+  }
 }
 
 dependencies {
-  // UniFFI Kotlin bindings require JNA (Mozilla docs).
+  // UniFFI Kotlin bindings require JNA:
   // https://mozilla.github.io/uniffi-rs/latest/kotlin/gradle.html
   implementation "net.java.dev.jna:jna:5.14.0@aar"
 }

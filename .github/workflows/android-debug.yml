@@ -70,9 +70,12 @@ jobs:
         working-directory: apps/mobile/android
         env:
           NODE_ENV: production
+          # Avoid Gradle daemon hanging forever on GHA
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace --warning-mode=all
+        timeout-minutes: 45
 
       - name: Stage APK
         id: apk
