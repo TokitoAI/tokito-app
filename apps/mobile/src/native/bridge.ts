@@ -7,6 +7,8 @@ import { Platform } from "react-native";
 import {
   getTokitoCompanionFfi,
   isTokitoCompanionFfiLinked,
+  type NativeEventSubscription,
+  type SyncNativeEventMap,
 } from "../../modules/tokito-companion-ffi/src";
 import { HttpCloudClient } from "../api/cloudHttp";
 import type {
@@ -37,7 +39,33 @@ export type CloudClient = CompanionClientPort & {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; body: string }>;
+  startSync?(token: string, projectId?: string): Promise<string>;
+  stopSync?(subscriptionId: string): Promise<void>;
+  enqueueSyncCommand?(
+    subscriptionId: string,
+    projectId: string,
+    designId: string | null,
+    resource: SyncResourceName,
+    payload: unknown,
+  ): Promise<string>;
+  resolveSyncConflict?(
+    subscriptionId: string,
+    commandId: string,
+    keepLocal: boolean,
+  ): Promise<void>;
+  addSyncListener?<K extends keyof SyncNativeEventMap>(
+    eventName: K,
+    listener: (event: SyncNativeEventMap[K]) => void,
+  ): NativeEventSubscription;
 };
+
+export type SyncResourceName =
+  | "project"
+  | "design"
+  | "schematic"
+  | "bom"
+  | "chat"
+  | "suggestions";
 
 /** Map Expo CodedException codes from Kotlin CompanionException simple names. */
 function mapNativeError(err: unknown): CompanionError {
@@ -281,6 +309,61 @@ export class NativeCompanionClient implements CloudClient {
     } catch (err) {
       throw mapNativeError(err);
     }
+  }
+
+  async startSync(token: string, projectId?: string): Promise<string> {
+    try {
+      return await this.native.startSync(this.base, token, projectId ?? null);
+    } catch (err) {
+      throw mapNativeError(err);
+    }
+  }
+
+  async stopSync(subscriptionId: string): Promise<void> {
+    try {
+      await this.native.stopSync(subscriptionId);
+    } catch (err) {
+      throw mapNativeError(err);
+    }
+  }
+
+  async enqueueSyncCommand(
+    subscriptionId: string,
+    projectId: string,
+    designId: string | null,
+    resource: SyncResourceName,
+    payload: unknown,
+  ): Promise<string> {
+    try {
+      return await this.native.enqueueSyncCommand(
+        subscriptionId,
+        projectId,
+        designId,
+        resource,
+        JSON.stringify(payload),
+      );
+    } catch (err) {
+      throw mapNativeError(err);
+    }
+  }
+
+  async resolveSyncConflict(
+    subscriptionId: string,
+    commandId: string,
+    keepLocal: boolean,
+  ): Promise<void> {
+    try {
+      await this.native.resolveSyncConflict(subscriptionId, commandId, keepLocal);
+    } catch (err) {
+      throw mapNativeError(err);
+    }
+  }
+
+  addSyncListener<K extends keyof SyncNativeEventMap>(
+    eventName: K,
+    listener: (event: SyncNativeEventMap[K]) => void,
+  ): NativeEventSubscription {
+    return this.native.addListener(eventName, listener);
   }
 }
 

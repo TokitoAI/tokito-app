@@ -1,30 +1,35 @@
 # Architecture
 
-Cargo workspace with two members plus a TypeScript RN shell:
+Cargo workspace with two members plus a TypeScript React Native shell:
 
-- **`tokito-companion-core`** (`crates/core`) — async reqwest clients, models,
-  `CloudError`. Auth + `/v1/companion/*` sync (projects, artifacts, proposals).
-- **`tokito-companion-ffi`** (`crates/ffi`) — UniFFI `CompanionClient` Object
-  (`cdylib` + `staticlib` + `lib`) over a process-wide Tokio runtime. Auth **and**
-  companion sync methods. Generate Kotlin with `scripts/generate-bindings.sh` /
-  `scripts/build-android-ffi.sh` (output gitignored).
-- **`apps/mobile`** — Expo SDK 52 + React Native + TypeScript. Tokens mirror
-  `tokito_ui::Tokens::dark`. Phosphor + Inter. Tablet ≥768dp master/detail.
-  - **`modules/tokito-companion-ffi`** — Expo local module: JNA + UniFFI Kotlin +
-    `libtokito_companion_ffi.so` in jniLibs. Autolinked into the APK.
-  - **`NativeCompanionClient`** — **only** cloud path on Android/iOS.
+- **`tokito-companion-core`** (`crates/core`) — async reqwest clients, typed
+  contracts, resumable SSE, and SQLite WAL state for cursor, materialized
+  resources, offline outbox, ordered rebase, and conflict quarantine.
+- **`tokito-companion-ffi`** (`crates/ffi`) — UniFFI `CompanionClient` object
+  over a process-wide Tokio runtime. It exposes auth plus a callback-driven
+  realtime session. Generate Kotlin through the scripts in `scripts/`.
+- **`apps/mobile`** — Expo SDK 52, React Native, and TypeScript. Tokens mirror
+  `tokito_ui::Tokens::dark`; tablet layouts use master/detail.
+  - **`modules/tokito-companion-ffi`** — Expo local module containing generated
+    UniFFI Kotlin and the packaged native `.so`.
+  - **`NativeCompanionClient`** — the only device cloud path.
   - **`HttpCloudClient`** — Node/CI unit tests only.
+
+The native session registers one stable installation id, bootstraps once, and
+runs SSE receive and HTTP outbox workers concurrently with jittered reconnect.
+React Native consumes typed native callbacks; it does not poll. Whole resources
+are independently versioned by project/design. Project/design deletion is a
+replicated tombstone. The WebView schematic surface is network-sealed by CSP
+and exchanges only canonical documents with React Native.
 
 **Android release** (`.github/workflows/android-release.yml`):
 
-- Upload-signed APK + AAB (Play-quality keystore in GitHub Actions secrets —
-  `ANDROID_UPLOAD_*`). Never debug-keystore for release.
-- Cloud base remains `https://api.tokito.dev` (tokito-ai).
-- CI fails if JS bundle or UniFFI `.so` missing, or if APK cert is Android Debug.
+- Upload-signed APK and AAB; never use the debug keystore for release.
+- Cloud base remains `https://api.tokito.dev`.
+- CI fails if the JavaScript bundle, UniFFI `.so`, or release certificate is
+  missing/incorrect.
 
-**Versions:** Rust 1.88+ (`rust-version`), edition 2021. UniFFI **0.29.5**.
-reqwest 0.12 + rustls (no OpenSSL).
+**Versions:** Rust 1.88+, edition 2021, UniFFI 0.29.5, reqwest 0.12 + rustls.
 
 **How to apply:** keep auth error enums aligned with desktop. Device builds must
-not fall back to JS HTTP. Keystore backup lives on the operator machine under
-`~/.tokito-secrets/` (not in git).
+not fall back to JavaScript HTTP. Keystore backups stay outside git.

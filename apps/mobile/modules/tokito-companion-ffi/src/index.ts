@@ -1,5 +1,20 @@
 import { requireNativeModule } from "expo-modules-core";
 
+export type NativeEventSubscription = { remove(): void };
+
+export type SyncNativeEventMap = {
+  onSyncStatus: { subscriptionId: string; status: string };
+  onSyncBootstrap: { subscriptionId: string; cursor: string; resourcesJson: string };
+  onSyncEvent: { subscriptionId: string; eventJson: string };
+  onSyncConflict: {
+    subscriptionId: string;
+    commandJson: string;
+    currentVersion: string;
+    currentPayloadJson: string;
+  };
+  onSyncError: { subscriptionId: string; message: string };
+};
+
 export type NativeSession = {
   token: string;
   email: string;
@@ -41,6 +56,24 @@ type TokitoCompanionFfiNative = {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; bodyBase64: string }>;
+  startSync(baseUrl: string, token: string, projectId: string | null): Promise<string>;
+  stopSync(subscriptionId: string): Promise<void>;
+  enqueueSyncCommand(
+    subscriptionId: string,
+    projectId: string,
+    designId: string | null,
+    resource: string,
+    payloadJson: string,
+  ): Promise<string>;
+  resolveSyncConflict(
+    subscriptionId: string,
+    commandId: string,
+    keepLocal: boolean,
+  ): Promise<void>;
+  addListener<K extends keyof SyncNativeEventMap>(
+    eventName: K,
+    listener: (event: SyncNativeEventMap[K]) => void,
+  ): NativeEventSubscription;
 };
 
 /** UniFFI-backed Expo native module (Android). Throws if not linked into the binary. */

@@ -1,30 +1,34 @@
-# Hooks — how companion plugs into the org
+# Hooks — how Companion plugs into the org
 
-## Auth (ready)
+## Auth
 
-1. Companion `tokito-companion-core` calls the same `/v1/auth/*` routes as
-   [tokito/src/services/cloud.rs](https://github.com/VtronTokito/tokito/blob/master/src/services/cloud.rs).
-2. Store the JWT in the mobile secure store (M1); desktop stores it in
+1. Companion calls the same `/v1/auth/*` routes as desktop.
+2. Mobile stores the JWT in secure storage; desktop stores it in
    `CloudSettings.cloud_token`.
-3. Both clients hit `https://api.tokito.dev` unless overridden.
+3. Both clients use `https://api.tokito.dev` unless explicitly overridden.
 
-## Project review sync (M2–M3)
+## Realtime workspace sync
 
-1. Spec: [API_CONTRACT.md](API_CONTRACT.md) `/v1/companion/*`.
-2. Implement handlers + storage in `tokito-ai`.
-3. Add core client methods in this repo in the same milestone.
-4. Desktop: “Share to Companion” builds BOM + SVG from existing export /
-   `project_archive` paths and `PUT`s with the cloud JWT.
+1. The contract is [API_CONTRACT.md](API_CONTRACT.md).
+2. `tokito-ai` owns device registration, versioned materialized resources,
+   command idempotency, the durable event journal, and resumable SSE.
+3. Both clients register a stable installation id, bootstrap once, then resume
+   the ordered SSE journal from their committed cursor.
+4. Every mutation is committed to a local SQLite outbox before its authenticated
+   HTTP command is attempted. A 409 is quarantined for an explicit keep-local
+   or use-server decision.
+5. Project/design metadata, BOM, chat, suggestions, and canonical schematics are
+   independent per-design resources. Physical pick-and-place is not synced.
 
-## Decisions loop (M5)
+## Suggestions
 
-1. Companion posts approve/reject on a proposal.
-2. Desktop polls `GET .../proposals` (or a dedicated decisions feed) and
-   applies through the existing AI apply / BOM paths — never mutate CAD from
-   the phone directly.
+1. Companion changes the versioned `suggestions` resource.
+2. Desktop receives the SSE event and applies approved typed operations on the
+   egui owner thread; rejects mark the card discarded.
 
 ## Non-hooks
 
-- Do not call `tokito-mcp` from the companion for symbol search.
-- Do not embed `tokito-schematic-core` for editing.
-- Do not use `tokito-backend` (legacy stub); cloud is `tokito-ai`.
+- Do not call `tokito-mcp` directly from Companion for symbol search.
+- Do not duplicate the Rust schematic engine in the app. Mobile edits the same
+  canonical document contract and desktop validates/applies it.
+- Do not use `tokito-backend` (legacy); cloud is `tokito-ai`.

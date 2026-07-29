@@ -1,6 +1,6 @@
 {
   "name": "@tokito/companion-mobile",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
   "description": "Tokito Companion React Native shell — real Tokito Cloud HTTP (auth + /v1/companion/*); UniFFI bridge ready when native module is linked",
   "main": "index.ts",

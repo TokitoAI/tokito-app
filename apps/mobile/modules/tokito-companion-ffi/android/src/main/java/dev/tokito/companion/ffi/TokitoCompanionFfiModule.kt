@@ -1,11 +1,17 @@
 package dev.tokito.companion.ffi
 
 import android.util.Base64
+import android.os.Build
+import android.provider.Settings
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import uniffi.tokito_companion_ffi.CompanionClient
 import uniffi.tokito_companion_ffi.CompanionException
+import uniffi.tokito_companion_ffi.SyncListener
+import uniffi.tokito_companion_ffi.SyncSubscription
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Expo module bridging UniFFI [CompanionClient] into JS.
@@ -14,8 +20,16 @@ import uniffi.tokito_companion_ffi.CompanionException
  * Generated bindings: `uniffi.tokito_companion_ffi` (Mozilla UniFFI Kotlin).
  */
 class TokitoCompanionFfiModule : Module() {
+  private val subscriptions = ConcurrentHashMap<String, SyncSubscription>()
+
   override fun definition() = ModuleDefinition {
     Name("TokitoCompanionFfi")
+    Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError")
+
+    OnDestroy {
+      subscriptions.values.forEach { it.stop() }
+      subscriptions.clear()
+    }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
       CompanionClient(baseUrl).baseUrl()
@@ -148,6 +162,101 @@ class TokitoCompanionFfiModule : Module() {
           // Always base64 — JS decodes text when appropriate (SVG). Never mojibake binary.
           "bodyBase64" to Base64.encodeToString(art.body, Base64.NO_WRAP),
         )
+      }
+    }
+
+    AsyncFunction("startSync") { baseUrl: String, token: String, projectId: String? ->
+      runFfi {
+        val context = requireNotNull(appContext.reactContext) { "React context unavailable" }
+        val installationId = Settings.Secure.getString(
+          context.contentResolver,
+          Settings.Secure.ANDROID_ID,
+        ).takeUnless { it.isNullOrBlank() } ?: UUID.randomUUID().toString()
+        val statePath = context.filesDir.resolve("tokito/realtime-sync.sqlite3")
+        statePath.parentFile?.mkdirs()
+        val subscriptionId = projectId ?: "workspace"
+        subscriptions.remove(subscriptionId)?.stop()
+        val listener = object : SyncListener {
+          override fun onStatus(status: String) {
+            sendEvent("onSyncStatus", mapOf("subscriptionId" to subscriptionId, "status" to status))
+          }
+
+          override fun onBootstrap(cursor: ULong, resourcesJson: String) {
+            sendEvent(
+              "onSyncBootstrap",
+              mapOf(
+                "subscriptionId" to subscriptionId,
+                "cursor" to cursor.toString(),
+                "resourcesJson" to resourcesJson,
+              ),
+            )
+          }
+
+          override fun onEvent(eventJson: String) {
+            sendEvent("onSyncEvent", mapOf("subscriptionId" to subscriptionId, "eventJson" to eventJson))
+          }
+
+          override fun onConflict(
+            commandJson: String,
+            currentVersion: ULong,
+            currentPayloadJson: String,
+          ) {
+            sendEvent(
+              "onSyncConflict",
+              mapOf(
+                "subscriptionId" to subscriptionId,
+                "commandJson" to commandJson,
+                "currentVersion" to currentVersion.toString(),
+                "currentPayloadJson" to currentPayloadJson,
+              ),
+            )
+          }
+
+          override fun onError(message: String) {
+            sendEvent("onSyncError", mapOf("subscriptionId" to subscriptionId, "message" to message))
+          }
+        }
+        val subscription = CompanionClient(baseUrl).startSync(
+          token,
+          installationId,
+          Build.MODEL ?: "Android device",
+          "android",
+          projectId,
+          statePath.absolutePath,
+          listener,
+        )
+        subscriptions[subscriptionId] = subscription
+        subscriptionId
+      }
+    }
+
+    AsyncFunction("stopSync") { subscriptionId: String ->
+      subscriptions.remove(subscriptionId)?.stop()
+    }
+
+    AsyncFunction("enqueueSyncCommand") {
+      subscriptionId: String,
+      projectId: String,
+      designId: String?,
+      resource: String,
+      payloadJson: String,
+      ->
+      runFfi {
+        val subscription = subscriptions[subscriptionId]
+          ?: throw IllegalStateException("sync subscription is not running")
+        subscription.enqueueCommand(projectId, designId, resource, payloadJson)
+      }
+    }
+
+    AsyncFunction("resolveSyncConflict") {
+      subscriptionId: String,
+      commandId: String,
+      keepLocal: Boolean,
+      ->
+      runFfi {
+        val subscription = subscriptions[subscriptionId]
+          ?: throw IllegalStateException("sync subscription is not running")
+        subscription.resolveConflict(commandId, keepLocal)
       }
     }
   }

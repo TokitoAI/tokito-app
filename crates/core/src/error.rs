@@ -28,6 +28,12 @@ pub enum CloudError {
     /// Network / transport failure.
     #[error("network error: {0}")]
     Network(String),
+    /// Optimistic resource version was stale. Payload is canonical server JSON.
+    #[error("resource changed on another device (version {current_version})")]
+    Conflict {
+        current_version: u64,
+        current_payload: String,
+    },
     /// Unexpected status or malformed body.
     #[error("unexpected server response")]
     Unexpected,

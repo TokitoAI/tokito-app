@@ -21,14 +21,17 @@ import { CompanionError } from "./native/types";
 import { ProjectDetailScreen } from "./screens/ProjectDetailScreen";
 import { ProjectListScreen } from "./screens/ProjectListScreen";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
+import { LiveSchematicEditorScreen } from "./screens/LiveSchematicEditorScreen";
 import { SignInScreen } from "./screens/SignInScreen";
 import { applySystemChrome } from "./systemChrome";
+import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile, PrimaryButton } from "./ui/primitives";
 
 type Route =
   | { name: "projects" }
   | { name: "project"; id: string }
+  | { name: "live_schematic"; projectId: string; designId: string }
   | { name: "svg"; projectId: string; artifact: string };
 
 export type AppProps = {
@@ -166,15 +169,28 @@ export default function App({
 
   const token = state.session.token;
   const selectedId =
-    route.name === "project" || route.name === "svg"
+    route.name === "project" || route.name === "svg" || route.name === "live_schematic"
       ? route.name === "project"
         ? route.id
         : route.projectId
       : null;
 
+  if (route.name === "live_schematic") {
+    return (
+      <RealtimeWorkspaceProvider client={client} token={token}>
+        <StatusBar style="light" />
+        <LiveSchematicEditorScreen
+          projectId={route.projectId}
+          designId={route.designId}
+          onBack={() => setRoute({ name: "project", id: route.projectId })}
+        />
+      </RealtimeWorkspaceProvider>
+    );
+  }
+
   if (route.name === "svg") {
     return (
-      <>
+      <RealtimeWorkspaceProvider client={client} token={token}>
         <StatusBar style="light" />
         <SchematicViewerScreen
           client={client}
@@ -183,7 +199,7 @@ export default function App({
           artifactName={route.artifact}
           onBack={() => setRoute({ name: "project", id: route.projectId })}
         />
-      </>
+      </RealtimeWorkspaceProvider>
     );
   }
 
@@ -191,6 +207,7 @@ export default function App({
     const detailId = route.name === "project" ? route.id : null;
     const masterWidth = Math.min(380, Math.max(300, Math.floor(width * 0.34)));
     return (
+      <RealtimeWorkspaceProvider client={client} token={token}>
       <View style={styles.split}>
         <StatusBar style="light" />
         <View style={[styles.master, { width: masterWidth }]}>
@@ -221,24 +238,28 @@ export default function App({
               onOpenSvg={(artifact) =>
                 setRoute({ name: "svg", projectId: detailId, artifact })
               }
+              onOpenLiveSchematic={(designId) =>
+                setRoute({ name: "live_schematic", projectId: detailId, designId })
+              }
             />
           ) : (
             <View style={styles.emptyDetail}>
               <BrandTile size={64} />
               <Text style={styles.emptyTitle}>Select a project</Text>
               <Text style={styles.emptyBody}>
-                Synced reviews appear here after desktop Share to Companion.
+                Live projects and designs appear here automatically.
               </Text>
             </View>
           )}
         </View>
       </View>
+      </RealtimeWorkspaceProvider>
     );
   }
 
   if (route.name === "project") {
     return (
-      <>
+      <RealtimeWorkspaceProvider client={client} token={token}>
         <StatusBar style="light" />
         <ProjectDetailScreen
           client={client}
@@ -248,13 +269,16 @@ export default function App({
           onOpenSvg={(artifact) =>
             setRoute({ name: "svg", projectId: route.id, artifact })
           }
+          onOpenLiveSchematic={(designId) =>
+            setRoute({ name: "live_schematic", projectId: route.id, designId })
+          }
         />
-      </>
+      </RealtimeWorkspaceProvider>
     );
   }
 
   return (
-    <>
+    <RealtimeWorkspaceProvider client={client} token={token}>
       <StatusBar style="light" />
       <ProjectListScreen
         client={client}
@@ -269,7 +293,7 @@ export default function App({
           })();
         }}
       />
-    </>
+    </RealtimeWorkspaceProvider>
   );
 }
 

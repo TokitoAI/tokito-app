@@ -13,10 +13,16 @@ import type {
 import { CompanionError } from "../native/types";
 
 export interface BomLine {
+  id?: string;
+  design_id?: string;
+  part_id?: string;
   ref: string;
   value: string;
   footprint: string;
   qty: number;
+  quantity?: number;
+  sort_order?: number;
+  notes?: string | null;
 }
 
 export interface DesignSummary {

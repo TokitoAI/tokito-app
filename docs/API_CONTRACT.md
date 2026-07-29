@@ -1,8 +1,9 @@
 # API contract — Tokito Companion ↔ tokito-ai
 
 Auth and billing routes already exist; companion reuses them. Companion sync
-routes are **specified here** and must be implemented in `tokito-ai` before
-any companion client methods for them merge (no stubs).
+routes are implemented by `tokito-ai`; the durable realtime protocol below is
+the primary workspace path. Snapshot routes remain a migration/bootstrap
+compatibility surface and are not used for ongoing synchronization.
 
 ## Existing (implemented in tokito-ai)
 
@@ -15,6 +16,48 @@ any companion client methods for them merge (no stubs).
 | GET | `/v1/billing/status` | Plan + subscription |
 
 Default base: `https://api.tokito.dev`.
+
+## Durable realtime workspace
+
+One signed-in device registration replaces repeated "Share to Companion".
+The client performs a consistent bootstrap once, persists the returned cursor,
+and then consumes ordered SSE events. Local edits enter a SQLite outbox before
+network submission and are idempotent by `command_id`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v1/companion/devices` | Register/heartbeat an installation ID |
+| GET | `/v1/companion/bootstrap?project_id=` | Consistent resources plus journal cursor |
+| POST | `/v1/companion/commands` | Optimistic, idempotent resource mutation |
+| GET | `/v1/companion/events?cursor=&project_id=` | Durable SSE replay and live tail |
+
+SSE clients send both `cursor` and `Last-Event-ID`. Each `event: sync` frame
+contains a globally ordered `seq`. The client commits the materialized resource
+and cursor atomically before delivering the event to React Native.
+
+Commands contain `device_id`, `command_id`, `project_id`, optional `design_id`,
+`resource`, `base_version`, and `payload`. A stale base returns HTTP 409 with
+the current version and payload; the client quarantines that outbox row until
+the user explicitly chooses the server copy or rebases their local edit.
+
+Resource scopes and payload contracts:
+
+| Resource | Scope | Payload |
+|---|---|---|
+| `project` | project, no design | `{id,name,slug,updated_at,design_ids,deleted?}` |
+| `design` | project + design | `{id,name,sheet_count,updated_at,deleted?}` |
+| `schematic` | project + design | Canonical serialized Tokito schematic document |
+| `bom` | project + design | `{lines:[{ref,value,footprint,qty,...}]}` |
+| `chat` | project + design | `{messages:[{id,role,content,created_at,...}]}` |
+| `suggestions` | project + design | `{items:[{id,kind,title,summary,status,...}]}` |
+
+Payloads are whole versioned resources, capped at 2 MiB. Pick-and-place is not
+a synchronized resource. Everything else is independently addressable per
+project and design.
+
+Creation uses a stable UUID assigned by the originating client. Deletion is a
+versioned `deleted: true` tombstone rather than an absent resource, ensuring an
+offline device learns the deletion when it resumes its cursor.
 
 ## Companion sync (**implemented** in `tokito-ai` + this client)
 
@@ -90,6 +133,7 @@ Desktop (or future cloud agent) posts a pending proposal card:
 {"decision":"approve"|"reject","note":"optional"}
 ```
 
-Desktop polls decisions and applies locally.
+Legacy desktop clients poll decisions and apply locally. Realtime clients use
+the versioned `suggestions` resource instead.
 
 Canonical server docs: `tokito-ai/docs/API.md`. Keep both documents aligned.

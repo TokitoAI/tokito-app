@@ -5,13 +5,16 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+use tokio::sync::{mpsc, watch};
 use tokito_companion_core::{
-    decide_proposal as core_decide_proposal, get_artifact as core_get_artifact,
+    bootstrap_realtime, decide_proposal as core_decide_proposal, get_artifact as core_get_artifact,
     get_project as core_get_project, list_projects as core_list_projects,
     list_proposals as core_list_proposals, me as core_me, oauth_exchange as core_oauth_exchange,
-    otp_request as core_otp_request, otp_verify as core_otp_verify, CloudError,
+    otp_request as core_otp_request, otp_verify as core_otp_verify, register_device,
+    run_event_stream, submit_sync_command, CloudError, RealtimeStatus, SyncCommand, SyncStateStore,
 };
 
 uniffi::setup_scaffolding!();
@@ -121,6 +124,11 @@ pub enum CompanionError {
     Unavailable,
     #[error("network error: {msg}")]
     Network { msg: String },
+    #[error("resource changed on another device (version {current_version})")]
+    Conflict {
+        current_version: u64,
+        current_payload: String,
+    },
     #[error("unexpected server response")]
     Unexpected,
 }
@@ -135,8 +143,103 @@ impl From<CloudError> for CompanionError {
             CloudError::Unauthorized => Self::Unauthorized,
             CloudError::Unavailable => Self::Unavailable,
             CloudError::Network(msg) => Self::Network { msg },
+            CloudError::Conflict {
+                current_version,
+                current_payload,
+            } => Self::Conflict {
+                current_version,
+                current_payload,
+            },
             CloudError::Unexpected => Self::Unexpected,
         }
+    }
+}
+
+#[uniffi::export(with_foreign)]
+pub trait SyncListener: Send + Sync + std::fmt::Debug {
+    fn on_status(&self, status: String);
+    fn on_bootstrap(&self, cursor: u64, resources_json: String);
+    fn on_event(&self, event_json: String);
+    fn on_conflict(&self, command_json: String, current_version: u64, current_payload_json: String);
+    fn on_error(&self, message: String);
+}
+
+#[derive(uniffi::Object)]
+pub struct SyncSubscription {
+    stop: watch::Sender<bool>,
+    wake_outbox: mpsc::UnboundedSender<()>,
+    store: Arc<SyncStateStore>,
+    device_id: String,
+}
+
+#[uniffi::export]
+impl SyncSubscription {
+    pub fn stop(&self) {
+        let _ = self.stop.send(true);
+    }
+
+    /// Persist first, then wake the network worker. A successful return means
+    /// the edit survives process/network failure even if Tokito Cloud is down.
+    pub fn enqueue_command(
+        &self,
+        project_id: String,
+        design_id: Option<String>,
+        resource: String,
+        payload_json: String,
+    ) -> Result<String, CompanionError> {
+        validate_resource_scope(&resource, design_id.as_deref())?;
+        let payload =
+            serde_json::from_str(&payload_json).map_err(|_| CompanionError::Unexpected)?;
+        let base_version =
+            self.store
+                .next_base_version(&project_id, design_id.as_deref(), &resource)?;
+        let command_id = uuid::Uuid::new_v4().to_string();
+        self.store.enqueue(&SyncCommand {
+            device_id: self.device_id.clone(),
+            command_id: command_id.clone(),
+            project_id,
+            design_id,
+            resource,
+            base_version,
+            payload,
+        })?;
+        let _ = self.wake_outbox.send(());
+        Ok(command_id)
+    }
+
+    /// Resolve a surfaced version conflict. `keep_local=true` rebases the
+    /// queued local payload onto the reported server version; false discards it.
+    pub fn resolve_conflict(
+        &self,
+        command_id: String,
+        keep_local: bool,
+    ) -> Result<(), CompanionError> {
+        if keep_local {
+            self.store.rebase_conflict(&command_id)?;
+            let _ = self.wake_outbox.send(());
+        } else {
+            self.store.discard_command(&command_id)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for SyncSubscription {
+    fn drop(&mut self) {
+        let _ = self.stop.send(true);
+    }
+}
+
+fn validate_resource_scope(resource: &str, design_id: Option<&str>) -> Result<(), CompanionError> {
+    let valid = match resource {
+        "project" => design_id.is_none(),
+        "design" | "schematic" | "bom" | "chat" | "suggestions" => design_id.is_some(),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(CompanionError::Unexpected)
     }
 }
 
@@ -341,6 +444,160 @@ impl CompanionClient {
             ))
             .map_err(CompanionError::from)?;
         Ok(ArtifactBytes { content_type, body })
+    }
+
+    /// Register this installation, bootstrap a consistent materialized view,
+    /// then run the durable outbox and resumable SSE stream until stopped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_sync(
+        &self,
+        token: String,
+        device_id: String,
+        device_label: String,
+        platform: String,
+        project_id: Option<String>,
+        state_path: String,
+        listener: Arc<dyn SyncListener>,
+    ) -> Result<Arc<SyncSubscription>, CompanionError> {
+        if state_path.trim().is_empty() || device_id.trim().is_empty() {
+            return Err(CompanionError::Unexpected);
+        }
+        listener.on_status("connecting".into());
+        let store = Arc::new(SyncStateStore::open(Path::new(&state_path))?);
+        let bootstrap = runtime().block_on(async {
+            register_device(&self.base_url, &token, &device_id, &device_label, &platform).await?;
+            bootstrap_realtime(&self.base_url, &token, project_id.as_deref()).await
+        })?;
+        store.apply_bootstrap(&bootstrap, project_id.as_deref())?;
+        let resources_json =
+            serde_json::to_string(&bootstrap.resources).map_err(|_| CompanionError::Unexpected)?;
+        listener.on_bootstrap(bootstrap.cursor, resources_json);
+
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let (wake_tx, wake_rx) = mpsc::unbounded_channel();
+        let subscription = Arc::new(SyncSubscription {
+            stop: stop_tx.clone(),
+            wake_outbox: wake_tx,
+            store: Arc::clone(&store),
+            device_id,
+        });
+
+        let base_url = self.base_url.clone();
+        runtime().spawn(run_sync_session(
+            base_url,
+            token,
+            project_id,
+            bootstrap.cursor,
+            store,
+            listener,
+            stop_tx,
+            stop_rx,
+            wake_rx,
+        ));
+        Ok(subscription)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_sync_session(
+    base_url: String,
+    token: String,
+    project_id: Option<String>,
+    cursor: u64,
+    store: Arc<SyncStateStore>,
+    listener: Arc<dyn SyncListener>,
+    stop_tx: watch::Sender<bool>,
+    stop_rx: watch::Receiver<bool>,
+    wake_rx: mpsc::UnboundedReceiver<()>,
+) {
+    let stream_store = Arc::clone(&store);
+    let stream_listener = Arc::clone(&listener);
+    let status_listener = Arc::clone(&listener);
+    let stream_stop = stop_rx.clone();
+    let stream = run_event_stream(
+        &base_url,
+        &token,
+        project_id.as_deref(),
+        cursor,
+        stream_stop.clone(),
+        move |event| {
+            stream_store.apply_event(&event)?;
+            let event_json = serde_json::to_string(&event).map_err(|_| CloudError::Unexpected)?;
+            stream_listener.on_event(event_json);
+            Ok(())
+        },
+        move |status| status_listener.on_status(realtime_status_name(status).into()),
+    );
+    let outbox = run_outbox(
+        &base_url,
+        &token,
+        store,
+        Arc::clone(&listener),
+        stop_rx,
+        wake_rx,
+    );
+
+    tokio::pin!(stream);
+    tokio::pin!(outbox);
+    let result = tokio::select! {
+        result = &mut stream => result,
+        result = &mut outbox => result,
+    };
+    let _ = stop_tx.send(true);
+    if let Err(error) = result {
+        listener.on_error(error.to_string());
+    }
+    listener.on_status("stopped".into());
+}
+
+async fn run_outbox(
+    base_url: &str,
+    token: &str,
+    store: Arc<SyncStateStore>,
+    listener: Arc<dyn SyncListener>,
+    mut stop: watch::Receiver<bool>,
+    mut wake: mpsc::UnboundedReceiver<()>,
+) -> Result<(), CloudError> {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        for command in store.pending()? {
+            match submit_sync_command(base_url, token, &command).await {
+                Ok(event) => store.apply_ack(&event)?,
+                Err(CloudError::Conflict {
+                    current_version,
+                    current_payload,
+                }) => {
+                    store.mark_conflict(&command.command_id, current_version, &current_payload)?;
+                    let command_json =
+                        serde_json::to_string(&command).map_err(|_| CloudError::Unexpected)?;
+                    listener.on_conflict(command_json, current_version, current_payload);
+                }
+                Err(CloudError::Unauthorized) => return Err(CloudError::Unauthorized),
+                Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected) => {
+                    break;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        tokio::select! {
+            _ = interval.tick() => {}
+            wakeup = wake.recv() => {
+                if wakeup.is_none() { return Ok(()); }
+            }
+            changed = stop.changed() => {
+                if changed.is_err() || *stop.borrow() { return Ok(()); }
+            }
+        }
+    }
+}
+
+fn realtime_status_name(status: RealtimeStatus) -> &'static str {
+    match status {
+        RealtimeStatus::Connecting => "connecting",
+        RealtimeStatus::Live => "live",
+        RealtimeStatus::Reconnecting => "reconnecting",
+        RealtimeStatus::Stopped => "stopped",
     }
 }
 

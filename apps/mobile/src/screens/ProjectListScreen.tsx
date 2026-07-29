@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import {
@@ -17,7 +18,9 @@ import type { CloudClient } from "../native/bridge";
 import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
-import { BrandTile, Card, ErrorText, Muted } from "../ui/primitives";
+import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
+import { newStableId } from "../sync/ids";
+import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
   client: CloudClient;
@@ -44,6 +47,8 @@ export function ProjectListScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [newProjectName, setNewProjectName] = useState("");
+  const realtime = useRealtimeWorkspace();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -68,6 +73,37 @@ export function ProjectListScreen({
     void reload();
   }, [reload]);
 
+  useEffect(() => {
+    const projectResources = realtime.resources
+      .filter((item) => item.resource === "project" && item.design_id === null);
+    const live = projectResources
+      .map((item) => item.payload as Partial<ProjectListItem> & { deleted?: boolean })
+      .filter((item) => item.deleted !== true)
+      .filter((item): item is ProjectListItem =>
+        typeof item.id === "string" && typeof item.name === "string")
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        slug: typeof item.slug === "string" ? item.slug : item.id,
+        updated_at: typeof item.updated_at === "string" ? item.updated_at : "live",
+      }));
+    if (projectResources.length > 0) setProjects(live);
+  }, [realtime.resources]);
+
+  async function createProject(): Promise<void> {
+    const name = newProjectName.trim();
+    if (name.length === 0) return;
+    const id = newStableId();
+    setNewProjectName("");
+    await realtime.update(id, null, "project", {
+      id,
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || id,
+      updated_at: new Date().toISOString(),
+    });
+    onOpenProject(id);
+  }
+
   return (
     <View style={[styles.root, embedded && styles.rootEmbedded]}>
       <View style={styles.header}>
@@ -77,6 +113,9 @@ export function ProjectListScreen({
             <Text style={styles.brand}>Tokito</Text>
             <Text style={styles.sub} numberOfLines={1}>
               {accountEmail} · {accountPlan}
+            </Text>
+            <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>
+              Sync: {realtime.status}{realtime.error ? ` · ${realtime.error}` : ""}
             </Text>
           </View>
         </View>
@@ -99,6 +138,23 @@ export function ProjectListScreen({
         <Text style={styles.h2}>Projects</Text>
       </View>
 
+      <View style={styles.createRow}>
+        <TextInput
+          accessibilityLabel="New project name"
+          value={newProjectName}
+          onChangeText={setNewProjectName}
+          onSubmitEditing={() => void createProject()}
+          placeholder="New project"
+          placeholderTextColor={tokens.text2}
+          style={styles.createInput}
+        />
+        <PrimaryButton
+          label="Create"
+          disabled={newProjectName.trim().length === 0 || realtime.status === "disabled"}
+          onPress={() => void createProject()}
+        />
+      </View>
+
       {loading ? (
         <ActivityIndicator color={tokens.accent} style={{ marginTop: tokens.space5 }} />
       ) : null}
@@ -107,7 +163,7 @@ export function ProjectListScreen({
       {!loading && projects.length === 0 && error === null ? (
         <Card style={{ marginTop: tokens.space3 }}>
           <Muted>
-            No synced projects yet. On desktop: project kebab → Share to Companion.
+            No projects are available yet. Signed-in desktop projects sync automatically.
           </Muted>
         </Card>
       ) : null}
@@ -158,6 +214,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   brand: { color: tokens.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
   sub: { color: tokens.text2, marginTop: 2, fontSize: 12 },
+  sync: { color: tokens.text2, marginTop: 3, fontSize: 11 },
+  syncLive: { color: tokens.accent },
   headerActions: { flexDirection: "row", gap: tokens.space1 },
   iconBtn: {
     width: 40,
@@ -176,6 +234,17 @@ const styles = StyleSheet.create({
     marginBottom: tokens.space3,
   },
   h2: { color: tokens.text, fontSize: 16, fontWeight: "600" },
+  createRow: { flexDirection: "row", gap: tokens.space2, marginBottom: tokens.space3 },
+  createInput: {
+    flex: 1,
+    color: tokens.text,
+    backgroundColor: tokens.card,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    borderRadius: tokens.radiusSm,
+    paddingHorizontal: tokens.space3,
+    minHeight: 42,
+  },
   cardSelected: {
     borderColor: tokens.accent,
     backgroundColor: tokens.accentSoft,
