@@ -1,6 +1,6 @@
-import type { Account, CompanionClientPort, Session } from "../native/types.js";
-import { CompanionError } from "../native/types.js";
-import type { SessionStore } from "./sessionStore.js";
+import type { Account, CompanionClientPort, Session } from "../native/types";
+import { CompanionError } from "../native/types";
+import type { SessionStore } from "./sessionStore";
 
 export type AuthState =
   | { status: "signed_out" }

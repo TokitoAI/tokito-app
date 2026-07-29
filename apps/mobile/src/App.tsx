@@ -11,19 +11,19 @@ import {
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
-import { HttpCloudClient } from "./api/cloudHttp.js";
-import { AuthService } from "./auth/AuthService.js";
-import type { AuthState } from "./auth/AuthService.js";
-import { SecureSessionStore } from "./auth/secureSessionStore.js";
-import { MemorySessionStore } from "./auth/sessionStore.js";
-import { normalizeBaseUrl } from "./cloud.js";
-import { CompanionError } from "./native/types.js";
-import { ProjectDetailScreen } from "./screens/ProjectDetailScreen.js";
-import { ProjectListScreen } from "./screens/ProjectListScreen.js";
-import { SchematicViewerScreen } from "./screens/SchematicViewerScreen.js";
-import { SignInScreen } from "./screens/SignInScreen.js";
-import { TABLET_MIN_WIDTH, tokens } from "./theme.js";
-import { BrandTile, PrimaryButton } from "./ui/primitives.js";
+import { HttpCloudClient } from "./api/cloudHttp";
+import { AuthService } from "./auth/AuthService";
+import type { AuthState } from "./auth/AuthService";
+import { SecureSessionStore } from "./auth/secureSessionStore";
+import { MemorySessionStore } from "./auth/sessionStore";
+import { normalizeBaseUrl } from "./cloud";
+import { CompanionError } from "./native/types";
+import { ProjectDetailScreen } from "./screens/ProjectDetailScreen";
+import { ProjectListScreen } from "./screens/ProjectListScreen";
+import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
+import { SignInScreen } from "./screens/SignInScreen";
+import { TABLET_MIN_WIDTH, tokens } from "./theme";
+import { BrandTile, PrimaryButton } from "./ui/primitives";
 
 type Route =
   | { name: "projects" }

@@ -10,10 +10,10 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { ArrowLeft } from "phosphor-react-native";
-import type { HttpCloudClient } from "../api/cloudHttp.js";
-import { CompanionError } from "../native/types.js";
-import { tokens } from "../theme.js";
-import { ErrorText } from "../ui/primitives.js";
+import type { HttpCloudClient } from "../api/cloudHttp";
+import { CompanionError } from "../native/types";
+import { tokens } from "../theme";
+import { ErrorText } from "../ui/primitives";
 
 export interface SchematicViewerScreenProps {
   client: HttpCloudClient;

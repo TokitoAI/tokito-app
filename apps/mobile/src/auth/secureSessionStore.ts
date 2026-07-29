@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
-import type { Session } from "../native/types.js";
-import type { SessionStore } from "./sessionStore.js";
+import type { Session } from "../native/types";
+import type { SessionStore } from "./sessionStore";
 
 /**
  * Secure Store-backed session (`expo-secure-store`).

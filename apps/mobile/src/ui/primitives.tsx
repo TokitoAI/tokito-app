@@ -11,7 +11,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from "react-native";
-import { tokens } from "../theme.js";
+import { tokens } from "../theme";
 import markPng from "../../assets/tokito-mark.png";
 
 const markSource: ImageSourcePropType = markPng;

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { AuthService } from "./AuthService.js";
-import { MemorySessionStore } from "./sessionStore.js";
-import type { Account, CompanionClientPort, Session } from "../native/types.js";
-import { CompanionError } from "../native/types.js";
+import { AuthService } from "./AuthService";
+import { MemorySessionStore } from "./sessionStore";
+import type { Account, CompanionClientPort, Session } from "../native/types";
+import { CompanionError } from "../native/types";
 
 class FakeClient implements CompanionClientPort {
   base = "https://api.tokito.dev";

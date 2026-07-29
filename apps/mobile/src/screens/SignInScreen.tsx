@@ -10,16 +10,16 @@ import {
   View,
 } from "react-native";
 import { SignIn as SignInIcon, EnvelopeSimple, Key } from "phosphor-react-native";
-import type { AuthService } from "../auth/AuthService.js";
-import { CompanionError } from "../native/types.js";
-import { TABLET_MIN_WIDTH, tokens } from "../theme.js";
+import type { AuthService } from "../auth/AuthService";
+import { CompanionError } from "../native/types";
+import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import {
   BrandTile,
   ErrorText,
   Field,
   GhostButton,
   PrimaryButton,
-} from "../ui/primitives.js";
+} from "../ui/primitives";
 
 type Step = "email" | "code";
 

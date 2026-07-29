@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_CLOUD_BASE, normalizeBaseUrl } from "./cloud.js";
+import { DEFAULT_CLOUD_BASE, normalizeBaseUrl } from "./cloud";
 
 describe("normalizeBaseUrl", () => {
   it("defaults empty to production", () => {

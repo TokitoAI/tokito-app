@@ -3,13 +3,13 @@
  * Same wire contracts as `tokito-companion-core` / UniFFI — not a stub.
  */
 
-import { normalizeBaseUrl } from "../cloud.js";
+import { normalizeBaseUrl } from "../cloud";
 import type {
   Account,
   CompanionClientPort,
   Session,
-} from "../native/types.js";
-import { CompanionError } from "../native/types.js";
+} from "../native/types";
+import { CompanionError } from "../native/types";
 
 export interface BomLine {
   ref: string;

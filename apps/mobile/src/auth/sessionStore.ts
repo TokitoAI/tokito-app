@@ -1,4 +1,4 @@
-import type { Session } from "../native/types.js";
+import type { Session } from "../native/types";
 
 /** Persist the Tokito Cloud JWT off the JS heap. */
 export interface SessionStore {
