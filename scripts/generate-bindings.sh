@@ -21,6 +21,7 @@ cargo run -p tokito-companion-ffi --bin uniffi-bindgen -- generate \
   --library "$LIB" \
   --language kotlin \
   --out-dir "$ROOT/bindings/kotlin" \
+  --config "$ROOT/uniffi.toml" \
   --no-format
 
 echo "Generated Kotlin bindings under bindings/kotlin"

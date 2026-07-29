@@ -10,18 +10,16 @@ import {
 } from "react-native";
 import {
   ArrowLeft,
-  Check,
   Circuitry,
   ListBullets,
   Sparkle,
-  X,
 } from "phosphor-react-native";
 import type {
   BomLine,
-  HttpCloudClient,
   ProjectDetail,
   Proposal,
 } from "../api/cloudHttp";
+import type { CloudClient } from "../native/bridge";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import {
@@ -33,7 +31,7 @@ import {
 } from "../ui/primitives";
 
 export interface ProjectDetailScreenProps {
-  client: HttpCloudClient;
+  client: CloudClient;
   token: string;
   projectId: string;
   onBack: () => void;
@@ -184,10 +182,6 @@ export function ProjectDetailScreen({
               style={styles.actionBtn}
             />
           </View>
-          <View style={styles.actionIcons}>
-            <Check size={14} color={tokens.success} weight="bold" />
-            <X size={14} color={tokens.danger} weight="bold" />
-          </View>
         </Card>
       ))}
     </ScrollView>
@@ -235,5 +229,4 @@ const styles = StyleSheet.create({
   cardTitle: { color: tokens.text, fontWeight: "600", marginBottom: 4 },
   actions: { flexDirection: "row", gap: tokens.space2, marginTop: tokens.space3 },
   actionBtn: { flex: 1 },
-  actionIcons: { display: "none" },
 });

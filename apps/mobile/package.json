@@ -1,8 +1,8 @@
 {
   "name": "@tokito/companion-mobile",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
-  "description": "Tokito Companion React Native (TypeScript) shell — UniFFI auth via tokito-companion-ffi",
+  "description": "Tokito Companion React Native shell — real Tokito Cloud HTTP (auth + /v1/companion/*); UniFFI bridge ready when native module is linked",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",

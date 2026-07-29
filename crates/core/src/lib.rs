@@ -15,6 +15,7 @@ pub use auth::{me, oauth_exchange, otp_request, otp_verify, CloudAccount, CloudS
 pub use base_url::{resolve_base_url, DEFAULT_CLOUD_BASE};
 pub use error::CloudError;
 pub use sync::{
-    decide_proposal, get_project, list_projects, list_proposals, put_project, ArtifactMeta,
-    BomLine, DesignSummary, ProjectDetail, ProjectListItem, ProjectSnapshot, Proposal,
+    decide_proposal, get_artifact, get_project, list_projects, list_proposals, put_project,
+    ArtifactMeta, BomLine, DesignSummary, ProjectDetail, ProjectListItem, ProjectSnapshot,
+    Proposal,
 };

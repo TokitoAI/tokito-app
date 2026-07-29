@@ -52,8 +52,8 @@ Request body (JSON):
 ### `PUT /v1/companion/projects/{project_id}/artifacts/{name}`
 
 Raw body; `Content-Type` as appropriate. Server verifies size limits and
-optional `X-Content-SHA256` against the manifest. Max size TBD in server PR
-(start: 16 MiB per artifact).
+optional `X-Content-SHA256` against the manifest. Max size:
+**16 MiB** per artifact (`tokito-ai` `MAX_ARTIFACT_BYTES`).
 
 ### `GET /v1/companion/projects`
 

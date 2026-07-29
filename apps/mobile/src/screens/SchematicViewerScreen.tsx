@@ -10,13 +10,13 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { ArrowLeft } from "phosphor-react-native";
-import type { HttpCloudClient } from "../api/cloudHttp";
+import type { CloudClient } from "../native/bridge";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { ErrorText } from "../ui/primitives";
 
 export interface SchematicViewerScreenProps {
-  client: HttpCloudClient;
+  client: CloudClient;
   token: string;
   projectId: string;
   artifactName: string;
@@ -90,6 +90,21 @@ export function SchematicViewerScreen({
           style={{ flex: 1, width, height: height - 96, backgroundColor: tokens.canvasBg }}
           scalesPageToFit
           source={{ html }}
+          javaScriptEnabled={false}
+          domStorageEnabled={false}
+          allowFileAccess={false}
+          allowFileAccessFromFileURLs={false}
+          allowUniversalAccessFromFileURLs={false}
+          setSupportMultipleWindows={false}
+          onShouldStartLoadWithRequest={(req) => {
+            // Static HTML + data: SVG only — block navigations off the page.
+            const url = req.url;
+            return (
+              url === "about:blank" ||
+              url.startsWith("data:") ||
+              url.startsWith("about:srcdoc")
+            );
+          }}
         />
       ) : null}
     </View>

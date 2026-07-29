@@ -31,12 +31,15 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
   `forbid-js` enforces this. Expo tooling may use root configs
   (`babel.config.js`, etc.) and `.mjs` under `apps/mobile/scripts/`.
 - **Android APK** is built by `.github/workflows/android-debug.yml` as
-  **`assembleRelease`** (embedded JS bundle — no Metro) with debug signing for
-  sideload, published as a GitHub pre-release. UI tokens/icons mirror
+  **`assembleRelease`** (embedded JS bundle — no Metro) with **UniFFI**
+  `libtokito_companion_ffi.so` linked via the Expo module
+  `modules/tokito-companion-ffi` (Mozilla Kotlin bindings + JNA). Debug
+  signing is only for sideload pre-releases. UI tokens/icons mirror
   `tokito_ui` (`Tokens::dark`, brand tile `#07101E`, Phosphor Regular, mint/indigo).
-- **No stub clients or stub HTTP routes.** If a `/v1/companion/*` method is not
-  implemented server-side yet, do not ship a fake client that returns canned
-  success — wait for the `tokito-ai` PR and land client + server together.
+- **No stub clients or stub HTTP routes.** Device builds must use UniFFI
+  (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
+  If a `/v1/companion/*` method is not implemented server-side yet, do not
+  ship a fake client — wait for the `tokito-ai` PR.
 - **Auth is shared with desktop.** Call `tokito-ai` `/v1/auth/*` only; mirror
   error mapping from `tokito::services::cloud` / this crate's `CloudError`.
 - **No large binaries in git.** Artifacts live behind the API, not in the repo.

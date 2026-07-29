@@ -26,9 +26,15 @@ type Step = "email" | "code";
 export interface SignInScreenProps {
   auth: AuthService;
   onSignedIn: () => void;
+  /** Active Tokito Cloud host (for footer; no hardcoded production host). */
+  cloudHost: string;
 }
 
-export function SignInScreen({ auth, onSignedIn }: SignInScreenProps): JSX.Element {
+export function SignInScreen({
+  auth,
+  onSignedIn,
+  cloudHost,
+}: SignInScreenProps): JSX.Element {
   const { width } = useWindowDimensions();
   const tablet = width >= TABLET_MIN_WIDTH;
   const [step, setStep] = useState<Step>("email");
@@ -95,7 +101,7 @@ export function SignInScreen({ auth, onSignedIn }: SignInScreenProps): JSX.Eleme
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
-                placeholder="you@lab.dev"
+                placeholder="Email"
                 value={email}
                 onChangeText={setEmail}
                 editable={!busy}
@@ -118,7 +124,7 @@ export function SignInScreen({ auth, onSignedIn }: SignInScreenProps): JSX.Eleme
               <Field
                 label={`Code sent to ${email.trim()}`}
                 keyboardType="number-pad"
-                placeholder="123456"
+                placeholder="6-digit code"
                 value={code}
                 onChangeText={setCode}
                 editable={!busy}
@@ -151,7 +157,7 @@ export function SignInScreen({ auth, onSignedIn }: SignInScreenProps): JSX.Eleme
 
           <View style={styles.footer}>
             <SignInIcon size={14} color={tokens.text3} weight="regular" />
-            <Text style={styles.footerText}>api.tokito.dev</Text>
+            <Text style={styles.footerText}>{cloudHost}</Text>
           </View>
         </View>
       </ScrollView>

@@ -42,16 +42,5 @@ export const tokens = {
   space5: 24,
 } as const;
 
-/** @deprecated use `tokens` — kept for gradual call-site migration */
-export const colors = {
-  bg: tokens.bg,
-  surface: tokens.card,
-  border: tokens.border,
-  text: tokens.text,
-  textMuted: tokens.text2,
-  accent: tokens.accent,
-  danger: tokens.danger,
-} as const;
-
 /** Tablet master/detail breakpoint (dp). */
 export const TABLET_MIN_WIDTH = 768;

@@ -1,6 +1,7 @@
 /**
  * Real Tokito Cloud HTTP client (fetch) for auth + companion sync.
- * Same wire contracts as `tokito-companion-core` / UniFFI — not a stub.
+ * Production RN path until UniFFI is linked into the app binary.
+ * Same wire contracts as `tokito-companion-core` — not a stub.
  */
 
 import { normalizeBaseUrl } from "../cloud";
@@ -106,12 +107,21 @@ async function mapError(res: Response): Promise<CompanionError> {
   return CompanionError.unexpected();
 }
 
+const REQUEST_TIMEOUT_MS = 20_000;
+
 async function request(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(input, init);
+    return await fetch(input, { ...init, signal: controller.signal });
   } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw CompanionError.network("Request timed out — check network or Tokito Cloud");
+    }
     const msg = err instanceof Error ? err.message : String(err);
     throw CompanionError.network(msg);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

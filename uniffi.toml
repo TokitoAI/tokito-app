@@ -1,0 +1,8 @@
+# UniFFI Kotlin config — Mozilla production Android path.
+# https://mozilla.github.io/uniffi-rs/latest/kotlin/configuration.html
+
+[bindings.kotlin]
+package_name = "uniffi.tokito_companion_ffi"
+cdylib_name = "tokito_companion_ffi"
+android = true
+generate_immutable_records = true

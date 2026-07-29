@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tokito Companion",
     "slug": "tokito-companion",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,9 +14,9 @@
     },
     "android": {
       "package": "dev.tokito.companion",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/tokito-mark.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#07101E"
       },
       "permissions": [

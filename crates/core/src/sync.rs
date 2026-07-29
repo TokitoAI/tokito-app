@@ -100,7 +100,9 @@ fn client() -> Result<reqwest::Client, CloudError> {
 
 fn map_status(status: u16, body_status: Option<&str>) -> CloudError {
     match status {
-        401 => CloudError::Unauthorized,
+        401 | 403 => CloudError::Unauthorized,
+        // Companion routes missing on an older gateway, or store not open.
+        404 => CloudError::Unavailable,
         503 => CloudError::Unavailable,
         _ => {
             let _ = body_status;
@@ -236,6 +238,60 @@ pub async fn list_proposals(
     }
 }
 
+/// `GET .../artifacts/{name}` — raw artifact bytes + content type.
+pub async fn get_artifact(
+    base: &str,
+    token: &str,
+    project_id: &str,
+    name: &str,
+) -> Result<(String, Vec<u8>), CloudError> {
+    let base = resolve_base_url(base);
+    let url = format!(
+        "{base}/v1/companion/projects/{project_id}/artifacts/{}",
+        urlencoding_path(name)
+    );
+    let resp = client()?
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| CloudError::Network(e.to_string()))?;
+    match resp.status().as_u16() {
+        200 => {
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| CloudError::Network(e.to_string()))?
+                .to_vec();
+            Ok((content_type, bytes))
+        }
+        code => {
+            let body = resp.json::<StatusBody>().await.ok();
+            Err(map_status(code, body.as_ref().map(|b| b.status.as_str())))
+        }
+    }
+}
+
+/// Percent-encode an artifact path segment (keeps `/` out of names).
+fn urlencoding_path(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for b in name.as_bytes() {
+        match *b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +310,39 @@ mod tests {
             .await;
         let items = list_projects(&server.uri(), "jwt").await.unwrap();
         assert_eq!(items[0].id, "p1");
+    }
+
+    #[tokio::test]
+    async fn list_projects_404_is_unavailable() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/companion/projects"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        let err = list_projects(&server.uri(), "jwt").await.unwrap_err();
+        assert_eq!(err, CloudError::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn get_artifact_ok() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/companion/projects/p1/artifacts/main.svg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "image/svg+xml")
+                    .set_body_bytes(b"<svg/>".as_slice()),
+            )
+            .mount(&server)
+            .await;
+        let (ct, bytes) = get_artifact(&server.uri(), "jwt", "p1", "main.svg")
+            .await
+            .unwrap();
+        assert!(
+            ct.starts_with("image/svg+xml") || ct == "application/octet-stream",
+            "unexpected content-type {ct}"
+        );
+        assert_eq!(bytes, b"<svg/>");
     }
 }

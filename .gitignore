@@ -12,8 +12,10 @@
 .DS_Store
 Thumbs.db
 
-# Generated UniFFI bindings (CI / scripts/generate-bindings.sh)
+# Generated UniFFI bindings (CI / scripts/generate-bindings.sh / build-android-ffi.sh)
 bindings/
+apps/mobile/modules/tokito-companion-ffi/android/src/main/jniLibs/
+apps/mobile/modules/tokito-companion-ffi/android/src/main/java/uniffi/
 
 # React Native / Node
 apps/mobile/node_modules/

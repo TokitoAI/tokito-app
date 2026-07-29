@@ -16,14 +16,18 @@ concurrency:
 
 jobs:
   build-apk:
-    name: assembleRelease APK (sideload)
+    name: assembleRelease APK (UniFFI + sideload)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - uses: actions/setup-node@v4
         with:
@@ -39,6 +43,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          link-to-sdk: true
+
+      - name: Build UniFFI Android .so + Kotlin bindings
+        working-directory: ${{ github.workspace }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          TOKITO_ANDROID_TARGETS: arm64-v8a,armeabi-v7a,x86_64
+        run: bash scripts/build-android-ffi.sh
+
       - name: Install npm deps
         run: npm ci
 
@@ -48,7 +66,7 @@ jobs:
       - name: Patch release signing for sideload
         run: node scripts/patch-android-release.mjs
 
-      - name: Assemble release APK (embeds JS bundle)
+      - name: Assemble release APK (embeds JS bundle + UniFFI)
         working-directory: apps/mobile/android
         env:
           NODE_ENV: production
@@ -64,10 +82,14 @@ jobs:
           DEST="${GITHUB_WORKSPACE}/tokito-companion-debug.apk"
           cp "$SRC" "$DEST"
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
-          # Sanity: embedded bundle must exist inside the APK
           unzip -l "$DEST" | grep -E 'index.android.bundle|assets/index' || {
             echo "ERROR: JS bundle not packaged in APK"
             unzip -l "$DEST" | head -80
+            exit 1
+          }
+          unzip -l "$DEST" | grep -E 'libtokito_companion_ffi\.so' || {
+            echo "ERROR: UniFFI native library missing from APK"
+            unzip -l "$DEST" | rg 'lib/|\.so' | head -80 || true
             exit 1
           }
           ls -lh "$DEST"
@@ -91,8 +113,8 @@ jobs:
           Sideload this APK on Android/tablet (enable install from unknown sources).
 
           - Package: \`dev.tokito.companion\`
-          - Cloud: \`https://api.tokito.dev\`
-          - Build: **release** with embedded JS bundle (no Metro required)
+          - Cloud: \`https://api.tokito.dev\` via **UniFFI Rust** (\`libtokito_companion_ffi.so\`)
+          - Build: **release** with embedded JS bundle (no Metro) + native cloud client
           - UI: Tokito desktop tokens (mint/indigo), brand tile, Phosphor icons, tablet split view
 
           EOF
@@ -115,7 +137,7 @@ jobs:
 
           Floating pre-release from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
 
-          **Release APK** with embedded \`index.android.bundle\` — opens without Metro.
+          **Release APK** with embedded \`index.android.bundle\` + UniFFI \`libtokito_companion_ffi.so\`.
 
           Package: \`dev.tokito.companion\`.
 

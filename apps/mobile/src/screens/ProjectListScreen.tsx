@@ -13,13 +13,14 @@ import {
   FolderSimple,
   SignOut,
 } from "phosphor-react-native";
-import type { HttpCloudClient, ProjectListItem } from "../api/cloudHttp";
+import type { CloudClient } from "../native/bridge";
+import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { BrandTile, Card, ErrorText, Muted } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
-  client: HttpCloudClient;
+  client: CloudClient;
   token: string;
   accountEmail: string;
   accountPlan: string;

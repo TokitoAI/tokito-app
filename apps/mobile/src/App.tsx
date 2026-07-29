@@ -11,7 +11,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
-import { HttpCloudClient } from "./api/cloudHttp";
+import { createCloudClient, type CloudClient } from "./native/bridge";
 import { AuthService } from "./auth/AuthService";
 import type { AuthState } from "./auth/AuthService";
 import { SecureSessionStore } from "./auth/secureSessionStore";
@@ -41,6 +41,14 @@ function defaultCloudBaseUrl(): string {
   return extra?.cloudBaseUrl ?? "";
 }
 
+function hostLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
+}
+
 export default function App({
   cloudBaseUrl = defaultCloudBaseUrl(),
   useMemoryStore = false,
@@ -53,9 +61,18 @@ export default function App({
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    if (fontsLoaded) {
+      setFontsReady(true);
+      return;
+    }
+    const t = setTimeout(() => setFontsReady(true), 2500);
+    return () => clearTimeout(t);
+  }, [fontsLoaded]);
 
   const baseUrl = normalizeBaseUrl(cloudBaseUrl);
-  const client = useMemo(() => new HttpCloudClient(baseUrl), [baseUrl]);
+  const client = useMemo((): CloudClient => createCloudClient(baseUrl), [baseUrl]);
   const auth = useMemo(() => {
     const store = useMemoryStore ? new MemorySessionStore() : new SecureSessionStore();
     return new AuthService(client, store);
@@ -100,7 +117,8 @@ export default function App({
     void refresh();
   }, [refresh]);
 
-  if (!fontsLoaded || booting) {
+  // Wait briefly for Inter; never block boot forever if fonts stall.
+  if (!fontsReady || booting) {
     return (
       <View style={styles.center}>
         <StatusBar style="light" />
@@ -141,6 +159,7 @@ export default function App({
         {bootError !== null ? <Text style={styles.errorPad}>{bootError}</Text> : null}
         <SignInScreen
           auth={auth}
+          cloudHost={hostLabel(baseUrl)}
           onSignedIn={() => {
             void refresh();
           }}
