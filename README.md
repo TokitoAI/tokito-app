@@ -39,25 +39,18 @@ cd apps/mobile && npx expo start
 Default cloud base: `https://api.tokito.dev` (override with `TOKITO_CLOUD_BASE_URL`
 or `app.json` → `expo.extra.cloudBaseUrl`).
 
-## Android debug APK
+## Android APK (sideload)
 
 CI workflow [android-debug](.github/workflows/android-debug.yml):
 
-- **Actions → android-debug → Run workflow** — builds `tokito-companion-debug.apk`
-  and refreshes the floating pre-release tag `debug-latest`.
-- Tag `v0.1.0-pre.1` (pattern `v*-pre*` / `v*-debug*`) — tagged pre-release with APK.
+- Builds **`assembleRelease`** so `index.android.bundle` is **embedded** (no Metro).
+- Signs with the debug keystore for easy sideload (not Play Store).
+- **Actions → android-debug → Run workflow** refreshes `debug-latest`.
+- Tag `v0.1.1-pre.1` (pattern `v*-pre*`) for a versioned pre-release.
 
-Local (needs Android SDK + JDK 17):
-
-```bash
-cd apps/mobile
-npm ci
-npx expo prebuild --platform android --non-interactive
-cd android && ./gradlew assembleDebug
-# apk: android/app/build/outputs/apk/debug/*.apk
-```
-
-Package id: `dev.tokito.companion` (debug-signed; sideload only).
+Package id: `dev.tokito.companion`. UI tokens match desktop `tokito_ui` dark
+palette (mint accent, brand tile, Phosphor icons). Tablets ≥768dp get a
+master/detail split.
 
 ## Docs
 
