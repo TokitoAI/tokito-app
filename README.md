@@ -19,7 +19,8 @@ crates/ffi/      # UniFFI CompanionClient (cdylib/staticlib) for RN
 apps/mobile/     # React Native + TypeScript auth shell
 docs/            # architecture, API contract, hooks
 memory/          # agent notebook
-scripts/generate-bindings.sh  # Kotlin UniFFI smoke (gitignored output)
+scripts/generate-bindings.sh   # Kotlin UniFFI smoke (gitignored output)
+scripts/build-android-ffi.sh   # NDK .so + Kotlin into Expo module (APK CI)
 ```
 
 ## Development
@@ -41,12 +42,18 @@ or `app.json` → `expo.extra.cloudBaseUrl`).
 
 ## Android APK (sideload)
 
+**Current install:** the latest **`v*-pre*`** pre-release on
+[Releases](https://github.com/VtronTokito/tokito-companion/releases)
+(asset `TokitoCompanion-<tag>.apk`).
+
 CI workflow [android-debug](.github/workflows/android-debug.yml):
 
-- Builds **`assembleRelease`** so `index.android.bundle` is **embedded** (no Metro).
-- Signs with the debug keystore for easy sideload (not Play Store).
-- **Actions → android-debug → Run workflow** refreshes `debug-latest`.
-- Tag `v0.1.1-pre.1` (pattern `v*-pre*`) for a versioned pre-release.
+- Builds **`assembleRelease`** with embedded `index.android.bundle` (no Metro).
+- Links **UniFFI** `libtokito_companion_ffi.so` (real Rust cloud client).
+- Signs with the debug keystore for sideload (not Play Store).
+- Publish by tagging: `git tag v0.1.2-pre.N && git push origin v0.1.2-pre.N`
+
+Do **not** install older than `v0.1.2-pre.1` (missing UniFFI and/or JS bundle).
 
 Package id: `dev.tokito.companion`. UI tokens match desktop `tokito_ui` dark
 palette (mint accent, brand tile, Phosphor icons). Tablets ≥768dp get a

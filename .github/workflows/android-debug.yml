@@ -79,9 +79,13 @@ jobs:
         run: |
           SRC=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n1)
           test -n "$SRC"
-          DEST="${GITHUB_WORKSPACE}/tokito-companion-debug.apk"
+          TAG_SAFE="${GITHUB_REF_NAME:-local}"
+          DEST="${GITHUB_WORKSPACE}/TokitoCompanion-${TAG_SAFE}.apk"
+          # Also keep a stable filename for artifact upload
           cp "$SRC" "$DEST"
+          cp "$SRC" "${GITHUB_WORKSPACE}/tokito-companion.apk"
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "stable=${GITHUB_WORKSPACE}/tokito-companion.apk" >> "$GITHUB_OUTPUT"
           unzip -l "$DEST" | grep -E 'index.android.bundle|assets/index' || {
             echo "ERROR: JS bundle not packaged in APK"
             unzip -l "$DEST" | head -80
@@ -96,8 +100,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tokito-companion-debug-apk
-          path: tokito-companion-debug.apk
+          name: tokito-companion-apk
+          path: tokito-companion.apk
           if-no-files-found: error
 
       - name: Create GitHub pre-release
@@ -107,15 +111,22 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           TAG="${GITHUB_REF_NAME}"
+          ASSET="TokitoCompanion-${TAG}.apk"
           NOTES="$(cat <<EOF
-          ## Tokito Companion APK (pre-release)
+          ## Tokito Companion \`${TAG}\`
 
-          Sideload this APK on Android/tablet (enable install from unknown sources).
+          **Install this APK** (sideload). Uninstall any older Companion build first.
 
-          - Package: \`dev.tokito.companion\`
-          - Cloud: \`https://api.tokito.dev\` via **UniFFI Rust** (\`libtokito_companion_ffi.so\`)
-          - Build: **release** with embedded JS bundle (no Metro) + native cloud client
-          - UI: Tokito desktop tokens (mint/indigo), brand tile, Phosphor icons, tablet split view
+          | | |
+          |---|---|
+          | Package | \`dev.tokito.companion\` |
+          | Version | \`${TAG}\` |
+          | Cloud | \`https://api.tokito.dev\` via **UniFFI** (\`libtokito_companion_ffi.so\`) |
+          | Bundle | embedded \`index.android.bundle\` (no Metro) |
+          | Signing | debug keystore (sideload only — not Play Store) |
+
+          ### Do not use older tags
+          Pre-\`v0.1.2\` APKs lacked UniFFI and/or the JS bundle. Use **this** release only.
 
           EOF
           )"
@@ -123,36 +134,11 @@ jobs:
             --prerelease \
             --title "Tokito Companion ${TAG}" \
             --notes "$NOTES" \
-            tokito-companion-debug.apk
+            "$ASSET"
 
-      - name: Create floating pre-release (workflow_dispatch)
+      # workflow_dispatch: upload artifact only — no floating debug-latest tag/release
+      - name: Note (manual runs)
         if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        working-directory: ${{ github.workspace }}
         run: |
-          TAG="debug-latest"
-          NOTES="$(cat <<EOF
-          ## Tokito Companion APK
-
-          Floating pre-release from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
-
-          **Release APK** with embedded \`index.android.bundle\` + UniFFI \`libtokito_companion_ffi.so\`.
-
-          Package: \`dev.tokito.companion\`.
-
-          EOF
-          )"
-          git tag -f "$TAG" "$GITHUB_SHA"
-          git push -f origin "refs/tags/$TAG"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" tokito-companion-debug.apk --clobber
-            gh release edit "$TAG" --prerelease --notes "$NOTES" --title "Tokito Companion debug (latest)"
-          else
-            gh release create "$TAG" \
-              --prerelease \
-              --title "Tokito Companion debug (latest)" \
-              --notes "$NOTES" \
-              --target "$GITHUB_SHA" \
-              tokito-companion-debug.apk
-          fi
+          echo "Manual run complete. Download the tokito-companion-apk artifact."
+          echo "For a tracked install, push a version tag: v0.1.2-pre.N"
