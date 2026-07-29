@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { SignIn as SignInIcon, EnvelopeSimple, Key } from "phosphor-react-native";
+import { EnvelopeSimple, Key } from "phosphor-react-native";
 import type { AuthService } from "../auth/AuthService";
 import { CompanionError } from "../native/types";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
@@ -26,14 +26,11 @@ type Step = "email" | "code";
 export interface SignInScreenProps {
   auth: AuthService;
   onSignedIn: () => void;
-  /** Active Tokito Cloud host (for footer; no hardcoded production host). */
-  cloudHost: string;
 }
 
 export function SignInScreen({
   auth,
   onSignedIn,
-  cloudHost,
 }: SignInScreenProps): JSX.Element {
   const { width } = useWindowDimensions();
   const tablet = width >= TABLET_MIN_WIDTH;
@@ -154,11 +151,6 @@ export function SignInScreen({
           )}
 
           {error !== null ? <ErrorText>{error}</ErrorText> : null}
-
-          <View style={styles.footer}>
-            <SignInIcon size={14} color={tokens.text3} weight="regular" />
-            <Text style={styles.footerText}>{cloudHost}</Text>
-          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -191,11 +183,4 @@ const styles = StyleSheet.create({
   form: { gap: tokens.space3, marginTop: tokens.space2 },
   hintRow: { flexDirection: "row", alignItems: "center", gap: tokens.space2 },
   hint: { color: tokens.text3, fontSize: 12, flex: 1, lineHeight: 16 },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: tokens.space2,
-    marginTop: tokens.space3,
-  },
-  footerText: { color: tokens.text3, fontSize: 12 },
 });

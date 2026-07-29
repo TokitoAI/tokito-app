@@ -22,6 +22,7 @@ import { ProjectDetailScreen } from "./screens/ProjectDetailScreen";
 import { ProjectListScreen } from "./screens/ProjectListScreen";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
 import { SignInScreen } from "./screens/SignInScreen";
+import { applySystemChrome } from "./systemChrome";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile, PrimaryButton } from "./ui/primitives";
 
@@ -39,14 +40,6 @@ export type AppProps = {
 function defaultCloudBaseUrl(): string {
   const extra = Constants.expoConfig?.extra as { cloudBaseUrl?: string } | undefined;
   return extra?.cloudBaseUrl ?? "";
-}
-
-function hostLabel(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    return baseUrl;
-  }
 }
 
 export default function App({
@@ -70,6 +63,10 @@ export default function App({
     const t = setTimeout(() => setFontsReady(true), 2500);
     return () => clearTimeout(t);
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    void applySystemChrome();
+  }, []);
 
   const baseUrl = normalizeBaseUrl(cloudBaseUrl);
   const client = useMemo((): CloudClient => createCloudClient(baseUrl), [baseUrl]);
@@ -159,7 +156,6 @@ export default function App({
         {bootError !== null ? <Text style={styles.errorPad}>{bootError}</Text> : null}
         <SignInScreen
           auth={auth}
-          cloudHost={hostLabel(baseUrl)}
           onSignedIn={() => {
             void refresh();
           }}
