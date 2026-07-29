@@ -17,6 +17,7 @@ keystore blocks updates unless Play App Signing reset is used.
 **How to apply:** `configure-android-release.mjs` after `expo prebuild`; workflow
 `android-release.yml` verifies the APK is not debug-signed.
 
-**CI disk:** Release job frees runner space, builds UniFFI + RN native for
-**arm64-v8a only**, and `cargo clean`s before Gradle — dual-ABI + UniFFI
-overflowed `ubuntu-latest` (`No space left on device` on v0.1.2-pre.3).
+**CI disk:** `android-release.yml` splits UniFFI and Gradle onto **two runners**
+(each gets a fresh disk). Do **not** set `free-disk-space` `android: true` —
+that deletes `/usr/local/lib/android` and `setup-android` fails with EACCES.
+Native builds are **arm64-v8a only**.

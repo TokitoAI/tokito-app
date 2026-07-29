@@ -14,24 +14,25 @@ concurrency:
   group: android-release-${{ github.ref }}
   cancel-in-progress: true
 
+# Split UniFFI + Gradle onto separate runners so neither overflows ~14GB free
+# on ubuntu-latest (pre.3: disk full in expo-modules-core; pre.4: wiping the
+# preinstalled Android SDK broke setup-android with EACCES).
+
 jobs:
-  build-release:
-    name: release APK + AAB (UniFFI, upload-signed)
+  build-ffi:
+    name: UniFFI Android .so + Kotlin
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: apps/mobile
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      # UniFFI + Expo C++ + Gradle overflows default ~14GB free on ubuntu-latest
-      # (v0.1.2-pre.3 failed: "No space left on device" compiling expo-modules-core).
       - name: Free runner disk space
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
-          android: true
+          # Keep preinstalled SDK path writable — android:true deletes it and
+          # setup-android cannot recreate /usr/local/lib/android (EACCES).
+          android: false
           dotnet: true
           haskell: true
           large-packages: true
@@ -41,12 +42,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -64,19 +59,87 @@ jobs:
           link-to-sdk: true
 
       - name: Build UniFFI Android .so + Kotlin bindings
-        working-directory: ${{ github.workspace }}
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          # arm64 only — halves cargo + Gradle native disk vs dual-ABI
           TOKITO_ANDROID_TARGETS: arm64-v8a
         run: bash scripts/build-android-ffi.sh
 
-      - name: Reclaim Rust build disk
+      - name: Stage UniFFI artifacts
+        run: |
+          set -euo pipefail
+          STAGE="${GITHUB_WORKSPACE}/ffi-stage"
+          SRC="apps/mobile/modules/tokito-companion-ffi/android/src/main"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -a "$SRC/jniLibs" "$STAGE/"
+          cp -a "$SRC/java/uniffi" "$STAGE/"
+          find "$STAGE" -name 'libtokito_companion_ffi.so' | tee /tmp/so-list.txt
+          test -s /tmp/so-list.txt
+          test -d "$STAGE/uniffi"
+
+      - name: Upload UniFFI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tokito-companion-ffi-android
+          path: ffi-stage/
+          if-no-files-found: error
+          retention-days: 2
+
+  build-release:
+    name: release APK + AAB (upload-signed)
+    needs: build-ffi
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Download UniFFI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tokito-companion-ffi-android
+          path: ffi-stage
+
+      - name: Install UniFFI into Expo module
         working-directory: ${{ github.workspace }}
         run: |
-          cargo clean || true
-          rm -rf target
+          set -euo pipefail
+          DEST="apps/mobile/modules/tokito-companion-ffi/android/src/main"
+          mkdir -p "$DEST/jniLibs" "$DEST/java"
+          rm -rf "$DEST/jniLibs" "$DEST/java/uniffi"
+          cp -a ffi-stage/jniLibs "$DEST/"
+          cp -a ffi-stage/uniffi "$DEST/java/"
+          find "$DEST/jniLibs" -name 'libtokito_companion_ffi.so' | tee /tmp/so-list.txt
+          test -s /tmp/so-list.txt
+          test -d "$DEST/java/uniffi"
           df -h
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install npm deps
         run: npm ci
@@ -86,7 +149,6 @@ jobs:
 
       - name: Limit React Native ABIs to arm64-v8a
         run: |
-          # Matches UniFFI jniLibs; avoids compiling expo-modules-core for armeabi-v7a
           if grep -q '^reactNativeArchitectures=' android/gradle.properties 2>/dev/null; then
             sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=arm64-v8a/' android/gradle.properties
           else
@@ -140,7 +202,6 @@ jobs:
             exit 1
           }
 
-          # Must be signed with upload cert, not Android debug
           "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" \
             verify --print-certs "$APK_OUT" | tee /tmp/apk-certs.txt
           if grep -qi 'CN=Android Debug' /tmp/apk-certs.txt; then
