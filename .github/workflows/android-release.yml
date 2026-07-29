@@ -25,9 +25,22 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
+      # UniFFI + Expo C++ + Gradle overflows default ~14GB free on ubuntu-latest
+      # (v0.1.2-pre.3 failed: "No space left on device" compiling expo-modules-core).
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          targets: aarch64-linux-android
 
       - uses: actions/setup-node@v4
         with:
@@ -54,15 +67,32 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          # Device ABIs only (Play App Bundle / APK); skip emulator x86_64 for speed
-          TOKITO_ANDROID_TARGETS: arm64-v8a,armeabi-v7a
+          # arm64 only — halves cargo + Gradle native disk vs dual-ABI
+          TOKITO_ANDROID_TARGETS: arm64-v8a
         run: bash scripts/build-android-ffi.sh
+
+      - name: Reclaim Rust build disk
+        working-directory: ${{ github.workspace }}
+        run: |
+          cargo clean || true
+          rm -rf target
+          df -h
 
       - name: Install npm deps
         run: npm ci
 
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --non-interactive
+
+      - name: Limit React Native ABIs to arm64-v8a
+        run: |
+          # Matches UniFFI jniLibs; avoids compiling expo-modules-core for armeabi-v7a
+          if grep -q '^reactNativeArchitectures=' android/gradle.properties 2>/dev/null; then
+            sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=arm64-v8a/' android/gradle.properties
+          else
+            echo 'reactNativeArchitectures=arm64-v8a' >> android/gradle.properties
+          fi
+          grep reactNativeArchitectures android/gradle.properties
 
       - name: Configure Play-quality release signing
         env:
@@ -78,6 +108,7 @@ jobs:
           NODE_ENV: production
           GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
         run: |
+          df -h
           chmod +x gradlew
           ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
         timeout-minutes: 45
@@ -151,7 +182,7 @@ jobs:
           | | |
           |---|---|
           | Package | \`dev.tokito.companion\` |
-          | Native | \`libtokito_companion_ffi.so\` (UniFFI) |
+          | Native | \`libtokito_companion_ffi.so\` (UniFFI, arm64-v8a) |
           | Bundle | embedded \`index.android.bundle\` |
           | Signing | upload keystore (not Android Debug) |
 
