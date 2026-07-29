@@ -50,6 +50,8 @@ jobs:
 
       - name: Assemble release APK (embeds JS bundle)
         working-directory: apps/mobile/android
+        env:
+          NODE_ENV: production
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
