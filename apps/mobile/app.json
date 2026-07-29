@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Tokito Companion",
+    "slug": "tokito-companion",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "tokito-companion",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1220"
+    },
+    "android": {
+      "package": "dev.tokito.companion",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1220"
+      },
+      "permissions": ["INTERNET"]
+    },
+    "plugins": ["expo-secure-store"],
+    "extra": {
+      "cloudBaseUrl": "https://api.tokito.dev"
+    }
+  }
+}

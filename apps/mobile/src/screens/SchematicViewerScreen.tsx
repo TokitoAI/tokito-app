@@ -9,7 +9,9 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import type { HttpCloudClient } from "../api/cloudHttp.js";
+import { CompanionError } from "../native/types.js";
 import { colors } from "../theme.js";
 
 export interface SchematicViewerScreenProps {
@@ -21,9 +23,9 @@ export interface SchematicViewerScreenProps {
 }
 
 /**
- * Read-only schematic viewer — loads SVG artifact and renders via HTML webview
- * markup when available; falls back to scrollable SVG source for environments
- * without a WebView native module.
+ * Read-only schematic viewer — loads SVG artifact into a WebView as a data-URL
+ * image (avoids executing SVG script). Falls back to source text if load fails
+ * to produce HTML (should not happen with WebView linked).
  */
 export function SchematicViewerScreen({
   client,
@@ -36,12 +38,6 @@ export function SchematicViewerScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
-  const [WebViewComp, setWebViewComp] = useState<null | React.ComponentType<{
-    originWhitelist: string[];
-    style: object;
-    scalesPageToFit?: boolean;
-    source: { html: string };
-  }>>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,25 +47,15 @@ export function SchematicViewerScreen({
       try {
         const art = await client.getArtifactText(token, projectId, artifactName);
         if (!cancelled) setSvg(art.body);
-        try {
-          const mod = await import("react-native-webview");
-          if (!cancelled) {
-            setWebViewComp(
-              () =>
-                mod.WebView as React.ComponentType<{
-                  originWhitelist: string[];
-                  style: object;
-                  scalesPageToFit?: boolean;
-                  source: { html: string };
-                }>,
-            );
-          }
-        } catch {
-          // WebView optional — source fallback below.
-        }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load SVG");
+          setError(
+            err instanceof CompanionError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : "Failed to load SVG",
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -82,7 +68,7 @@ export function SchematicViewerScreen({
 
   const html =
     svg !== null
-      ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5"/></head><body style="margin:0;background:#f8f6f0;display:flex;justify-content:center;">${svg}</body></html>`
+      ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"/></head><body style="margin:0;background:#f8f6f0;display:flex;justify-content:center;"><img alt="schematic" style="max-width:100%;height:auto" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}"/></body></html>`
       : "";
 
   return (
@@ -93,21 +79,17 @@ export function SchematicViewerScreen({
       <Text style={styles.title}>{artifactName}</Text>
       {loading ? <ActivityIndicator color={colors.accent} /> : null}
       {error !== null ? <Text style={styles.error}>{error}</Text> : null}
-      {svg !== null && WebViewComp !== null ? (
-        <WebViewComp
+      {svg !== null ? (
+        <WebView
           originWhitelist={["*"]}
           style={{ flex: 1, width, height: height - 140, backgroundColor: "#f8f6f0" }}
           scalesPageToFit
           source={{ html }}
         />
       ) : null}
-      {svg !== null && WebViewComp === null ? (
+      {svg === null && !loading && error === null ? (
         <ScrollView style={styles.fallback} contentContainerStyle={{ padding: 8 }}>
-          <Text style={styles.muted}>WebView unavailable — SVG source preview</Text>
-          <Text style={styles.source} selectable>
-            {svg.slice(0, 8000)}
-            {svg.length > 8000 ? "\n…" : ""}
-          </Text>
+          <Text style={styles.muted}>No schematic data</Text>
         </ScrollView>
       ) : null}
     </View>
@@ -121,5 +103,4 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, marginLeft: 8 },
   fallback: { flex: 1, backgroundColor: colors.surface, borderRadius: 8 },
   muted: { color: colors.textMuted, marginBottom: 8 },
-  source: { color: colors.text, fontFamily: "monospace", fontSize: 11 },
 });

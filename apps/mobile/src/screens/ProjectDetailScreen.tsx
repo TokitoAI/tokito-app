@@ -2,8 +2,8 @@ import type { JSX } from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -14,6 +14,7 @@ import type {
   ProjectDetail,
   Proposal,
 } from "../api/cloudHttp.js";
+import { CompanionError } from "../native/types.js";
 import { colors } from "../theme.js";
 
 export interface ProjectDetailScreenProps {
@@ -48,7 +49,13 @@ export function ProjectDetailScreen({
       setDetail(project);
       setProposals(pending);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load project");
+      setError(
+        err instanceof CompanionError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to load project",
+      );
     } finally {
       setLoading(false);
     }
@@ -65,7 +72,13 @@ export function ProjectDetailScreen({
       await client.decideProposal(token, projectId, id, decision);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Decision failed");
+      setError(
+        err instanceof CompanionError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Decision failed",
+      );
     } finally {
       setBusyId(null);
     }
@@ -83,7 +96,7 @@ export function ProjectDetailScreen({
     detail?.artifact_manifest.filter((a) => a.name.endsWith(".svg")) ?? [];
 
   return (
-    <View style={styles.root}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Pressable onPress={onBack}>
         <Text style={styles.link}>← Projects</Text>
       </Pressable>
@@ -95,19 +108,14 @@ export function ProjectDetailScreen({
       {bomLines.length === 0 && !loading ? (
         <Text style={styles.muted}>No BOM lines in snapshot.</Text>
       ) : null}
-      <FlatList
-        data={bomLines}
-        keyExtractor={(item, i) => `${item.ref}-${i}`}
-        style={{ maxHeight: 180 }}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={styles.rowRef}>{item.ref}</Text>
-            <Text style={styles.rowVal}>
-              {item.value} ×{item.qty}
-            </Text>
-          </View>
-        )}
-      />
+      {bomLines.map((item, i) => (
+        <View key={`${item.ref}-${i}`} style={styles.row}>
+          <Text style={styles.rowRef}>{item.ref}</Text>
+          <Text style={styles.rowVal}>
+            {item.value} ×{item.qty}
+          </Text>
+        </View>
+      ))}
 
       <Text style={styles.h2}>Schematics</Text>
       {svgArtifacts.map((a) => (
@@ -146,12 +154,13 @@ export function ProjectDetailScreen({
           </View>
         </View>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 20, paddingTop: 56, gap: 8 },
+  root: { flex: 1, backgroundColor: colors.bg },
+  content: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 40, gap: 8 },
   link: { color: colors.accent, marginBottom: 8 },
   title: { color: colors.text, fontSize: 24, fontWeight: "700", marginBottom: 8 },
   h2: { color: colors.text, fontSize: 16, fontWeight: "600", marginTop: 12 },

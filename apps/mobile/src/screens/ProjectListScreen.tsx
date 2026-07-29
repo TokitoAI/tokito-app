@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import type { HttpCloudClient, ProjectListItem } from "../api/cloudHttp.js";
+import { CompanionError } from "../native/types.js";
 import { colors } from "../theme.js";
 
 export interface ProjectListScreenProps {
@@ -39,7 +40,13 @@ export function ProjectListScreen({
       const list = await client.listProjects(token);
       setProjects(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load projects");
+      setError(
+        err instanceof CompanionError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to load projects",
+      );
     } finally {
       setLoading(false);
     }
