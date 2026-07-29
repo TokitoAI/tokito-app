@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   build-apk:
-    name: assembleDebug APK
+    name: assembleRelease APK (sideload)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/mobile
@@ -45,20 +45,29 @@ jobs:
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Assemble debug APK
+      - name: Patch release signing for sideload
+        run: node scripts/patch-android-release.mjs
+
+      - name: Assemble release APK (embeds JS bundle)
         working-directory: apps/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Stage APK
         id: apk
         run: |
-          SRC=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -n1)
+          SRC=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n1)
           test -n "$SRC"
           DEST="${GITHUB_WORKSPACE}/tokito-companion-debug.apk"
           cp "$SRC" "$DEST"
           echo "path=$DEST" >> "$GITHUB_OUTPUT"
+          # Sanity: embedded bundle must exist inside the APK
+          unzip -l "$DEST" | grep -E 'index.android.bundle|assets/index' || {
+            echo "ERROR: JS bundle not packaged in APK"
+            unzip -l "$DEST" | head -80
+            exit 1
+          }
           ls -lh "$DEST"
 
       - uses: actions/upload-artifact@v4
@@ -75,18 +84,14 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           NOTES="$(cat <<EOF
-          ## Tokito Companion debug APK (pre-release)
+          ## Tokito Companion APK (pre-release)
 
-          Sideload this **debug**-signed APK on Android (enable install from unknown sources).
+          Sideload this APK on Android/tablet (enable install from unknown sources).
 
           - Package: \`dev.tokito.companion\`
           - Cloud: \`https://api.tokito.dev\`
-          - Build: debug (\`assembleDebug\`)
-
-          ### Notes
-          - OTP sign-in uses live Tokito Cloud auth.
-          - Companion sync (\`/v1/companion/*\`) must be deployed on the API for project list / BOM / proposals / SVG.
-          - Not Play Store / release-signed.
+          - Build: **release** with embedded JS bundle (no Metro required)
+          - UI: Tokito desktop tokens (mint/indigo), brand tile, Phosphor icons, tablet split view
 
           EOF
           )"
@@ -104,14 +109,13 @@ jobs:
         run: |
           TAG="debug-latest"
           NOTES="$(cat <<EOF
-          ## Tokito Companion debug APK
+          ## Tokito Companion APK
 
-          Floating pre-release rebuilt from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
+          Floating pre-release from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`.
 
-          Install \`tokito-companion-debug.apk\` (debug-signed). Package: \`dev.tokito.companion\`.
+          **Release APK** with embedded \`index.android.bundle\` — opens without Metro.
 
-          Companion sync requires \`tokito-ai\` with \`/v1/companion/*\` live on the configured API base.
-          As of this build, production \`api.tokito.dev\` may still return 404 for companion routes until redeployed.
+          Package: \`dev.tokito.companion\`.
 
           EOF
           )"
