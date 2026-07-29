@@ -19,11 +19,14 @@
         "foregroundImage": "./assets/tokito-mark.png",
         "backgroundColor": "#07101E"
       },
-      "permissions": ["INTERNET"]
+      "permissions": [
+        "INTERNET"
+      ]
     },
     "plugins": [
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "expo-asset"
     ],
     "extra": {
       "cloudBaseUrl": "https://api.tokito.dev"
