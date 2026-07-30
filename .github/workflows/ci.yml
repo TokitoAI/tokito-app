@@ -18,13 +18,17 @@ env:
 
 jobs:
   rust:
-    name: rust (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: rust (${{ matrix.platform }})
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - platform: linux
+            runs_on: '["self-hosted","linux","x64","tokito-vps"]'
+          - platform: windows
+            runs_on: '"windows-latest"'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
@@ -40,19 +44,22 @@ jobs:
 
   mobile:
     name: mobile (typescript)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, tokito-vps]
     timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
       - run: npm ci
+      - run: npx expo install --check
+      - run: npx expo-doctor
+      - run: npm audit --audit-level=high
       - run: npm run forbid-js
       - run: npm run typecheck
       - run: npm run lint

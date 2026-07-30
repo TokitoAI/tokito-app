@@ -8,7 +8,7 @@ Cargo workspace with two members plus a TypeScript React Native shell:
 - **`tokito-companion-ffi`** (`crates/ffi`) — UniFFI `CompanionClient` object
   over a process-wide Tokio runtime. It exposes auth plus a callback-driven
   realtime session. Generate Kotlin through the scripts in `scripts/`.
-- **`apps/mobile`** — Expo SDK 52, React Native, and TypeScript. Tokens mirror
+- **`apps/mobile`** — Expo SDK 57, React Native 0.86, and TypeScript. Tokens mirror
   `tokito_ui::Tokens::dark`; tablet layouts use master/detail.
   - **`modules/tokito-companion-ffi`** — Expo local module containing generated
     UniFFI Kotlin and the packaged native `.so`.
@@ -28,6 +28,12 @@ and exchanges only canonical documents with React Native.
 - Cloud base remains `https://api.tokito.dev`.
 - CI fails if the JavaScript bundle, UniFFI `.so`, or release certificate is
   missing/incorrect.
+- CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
+  high/critical severity. GitHub Actions are pinned to immutable commits.
+- Linux Rust and TypeScript CI use the private, hardened Tokito VPS runner;
+  Windows compatibility stays on `windows-latest`. Android release remains on
+  isolated hosted runners because it installs SDK/NDK tooling and performs
+  aggressive disk cleanup that is not allowed on the production VPS.
 
 **Versions:** Rust 1.88+, edition 2021, UniFFI 0.29.5, reqwest 0.12 + rustls.
 
