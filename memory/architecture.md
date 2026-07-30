@@ -30,10 +30,12 @@ and exchanges only canonical documents with React Native.
   missing/incorrect.
 - CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
   high/critical severity. GitHub Actions are pinned to immutable commits.
-- Linux Rust and TypeScript CI use the private, hardened Tokito VPS runner;
-  Windows compatibility stays on `windows-latest`. Android release remains on
-  isolated hosted runners because it installs SDK/NDK tooling and performs
-  aggressive disk cleanup that is not allowed on the production VPS.
+- Linux Rust, TypeScript CI, and Android releases use the private, hardened
+  Tokito VPS runner; Windows compatibility stays on `windows-latest`. Android
+  release keeps UniFFI and Gradle in separate jobs so the runner cleanup hook
+  removes each repository workspace between stages. It never runs aggressive
+  host disk-cleanup actions; SDK/NDK and tool caches are runner-owned and
+  reusable.
 
 **Versions:** Rust 1.88+, edition 2021, UniFFI 0.29.5, reqwest 0.12 + rustls.
 
