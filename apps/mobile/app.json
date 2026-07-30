@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "tokito-companion",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0C0D10"
-    },
     "android": {
       "package": "dev.tokito.companion",
       "versionCode": 6,
@@ -21,6 +16,12 @@
       },
       "permissions": [
         "INTERNET"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.VIBRATE"
       ]
     },
     "plugins": [
@@ -30,13 +31,21 @@
       [
         "expo-navigation-bar",
         {
-          "visibility": "hidden",
-          "behavior": "overlay-swipe",
-          "position": "absolute",
-          "barStyle": "light",
+          "hidden": true,
+          "style": "dark",
+          "enforceContrast": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
           "backgroundColor": "#0C0D10"
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "extra": {
       "cloudBaseUrl": "https://api.tokito.dev"

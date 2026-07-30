@@ -16,6 +16,7 @@ Thumbs.db
 bindings/
 apps/mobile/modules/tokito-companion-ffi/android/src/main/jniLibs/
 apps/mobile/modules/tokito-companion-ffi/android/src/main/java/uniffi/
+apps/mobile/modules/tokito-companion-ffi/android/build/
 
 # React Native / Node
 apps/mobile/node_modules/
