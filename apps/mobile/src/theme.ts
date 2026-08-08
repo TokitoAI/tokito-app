@@ -1,6 +1,6 @@
 /**
  * Tokito Companion tokens — mirrored from `tokito_ui::Tokens::dark()`
- * (`VtronTokito/ui` `src/tokens.rs`). Keep hexes in lockstep with desktop.
+ * (`TokitoAI/ui` `src/tokens.rs`). Keep hexes in lockstep with desktop.
  */
 
 export const tokens = {

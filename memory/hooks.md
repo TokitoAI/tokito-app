@@ -2,9 +2,9 @@
 
 | Peer | Role |
 |---|---|
-| `VtronTokito/tokito-ai` | Auth (live), billing (live), companion sync API (M2) |
-| `VtronTokito/tokito` | Desktop cloud session + publish/poll companion decisions (M3+) |
-| `VtronTokito/tokito-mcp` | Not called from companion — catalog stays desktop/server |
+| `TokitoAI/tokito-ai` | Auth (live), billing (live), companion sync API (M2) |
+| `TokitoAI/tokito` | Desktop cloud session + publish/poll companion decisions (M3+) |
+| `TokitoAI/tokito-mcp` | Not called from companion — catalog stays desktop/server |
 
 **Auth (live today):** Companion and desktop both use `/v1/auth/otp/*`,
 `/v1/auth/oauth/exchange`, `/v1/auth/me`. Same JWT. See

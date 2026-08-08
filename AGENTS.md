@@ -2,13 +2,13 @@
 
 **For AI coding assistants working in this repo.** Read this first, then the
 `memory/` files relevant to your task. Check the org board:
-<https://github.com/orgs/VtronTokito/projects/1>.
+<https://github.com/orgs/TokitoAI/projects/1>.
 
 ## Product
 
 Tokito Companion is a **mobile review surface** for Tokito — account, synced
 projects, BOM review, AI proposal approve/reject, read-only schematic viewer.
-It is **not** a schematic editor. CAD stays on desktop (`VtronTokito/tokito`).
+It is **not** a schematic editor. CAD stays on desktop (`TokitoAI/tokito`).
 
 ## How this notebook works
 
@@ -19,8 +19,8 @@ It is **not** a schematic editor. CAD stays on desktop (`VtronTokito/tokito`).
 ## Board
 
 Companion work is tracked on the org project board. Prefer issues on
-`VtronTokito/tokito-companion` for app work; cross-repo API work may also use
-`VtronTokito/tokito-ai` / `VtronTokito/tokito` issues linked from the Companion
+`TokitoAI/tokito-companion` for app work; cross-repo API work may also use
+`TokitoAI/tokito-ai` / `TokitoAI/tokito` issues linked from the Companion
 epic. Type labels: `epic`, `feature`, `task`, `bug`, `chore`.
 
 Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.

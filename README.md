@@ -1,6 +1,6 @@
 # Tokito Companion
 
-Mobile companion for the [Tokito](https://github.com/VtronTokito/tokito) desktop
+Mobile companion for the [Tokito](https://github.com/TokitoAI/tokito) desktop
 schematic studio — **review**, not CAD edit.
 
 - Sign in with the same Tokito Cloud account (JWT via `tokito-ai`)
@@ -44,7 +44,7 @@ or `app.json` → `expo.extra.cloudBaseUrl`).
 
 **Current install / Play upload:** latest GitHub release asset
 `TokitoCompanion-<tag>.apk` / `.aab` on
-[Releases](https://github.com/VtronTokito/tokito-companion/releases).
+[Releases](https://github.com/TokitoAI/tokito-companion/releases).
 
 CI [android-release](.github/workflows/android-release.yml):
 

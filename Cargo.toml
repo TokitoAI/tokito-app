@@ -10,7 +10,7 @@ version = "0.2.1"
 edition = "2021"
 license = "MIT"
 publish = false
-repository = "https://github.com/VtronTokito/tokito-companion"
+repository = "https://github.com/TokitoAI/tokito-companion"
 rust-version = "1.88"
 
 [workspace.dependencies]
