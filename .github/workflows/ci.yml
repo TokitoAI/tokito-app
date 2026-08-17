@@ -59,7 +59,8 @@ jobs:
       - run: npm ci
       - run: npx expo install --check
       - run: npx expo-doctor
-      - run: npm audit --audit-level=high
+      - run: npm run audit:test
+      - run: npm run audit
       - run: npm run forbid-js
       - run: npm run typecheck
       - run: npm run lint
