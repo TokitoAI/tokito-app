@@ -147,7 +147,7 @@ jobs:
         run: |
           npx expo install --check
           npx expo-doctor
-          npm audit --audit-level=high
+          npm run audit
 
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --non-interactive
