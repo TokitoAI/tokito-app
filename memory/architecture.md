@@ -28,6 +28,11 @@ and exchanges only canonical documents with React Native.
 - Cloud base remains `https://api.tokito.dev`.
 - CI fails if the JavaScript bundle, UniFFI `.so`, or release certificate is
   missing/incorrect.
+- CI also requires `package.json`, Expo `app.json`, the release tag's base
+  version, the monotonic Android `versionCode`, and the finished APK manifest
+  to agree. UniFFI `i64` project fields are converted to JS-safe numbers in the
+  Kotlin Expo module; passing Kotlin `Long` directly makes Expo reject the
+  entire project-detail result after the Rust call succeeds.
 - CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
   high/critical severity. GitHub Actions are pinned to immutable commits.
 - Linux Rust, TypeScript CI, and Android releases use the private, hardened

@@ -143,6 +143,11 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      - name: Validate release identity and monotonic Android version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: npm run release:validate
+
       - name: Validate Expo dependency graph
         run: |
           npx expo install --check
@@ -213,6 +218,14 @@ jobs:
             echo "ERROR: APK is still debug-signed"
             exit 1
           fi
+
+          AAPT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
+          EXPECTED_VERSION=$(node -p "require('./app.json').expo.version")
+          EXPECTED_CODE=$(node -p "require('./app.json').expo.android.versionCode")
+          APK_BADGING=$("$AAPT" dump badging "$APK_OUT" | head -n1)
+          echo "$APK_BADGING"
+          grep -F "versionName='${EXPECTED_VERSION}'" <<<"$APK_BADGING"
+          grep -F "versionCode='${EXPECTED_CODE}'" <<<"$APK_BADGING"
           ls -lh "$APK_OUT" "$AAB_OUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

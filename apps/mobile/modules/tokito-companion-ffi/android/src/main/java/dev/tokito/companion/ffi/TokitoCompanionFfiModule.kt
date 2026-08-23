@@ -96,13 +96,16 @@ class TokitoCompanionFfiModule : Module() {
             mapOf(
               "id" to d.id,
               "name" to d.name,
-              "sheet_count" to d.sheetCount,
+              // Expo's JS value converter does not accept Kotlin Long. These
+              // server-bounded integer fields remain exact as IEEE-754 values
+              // and are validated as finite numbers by the TypeScript boundary.
+              "sheet_count" to d.sheetCount.toDouble(),
               "bom_lines" to d.bomLines.map { line ->
                 mapOf(
                   "ref" to line.ref,
                   "value" to line.value,
                   "footprint" to line.footprint,
-                  "qty" to line.qty,
+                  "qty" to line.qty.toDouble(),
                 )
               },
             )
@@ -112,7 +115,7 @@ class TokitoCompanionFfiModule : Module() {
               "name" to a.name,
               "content_type" to a.contentType,
               "sha256" to a.sha256,
-              "bytes" to a.bytes,
+              "bytes" to a.bytes.toDouble(),
             )
           },
         )
