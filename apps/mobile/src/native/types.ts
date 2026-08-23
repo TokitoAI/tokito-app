@@ -24,6 +24,7 @@ export type CompanionErrorKind =
   | "Unauthorized"
   | "Unavailable"
   | "Network"
+  | "NativeCompatibility"
   | "Unexpected";
 
 export class CompanionError extends Error {
@@ -68,6 +69,13 @@ export class CompanionError extends Error {
 
   static network(msg: string): CompanionError {
     return new CompanionError("Network", `network error: ${msg}`, msg);
+  }
+
+  static nativeCompatibility(): CompanionError {
+    return new CompanionError(
+      "NativeCompatibility",
+      "App components are out of sync. Install the latest Companion build.",
+    );
   }
 
   static unexpected(): CompanionError {

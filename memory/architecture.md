@@ -28,6 +28,11 @@ and exchanges only canonical documents with React Native.
 - Cloud base remains `https://api.tokito.dev`.
 - CI fails if the JavaScript bundle, UniFFI `.so`, or release certificate is
   missing/incorrect.
+- Generated UniFFI Kotlin and `libtokito_companion_ffi.so` are one atomic
+  artifact pair. Both platform build scripts emit a SHA-256 manifest; the
+  Android module's `preBuild` verifies it and refuses to package absent or
+  mixed-revision artifacts. This is required because UniFFI otherwise discovers
+  the API checksum mismatch only when the first native call runs on-device.
 - CI also requires `package.json`, Expo `app.json`, the release tag's base
   version, the monotonic Android `versionCode`, and the finished APK manifest
   to agree. The legacy project-detail bridge serializes its nested result to

@@ -34,3 +34,35 @@ dependencies {
   // https://mozilla.github.io/uniffi-rs/latest/kotlin/gradle.html
   implementation "net.java.dev.jna:jna:5.14.0@aar"
 }
+
+def ffiMain = file('src/main')
+def ffiManifest = new groovy.json.JsonSlurper()
+def sha256 = { File input ->
+  def digest = java.security.MessageDigest.getInstance('SHA-256')
+  input.withInputStream { stream ->
+    byte[] buffer = new byte[8192]
+    for (int read = stream.read(buffer); read != -1; read = stream.read(buffer)) {
+      digest.update(buffer, 0, read)
+    }
+  }
+  digest.digest().collect { String.format('%02x', it) }.join()
+}
+
+tasks.register('verifyUniFfiArtifactPair') {
+  doLast {
+    def manifestFile = new File(ffiMain, 'ffi-artifact-manifest.json')
+    if (!manifestFile.isFile()) {
+      throw new GradleException('UniFFI artifact manifest is missing. Run scripts/build-android-ffi.sh (Linux) or scripts/build-android-ffi.ps1 (Windows) before building Android.')
+    }
+    def manifest = ffiManifest.parse(manifestFile)
+    def expected = [(manifest.kotlin.path): manifest.kotlin.sha256] + manifest.libraries
+    expected.each { relative, hash ->
+      def artifact = new File(ffiMain, relative)
+      if (!artifact.isFile() || sha256(artifact) != hash) {
+        throw new GradleException("UniFFI artifacts are out of sync at ${relative}. Rebuild the Rust library and Kotlin bindings together.")
+      }
+    }
+  }
+}
+
+tasks.named('preBuild').configure { dependsOn('verifyUniFfiArtifactPair') }

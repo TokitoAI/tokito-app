@@ -3,6 +3,7 @@ package dev.tokito.companion.ffi
 import android.util.Base64
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -275,9 +276,22 @@ class TokitoCompanionFfiModule : Module() {
     } catch (err: CompanionException) {
       // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
       val code = err::class.java.simpleName
+      Log.w(TAG, "UniFFI call failed: $code (${err.message})")
       throw CodedException(code, err.message ?: code, err)
     } catch (err: Exception) {
+      Log.e(TAG, "Native bridge call failed: ${err::class.java.name}: ${err.message}", err)
+      if (err.message?.contains("UniFFI API checksum mismatch") == true) {
+        throw CodedException(
+          "NativeCompatibility",
+          "App components are out of sync. Install the latest Companion build.",
+          err,
+        )
+      }
       throw CodedException("Unexpected", err.message ?: "unexpected native error", err)
     }
+  }
+
+  private companion object {
+    const val TAG = "TokitoCompanionFfi"
   }
 }

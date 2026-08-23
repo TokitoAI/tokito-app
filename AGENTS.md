@@ -39,6 +39,10 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
   `libtokito_companion_ffi.so`, **upload keystore** signing (GitHub secrets
   `ANDROID_UPLOAD_*` — Play-quality, not debug). Cloud stays
   `https://api.tokito.dev`. UI tokens/icons mirror `tokito_ui`.
+- **Android UniFFI artifacts are an inseparable pair.** Before any local APK,
+  run `scripts/build-android-ffi.ps1` on Windows or
+  `scripts/build-android-ffi.sh` on Linux. Gradle verifies the generated
+  manifest and refuses to package stale Kotlin bindings with a different `.so`.
 - **No stub clients or stub HTTP routes.** Device builds must use UniFFI
   (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
   If a `/v1/companion/*` method is not implemented server-side yet, do not

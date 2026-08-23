@@ -77,6 +77,7 @@ jobs:
           mkdir -p "$STAGE"
           cp -a "$SRC/jniLibs" "$STAGE/"
           cp -a "$SRC/java/uniffi" "$STAGE/"
+          cp "$SRC/ffi-artifact-manifest.json" "$STAGE/"
           find "$STAGE" -name 'libtokito_companion_ffi.so' | tee /tmp/so-list.txt
           test -s /tmp/so-list.txt
           test -d "$STAGE/uniffi"
@@ -121,6 +122,7 @@ jobs:
           rm -rf "$DEST/jniLibs" "$DEST/java/uniffi"
           cp -a ffi-stage/jniLibs "$DEST/"
           cp -a ffi-stage/uniffi "$DEST/java/"
+          cp ffi-stage/ffi-artifact-manifest.json "$DEST/"
           find "$DEST/jniLibs" -name 'libtokito_companion_ffi.so' | tee /tmp/so-list.txt
           test -s /tmp/so-list.txt
           test -d "$DEST/java/uniffi"

@@ -88,6 +88,8 @@ function mapNativeError(err: unknown): CompanionError {
       return CompanionError.unavailable(message);
     case "Network":
       return CompanionError.network(message);
+    case "NativeCompatibility":
+      return CompanionError.nativeCompatibility();
     case "Unexpected":
       return CompanionError.unexpected();
     default:

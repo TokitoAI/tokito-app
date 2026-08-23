@@ -80,6 +80,7 @@ cargo run -p tokito-companion-ffi --bin uniffi-bindgen -- generate \
 mkdir -p "$KOTLIN_OUT"
 rm -rf "$KOTLIN_OUT/uniffi"
 cp -a "$ROOT/bindings/kotlin/." "$KOTLIN_OUT/"
+node "$ROOT/scripts/write-android-ffi-manifest.mjs"
 
 echo "Android FFI ready:"
 find "$JNI_OUT" -name '*.so' | sort
