@@ -28,9 +28,13 @@ jobs:
           - platform: linux
             runs_on: '["self-hosted","linux","x64","tokito-vps"]'
           - platform: windows
-            runs_on: '"windows-latest"'
+            runs_on: '["self-hosted","Windows","X64","tokito-windows"]'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Select Git for Windows Bash
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: '"C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
       - uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
         with:
           components: rustfmt, clippy

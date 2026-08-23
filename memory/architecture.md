@@ -44,7 +44,9 @@ and exchanges only canonical documents with React Native.
 - CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
   high/critical severity. GitHub Actions are pinned to immutable commits.
 - Linux Rust, TypeScript CI, and Android releases use the private, hardened
-  Tokito VPS runner; Windows compatibility stays on `windows-latest`. Android
+  Tokito VPS runner. While hosted Actions billing is unavailable, Windows
+  compatibility uses the selected-private-repository organization runner
+  labelled `tokito-windows`; public repositories cannot target it. Android
   release keeps UniFFI and Gradle in separate jobs so the runner cleanup hook
   removes each repository workspace between stages. It never runs aggressive
   host disk-cleanup actions; SDK/NDK and tool caches are runner-owned and
