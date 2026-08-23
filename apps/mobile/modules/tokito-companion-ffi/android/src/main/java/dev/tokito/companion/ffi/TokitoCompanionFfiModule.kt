@@ -6,6 +6,7 @@ import android.provider.Settings
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.json.JSONObject
 import uniffi.tokito_companion_ffi.CompanionClient
 import uniffi.tokito_companion_ffi.CompanionException
 import uniffi.tokito_companion_ffi.SyncListener
@@ -87,7 +88,11 @@ class TokitoCompanionFfiModule : Module() {
     AsyncFunction("getProject") { baseUrl: String, token: String, projectId: String ->
       runFfi {
         val p = CompanionClient(baseUrl).getProject(token, projectId)
-        mapOf(
+        // Return one JSON string across Expo's native boundary. Expo's dynamic
+        // value converter is not reliable for recursively nested Kotlin maps
+        // produced from UniFFI records (and rejects Kotlin Long outright).
+        // JSON gives this wire shape one explicit, lossless conversion point.
+        JSONObject(mapOf(
           "id" to p.id,
           "name" to p.name,
           "slug" to p.slug,
@@ -118,7 +123,7 @@ class TokitoCompanionFfiModule : Module() {
               "bytes" to a.bytes.toDouble(),
             )
           },
-        )
+        )).toString()
       }
     }
 

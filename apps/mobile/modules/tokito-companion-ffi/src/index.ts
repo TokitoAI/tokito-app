@@ -35,7 +35,7 @@ type TokitoCompanionFfiNative = {
   listProjects(baseUrl: string, token: string): Promise<
     Array<{ id: string; name: string; slug: string; updated_at: string }>
   >;
-  getProject(baseUrl: string, token: string, projectId: string): Promise<unknown>;
+  getProject(baseUrl: string, token: string, projectId: string): Promise<string>;
   listProposals(
     baseUrl: string,
     token: string,

@@ -247,10 +247,12 @@ export class NativeCompanionClient implements CloudClient {
 
   async getProject(token: string, projectId: string): Promise<ProjectDetail> {
     try {
-      const raw = (await this.native.getProject(this.base, token, projectId)) as Record<
-        string,
-        unknown
-      >;
+      const encoded = await this.native.getProject(this.base, token, projectId);
+      const decoded = JSON.parse(encoded) as unknown;
+      if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
+        throw CompanionError.unexpected();
+      }
+      const raw = decoded as Record<string, unknown>;
       return parseProjectDetail(raw);
     } catch (err) {
       throw mapNativeError(err);
