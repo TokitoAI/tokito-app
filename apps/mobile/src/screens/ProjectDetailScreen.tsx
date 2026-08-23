@@ -34,6 +34,8 @@ import {
   SectionLabel,
 } from "../ui/primitives";
 
+type ProjectSection = "overview" | "bom" | "chat" | "schematic" | "review";
+
 export interface ProjectDetailScreenProps {
   client: CloudClient;
   token: string;
@@ -64,19 +66,24 @@ export function ProjectDetailScreen({
   const [projectNameDraft, setProjectNameDraft] = useState("");
   const [designNameDraft, setDesignNameDraft] = useState("");
   const [newDesignName, setNewDesignName] = useState("");
+  const [section, setSection] = useState<ProjectSection>("overview");
   const realtime = useRealtimeWorkspace();
+  const liveProject = realtime.getResource(projectId, null, "project")?.payload as
+    | Record<string, unknown>
+    | undefined;
+  const hasLiveProject = liveProject !== undefined;
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [project, pending] = await Promise.all([
-        client.getProject(token, projectId),
+    const [project, pending] = await Promise.allSettled([
+        hasLiveProject ? Promise.resolve(null) : client.getProject(token, projectId),
         client.listProposals(token, projectId, "pending"),
-      ]);
-      setDetail(project);
-      setProposals(pending);
-    } catch (err) {
+    ]);
+    if (project.status === "fulfilled" && project.value !== null) {
+      setDetail(project.value);
+    } else if (project.status === "rejected" && !hasLiveProject) {
+      const err = project.reason as unknown;
       setError(
         err instanceof CompanionError
           ? err.message
@@ -84,10 +91,10 @@ export function ProjectDetailScreen({
             ? err.message
             : "Failed to load project",
       );
-    } finally {
-      setLoading(false);
     }
-  }, [client, token, projectId]);
+    if (pending.status === "fulfilled") setProposals(pending.value);
+    setLoading(false);
+  }, [client, token, projectId, hasLiveProject]);
 
   useEffect(() => {
     void reload();
@@ -141,15 +148,12 @@ export function ProjectDetailScreen({
     })
     .filter((item) => item.id.length > 0 && !item.deleted);
   const activeDesignId = selectedDesignId ?? liveDesigns[0]?.id ?? detail?.designs[0]?.id ?? null;
-  const liveProject = realtime.getResource(projectId, null, "project")?.payload as
-    | Record<string, unknown>
-    | undefined;
   useEffect(() => {
-    if (liveProject !== undefined) {
+    if (liveProject !== undefined && (error !== null || loading)) {
       setError(null);
       setLoading(false);
     }
-  }, [liveProject]);
+  }, [error, liveProject, loading]);
   const bomPayload = activeDesignId === null
     ? undefined
     : realtime.getResource(projectId, activeDesignId, "bom")?.payload as
@@ -279,20 +283,24 @@ export function ProjectDetailScreen({
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      {showBack ? (
-        <Pressable onPress={onBack} style={styles.back}>
-          <ArrowLeft size={18} color={tokens.accent} weight="regular" />
-          <Text style={styles.link}>Projects</Text>
-        </Pressable>
-      ) : null}
-      <Text style={styles.title}>
-        {typeof liveProject?.name === "string" ? liveProject.name : detail?.name ?? "Project"}
-      </Text>
-      {detail !== null ? (
-        <Text style={styles.meta}>
-          {detail.slug} · {detail.updated_at}
-        </Text>
-      ) : null}
+      <View style={styles.projectHeader}>
+        {showBack ? (
+          <Pressable accessibilityLabel="Back to projects" onPress={onBack} style={styles.back}>
+            <ArrowLeft size={20} color={tokens.text} weight="regular" />
+          </Pressable>
+        ) : null}
+        <View style={styles.projectIdentity}>
+          <Text style={styles.eyebrow}>PROJECT</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {typeof liveProject?.name === "string" ? liveProject.name : detail?.name ?? "Project"}
+          </Text>
+          {detail !== null ? <Text style={styles.meta}>{detail.slug}</Text> : null}
+        </View>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>Realtime</Text>
+        </View>
+      </View>
       {loading ? <ActivityIndicator color={tokens.accent} /> : null}
       {error !== null ? <ErrorText>{error}</ErrorText> : null}
       {realtime.error !== null ? <ErrorText>{realtime.error}</ErrorText> : null}
@@ -320,37 +328,10 @@ export function ProjectDetailScreen({
           </Card>
         ))}
 
-      <View style={styles.sectionHead}>
-        <SectionLabel>Workspace</SectionLabel>
-      </View>
-      <View style={styles.manageRow}>
-        <TextInput
-          accessibilityLabel="Project name"
-          value={projectNameDraft}
-          onChangeText={setProjectNameDraft}
-          style={styles.manageInput}
-        />
-        <PrimaryButton label="Rename project" onPress={() => void renameProject()} />
-      </View>
-      <View style={styles.manageRow}>
-        <TextInput
-          accessibilityLabel="New design name"
-          value={newDesignName}
-          onChangeText={setNewDesignName}
-          onSubmitEditing={() => void createDesign()}
-          placeholder="New design"
-          placeholderTextColor={tokens.text2}
-          style={styles.manageInput}
-        />
-        <PrimaryButton
-          label="Create design"
-          disabled={newDesignName.trim().length === 0}
-          onPress={() => void createDesign()}
-        />
-      </View>
-
       {liveDesigns.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.designTabs}>
+        <View style={styles.designPicker}>
+          <Text style={styles.designPickerLabel}>DESIGN</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.designTabs}>
           {liveDesigns.map((design) => (
             <Pressable
               key={design.id}
@@ -362,114 +343,100 @@ export function ProjectDetailScreen({
               </Text>
             </Pressable>
           ))}
-        </ScrollView>
-      ) : null}
-      {activeDesignId !== null ? (
-        <View style={styles.manageRow}>
-          <TextInput
-            accessibilityLabel="Design name"
-            value={designNameDraft}
-            onChangeText={setDesignNameDraft}
-            style={styles.manageInput}
-          />
-          <PrimaryButton label="Rename design" onPress={() => void renameDesign()} />
-          <PrimaryButton label="Delete design" danger onPress={confirmDeleteDesign} />
+          </ScrollView>
         </View>
       ) : null}
 
-      <View style={styles.sectionHead}>
-        <ListBullets size={16} color={tokens.text} weight="regular" />
-        <SectionLabel>BOM</SectionLabel>
-      </View>
-      {displayedBom.length === 0 && !loading ? (
-        <Muted>No BOM lines in snapshot.</Muted>
-      ) : null}
-      {displayedBom.map((item, i) => (
-        <EditableBomLine
-          key={`${item.ref}-${i}`}
-          line={item}
-          editable={bomPayload !== undefined}
-          onSave={(line) =>
-            void saveBom(displayedBom.map((candidate, index) => index === i ? line : candidate))}
-        />
-      ))}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionTabs}>
+        {([
+          ["overview", "Overview"],
+          ["bom", `BOM${displayedBom.length > 0 ? ` · ${displayedBom.length}` : ""}`],
+          ["chat", "Chat"],
+          ["schematic", "Schematic"],
+          ["review", `Review${displayedProposals.length > 0 ? ` · ${displayedProposals.length}` : ""}`],
+        ] as Array<[ProjectSection, string]>).map(([id, label]) => (
+          <Pressable
+            key={id}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: section === id }}
+            onPress={() => setSection(id)}
+            style={[styles.sectionTab, section === id && styles.sectionTabActive]}
+          >
+            <Text style={[styles.sectionTabText, section === id && styles.sectionTabTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
-      <View style={styles.sectionHead}>
-        <Sparkle size={16} color={tokens.text} weight="regular" />
-        <SectionLabel>Design chat</SectionLabel>
-      </View>
-      {chatMessages.map((message) => (
-        <View key={message.id} style={[styles.chatBubble, message.role === "user" && styles.chatBubbleUser]}>
-          <Text style={styles.chatRole}>{message.role}</Text>
-          <Text style={styles.chatText}>{message.content}</Text>
-        </View>
-      ))}
-      {activeDesignId !== null ? (
-        <View style={styles.chatComposer}>
-          <TextInput
-            value={chatDraft}
-            onChangeText={setChatDraft}
-            placeholder="Ask Tokito or continue the design chat"
-            placeholderTextColor={tokens.text2}
-            style={styles.chatInput}
-            multiline
-          />
-          <PrimaryButton
-            label="Send"
-            disabled={chatDraft.trim().length === 0}
-            onPress={() => void sendChat()}
-          />
-        </View>
-      ) : null}
-
-      <View style={styles.sectionHead}>
-        <Circuitry size={16} color={tokens.text} weight="regular" />
-        <SectionLabel>Schematics</SectionLabel>
-      </View>
-      {activeDesignId !== null && realtime.getResource(projectId, activeDesignId, "schematic") ? (
-        <Card onPress={() => onOpenLiveSchematic(activeDesignId)} style={styles.cardGap}>
-          <Text style={styles.cardTitle}>Open live schematic editor</Text>
-          <Muted>Move, wire, label, annotate, rotate, mirror, and delete in real time.</Muted>
-        </Card>
-      ) : null}
-      {svgArtifacts.map((a) => (
-        <Card key={a.name} onPress={() => onOpenSvg(a.name)} style={styles.cardGap}>
-          <Text style={styles.cardTitle}>{a.name}</Text>
-          <Muted>{`${a.bytes} bytes · SVG`}</Muted>
-        </Card>
-      ))}
-      {svgArtifacts.length === 0 && !loading ? <Muted>No SVG artifacts yet.</Muted> : null}
-
-      <View style={styles.sectionHead}>
-        <Sparkle size={16} color={tokens.text} weight="regular" />
-        <SectionLabel>Pending proposals</SectionLabel>
-      </View>
-      {displayedProposals.length === 0 && !loading ? <Muted>Nothing pending.</Muted> : null}
-      {displayedProposals.map((p) => (
-        <Card key={p.id} style={styles.cardGap}>
-          <Text style={styles.cardTitle}>{p.title}</Text>
-          <Muted>{p.summary}</Muted>
-          <View style={styles.actions}>
-            <PrimaryButton
-              label="Approve"
-              busy={busyId === p.id}
-              disabled={busyId === p.id}
-              onPress={() => void decide(p.id, "approve")}
-              style={styles.actionBtn}
-            />
-            <PrimaryButton
-              label="Reject"
-              danger
-              busy={busyId === p.id}
-              disabled={busyId === p.id}
-              onPress={() => void decide(p.id, "reject")}
-              style={styles.actionBtn}
-            />
+      {section === "overview" ? (
+        <View style={styles.panel}>
+          <View style={styles.sectionHead}><SectionLabel>Project settings</SectionLabel></View>
+          <Text style={styles.helpText}>Names sync instantly to desktop and every signed-in companion.</Text>
+          <View style={styles.manageRow}>
+            <TextInput accessibilityLabel="Project name" value={projectNameDraft} onChangeText={setProjectNameDraft} style={styles.manageInput} />
+            <PrimaryButton label="Rename" onPress={() => void renameProject()} />
           </View>
-        </Card>
-      ))}
-      {projectId !== "00000000-0000-4000-8000-000000000001" ? (
-        <PrimaryButton label="Delete project" danger onPress={confirmDeleteProject} />
+          <View style={styles.sectionHead}><SectionLabel>Designs</SectionLabel></View>
+          <View style={styles.manageRow}>
+            <TextInput accessibilityLabel="New design name" value={newDesignName} onChangeText={setNewDesignName} onSubmitEditing={() => void createDesign()} placeholder="New design name" placeholderTextColor={tokens.text3} style={styles.manageInput} />
+            <PrimaryButton label="Create design" disabled={newDesignName.trim().length === 0} onPress={() => void createDesign()} />
+          </View>
+          {activeDesignId !== null ? (
+            <View style={styles.manageRow}>
+              <TextInput accessibilityLabel="Design name" value={designNameDraft} onChangeText={setDesignNameDraft} style={styles.manageInput} />
+              <PrimaryButton label="Rename" onPress={() => void renameDesign()} />
+              <PrimaryButton label="Delete" danger onPress={confirmDeleteDesign} />
+            </View>
+          ) : <Muted>Create a design to unlock BOM, chat, and schematic tools.</Muted>}
+          {projectId !== "00000000-0000-4000-8000-000000000001" ? (
+            <View style={styles.dangerZone}>
+              <View style={styles.flex}><Text style={styles.cardTitle}>Delete project</Text><Muted>This removes the project from every synced device.</Muted></View>
+              <PrimaryButton label="Delete" danger onPress={confirmDeleteProject} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {section === "bom" ? (
+        <View style={styles.panel}>
+          <View style={styles.sectionHead}><ListBullets size={17} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel></View>
+          <Text style={styles.helpText}>Edit values and quantities for the selected design. Changes are queued safely while offline.</Text>
+          {displayedBom.length === 0 && !loading ? <View style={styles.emptySection}><Text style={styles.emptySectionTitle}>No BOM lines yet</Text><Muted>Add components in the schematic or on desktop and they will appear here.</Muted></View> : null}
+          {displayedBom.map((item, i) => <EditableBomLine key={`${item.ref}-${i}`} line={item} editable={bomPayload !== undefined} onSave={(line) => void saveBom(displayedBom.map((candidate, index) => index === i ? line : candidate))} />)}
+        </View>
+      ) : null}
+
+      {section === "chat" ? (
+        <View style={styles.panel}>
+          <View style={styles.sectionHead}><Sparkle size={17} color={tokens.text} /><SectionLabel>Design chat</SectionLabel></View>
+          <View style={styles.chatHistory}>
+            {chatMessages.length === 0 ? <View style={styles.emptySection}><Text style={styles.emptySectionTitle}>Start with the design context</Text><Muted>Ask Tokito about this design. The same conversation is available on desktop.</Muted></View> : null}
+            {chatMessages.map((message) => <View key={message.id} style={[styles.chatBubble, message.role === "user" && styles.chatBubbleUser]}><Text style={styles.chatRole}>{message.role}</Text><Text style={styles.chatText}>{message.content}</Text></View>)}
+          </View>
+          {activeDesignId !== null ? <View style={styles.chatComposer}><TextInput value={chatDraft} onChangeText={setChatDraft} placeholder="Ask about this design…" placeholderTextColor={tokens.text3} style={styles.chatInput} multiline /><PrimaryButton label="Send" disabled={chatDraft.trim().length === 0} onPress={() => void sendChat()} /></View> : null}
+        </View>
+      ) : null}
+
+      {section === "schematic" ? (
+        <View style={styles.panel}>
+          <View style={styles.sectionHead}><Circuitry size={17} color={tokens.text} /><SectionLabel>Schematic</SectionLabel></View>
+          {activeDesignId !== null && realtime.getResource(projectId, activeDesignId, "schematic") ? (
+            <Card onPress={() => onOpenLiveSchematic(activeDesignId)} style={styles.schematicHero}>
+              <View style={styles.schematicIcon}><Circuitry size={28} color={tokens.accent} /></View>
+              <View style={styles.flex}><Text style={styles.cardTitle}>Open live schematic</Text><Muted>Touch-friendly tools with durable two-way sync.</Muted></View>
+              <Text style={styles.openArrow}>Open →</Text>
+            </Card>
+          ) : <View style={styles.emptySection}><Text style={styles.emptySectionTitle}>No live schematic yet</Text><Muted>Open this design in Tokito Desktop once to publish its canonical schematic.</Muted></View>}
+          {svgArtifacts.length > 0 ? <View style={styles.sectionHead}><SectionLabel>Published previews</SectionLabel></View> : null}
+          {svgArtifacts.map((a) => <Card key={a.name} onPress={() => onOpenSvg(a.name)} style={styles.cardGap}><Text style={styles.cardTitle}>{a.name}</Text><Muted>{`${a.bytes} bytes · SVG`}</Muted></Card>)}
+        </View>
+      ) : null}
+
+      {section === "review" ? (
+        <View style={styles.panel}>
+          <View style={styles.sectionHead}><Sparkle size={17} color={tokens.text} /><SectionLabel>Pending proposals</SectionLabel></View>
+          {displayedProposals.length === 0 && !loading ? <View style={styles.emptySection}><Text style={styles.emptySectionTitle}>All caught up</Text><Muted>New AI proposals will appear here for explicit approval or rejection.</Muted></View> : null}
+          {displayedProposals.map((p) => <Card key={p.id} style={styles.cardGap}><Text style={styles.cardTitle}>{p.title}</Text><Muted>{p.summary}</Muted><View style={styles.actions}><PrimaryButton label="Approve" busy={busyId === p.id} disabled={busyId === p.id} onPress={() => void decide(p.id, "approve")} style={styles.actionBtn} /><PrimaryButton label="Reject" danger busy={busyId === p.id} disabled={busyId === p.id} onPress={() => void decide(p.id, "reject")} style={styles.actionBtn} /></View></Card>)}
+        </View>
       ) : null}
     </ScrollView>
   );
@@ -530,29 +497,40 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: tokens.bg },
   content: {
     paddingHorizontal: tokens.space5,
-    paddingTop: 56,
+    paddingTop: 36,
     paddingBottom: 48,
-    gap: tokens.space2,
+    gap: tokens.space3,
   },
   back: {
-    flexDirection: "row",
+    width: 42,
+    height: 42,
     alignItems: "center",
-    gap: tokens.space2,
-    marginBottom: tokens.space2,
+    justifyContent: "center",
+    borderRadius: tokens.radiusSm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.card,
   },
-  link: { color: tokens.accent, fontWeight: "500" },
+  projectHeader: { flexDirection: "row", alignItems: "center", gap: tokens.space3, minHeight: 58 },
+  projectIdentity: { flex: 1 },
+  eyebrow: { color: tokens.text3, fontSize: 10, fontWeight: "600", letterSpacing: 1.1 },
   title: {
     color: tokens.text,
     fontSize: 26,
     fontWeight: "700",
     letterSpacing: -0.4,
   },
-  meta: { color: tokens.text2, fontSize: 13, marginBottom: tokens.space2 },
+  meta: { color: tokens.text2, fontSize: 12, marginTop: 2 },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 11, height: 34, borderRadius: 17, borderWidth: 1, borderColor: tokens.border, backgroundColor: tokens.card },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: tokens.success },
+  liveText: { color: tokens.text2, fontSize: 12 },
+  designPicker: { flexDirection: "row", alignItems: "center", gap: tokens.space3, minHeight: 52, borderTopWidth: 1, borderBottomWidth: 1, borderColor: tokens.borderSoft },
+  designPickerLabel: { color: tokens.text3, fontSize: 10, fontWeight: "600", letterSpacing: 1 },
   sectionHead: {
     flexDirection: "row",
     alignItems: "center",
     gap: tokens.space2,
-    marginTop: tokens.space4,
+    marginTop: tokens.space2,
   },
   row: {
     flexDirection: "row",
@@ -563,18 +541,26 @@ const styles = StyleSheet.create({
   },
   rowRef: { color: tokens.text2, width: "40%", fontSize: 13 },
   rowVal: { color: tokens.text, flex: 1, textAlign: "right", fontSize: 13 },
-  designTabs: { gap: tokens.space2, paddingVertical: tokens.space2 },
+  designTabs: { gap: 6, paddingVertical: tokens.space2 },
   designTab: {
     borderWidth: 1,
     borderColor: tokens.border,
     borderRadius: tokens.radiusSm,
     paddingHorizontal: tokens.space3,
-    paddingVertical: 8,
+    paddingVertical: 7,
     backgroundColor: tokens.card,
   },
-  manageRow: { flexDirection: "row", alignItems: "center", gap: tokens.space2 },
+  sectionTabs: { gap: 4, padding: 4, borderRadius: tokens.radiusMd, backgroundColor: tokens.bgChrome, borderWidth: 1, borderColor: tokens.border },
+  sectionTab: { minHeight: 38, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: tokens.radiusSm },
+  sectionTabActive: { backgroundColor: tokens.cardHover, borderWidth: 1, borderColor: tokens.borderStrong },
+  sectionTabText: { color: tokens.text2, fontSize: 12, fontWeight: "500" },
+  sectionTabTextActive: { color: tokens.text, fontWeight: "600" },
+  panel: { gap: tokens.space3, paddingTop: tokens.space2, maxWidth: 1100, width: "100%", alignSelf: "center" },
+  helpText: { color: tokens.text2, fontSize: 13, lineHeight: 19, marginTop: -4 },
+  manageRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: tokens.space2 },
   manageInput: {
     flex: 1,
+    minWidth: 180,
     color: tokens.text,
     backgroundColor: tokens.card,
     borderWidth: 1,
@@ -614,9 +600,12 @@ const styles = StyleSheet.create({
   chatBubbleUser: { alignSelf: "flex-end", borderColor: tokens.accent, backgroundColor: tokens.accentSoft },
   chatRole: { color: tokens.text2, textTransform: "uppercase", fontSize: 10, fontWeight: "600", marginBottom: 4 },
   chatText: { color: tokens.text, fontSize: 14, lineHeight: 20 },
-  chatComposer: { gap: tokens.space2, marginTop: tokens.space2 },
+  chatHistory: { minHeight: 180, gap: tokens.space2 },
+  chatComposer: { flexDirection: "row", alignItems: "flex-end", gap: tokens.space2, marginTop: tokens.space2 },
   chatInput: {
-    minHeight: 76,
+    flex: 1,
+    minHeight: 54,
+    maxHeight: 140,
     color: tokens.text,
     backgroundColor: tokens.card,
     borderWidth: 1,
@@ -626,6 +615,13 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   cardGap: { marginTop: tokens.space2 },
+  schematicHero: { minHeight: 92, flexDirection: "row", alignItems: "center", gap: tokens.space3, borderColor: "rgba(8,201,170,0.32)", backgroundColor: tokens.accentSoft },
+  schematicIcon: { width: 52, height: 52, borderRadius: tokens.radiusMd, alignItems: "center", justifyContent: "center", backgroundColor: tokens.brandTile },
+  openArrow: { color: tokens.accent, fontSize: 13, fontWeight: "600" },
+  emptySection: { minHeight: 150, alignItems: "center", justifyContent: "center", gap: tokens.space2, padding: tokens.space5, borderWidth: 1, borderStyle: "dashed", borderColor: tokens.borderStrong, borderRadius: tokens.radiusMd, backgroundColor: tokens.bgChrome },
+  emptySectionTitle: { color: tokens.text, fontSize: 16, fontWeight: "600" },
+  dangerZone: { marginTop: tokens.space4, flexDirection: "row", alignItems: "center", gap: tokens.space3, padding: tokens.space4, borderWidth: 1, borderColor: "rgba(239,92,104,0.32)", borderRadius: tokens.radiusMd, backgroundColor: "rgba(239,92,104,0.06)" },
+  flex: { flex: 1 },
   conflictCard: { marginTop: tokens.space2, borderColor: tokens.danger },
   cardTitle: { color: tokens.text, fontWeight: "600", marginBottom: 4 },
   actions: { flexDirection: "row", gap: tokens.space2, marginTop: tokens.space3 },

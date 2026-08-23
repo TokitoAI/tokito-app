@@ -30,9 +30,12 @@ and exchanges only canonical documents with React Native.
   missing/incorrect.
 - CI also requires `package.json`, Expo `app.json`, the release tag's base
   version, the monotonic Android `versionCode`, and the finished APK manifest
-  to agree. UniFFI `i64` project fields are converted to JS-safe numbers in the
-  Kotlin Expo module; passing Kotlin `Long` directly makes Expo reject the
-  entire project-detail result after the Rust call succeeds.
+  to agree. The legacy project-detail bridge serializes its nested result to
+  one JSON string before crossing Expo; recursive Kotlin maps containing
+  UniFFI `Long` values are rejected by Expo even after the Rust call succeeds.
+  The realtime resource journal is authoritative for synced projects, while
+  legacy detail and proposal endpoints are optional enrichment and must never
+  block a journal-backed workspace from opening.
 - CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
   high/critical severity. GitHub Actions are pinned to immutable commits.
 - Linux Rust, TypeScript CI, and Android releases use the private, hardened

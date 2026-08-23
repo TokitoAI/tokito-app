@@ -6,9 +6,10 @@
 
 ## Product
 
-Tokito Companion is a **mobile review surface** for Tokito — account, synced
-projects, BOM review, AI proposal approve/reject, read-only schematic viewer.
-It is **not** a schematic editor. CAD stays on desktop (`TokitoAI/tokito`).
+Tokito Companion is Tokito's **realtime mobile workspace** — account, synced
+projects and designs, BOM, chat, AI proposal review, and canonical schematic
+editing. Pick-and-place and desktop-only CAD workflows stay in
+`TokitoAI/tokito`; supported resources sync in both directions.
 
 ## How this notebook works
 

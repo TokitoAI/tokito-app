@@ -1,12 +1,15 @@
 # Tokito Companion
 
-Mobile companion for the [Tokito](https://github.com/TokitoAI/tokito) desktop
-schematic studio — **review**, not CAD edit.
+Realtime mobile workspace for the
+[Tokito](https://github.com/TokitoAI/tokito) schematic studio.
 
 - Sign in with the same Tokito Cloud account (JWT via `tokito-ai`)
-- Browse synced projects, BOM, and AI proposals
-- Approve / reject decisions that sync back to desktop
-- Read-only schematic viewer (SVG/PDF artifacts)
+- Create and manage projects and designs independently
+- Edit BOM and chat resources; approve or reject AI proposals
+- Edit canonical schematics with durable two-way sync and offline outbox
+- Resume ordered SSE after disconnect without repeating “Share to Companion”
+
+Physical pick-and-place and desktop-only CAD workflows remain on desktop.
 
 **Stack:** React Native + TypeScript shell, Rust core (`tokito-companion-core`)
 exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
@@ -14,9 +17,9 @@ exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
 ## Workspace
 
 ```
-crates/core/     # typed Tokito Cloud clients (auth live; companion sync in M2+)
+crates/core/     # typed cloud clients, SSE resume, SQLite cache/outbox
 crates/ffi/      # UniFFI CompanionClient (cdylib/staticlib) for RN
-apps/mobile/     # React Native + TypeScript auth shell
+apps/mobile/     # React Native + TypeScript realtime workspace
 docs/            # architecture, API contract, hooks
 memory/          # agent notebook
 scripts/generate-bindings.sh   # Kotlin UniFFI smoke (gitignored output)
@@ -51,7 +54,7 @@ CI [android-release](.github/workflows/android-release.yml):
 - `assembleRelease` + `bundleRelease` with embedded JS + UniFFI `.so`
 - **Upload keystore** signing (GitHub secrets `ANDROID_UPLOAD_*`) — not Android Debug
 - Cloud: `https://api.tokito.dev` (tokito-ai)
-- Tag: `git tag v0.1.2-pre.N && git push origin v0.1.2-pre.N`
+- Tag: `git tag v0.2.2-pre.N && git push origin v0.2.2-pre.N`
 
 Uninstall any older **debug-signed** Companion before installing upload-signed
 builds (signature mismatch).

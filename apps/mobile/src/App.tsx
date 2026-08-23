@@ -205,7 +205,7 @@ export default function App({
 
   if (tablet) {
     const detailId = route.name === "project" ? route.id : null;
-    const masterWidth = Math.min(380, Math.max(300, Math.floor(width * 0.34)));
+    const masterWidth = Math.min(330, Math.max(280, Math.floor(width * 0.28)));
     return (
       <RealtimeWorkspaceProvider client={client} token={token}>
       <View style={styles.split}>
