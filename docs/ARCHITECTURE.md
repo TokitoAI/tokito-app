@@ -14,7 +14,9 @@ Each client keeps a local SQLite cache, committed cursor, and offline outbox.
 
 The server journal is the ordering authority; neither client polls. Companion
 never opens desktop's embedded Postgres or calls `mcp.tokito.dev` directly.
-Pick-and-place remains desktop-only, while project/design metadata, BOM, chat,
-suggestions, and canonical schematics sync independently in both directions.
+Resource transport is realtime in both directions, but write capability is not
+symmetrical. Desktop authors project/design metadata, BOM, and canonical
+schematics. Companion receives those resources read-only and authors only chat
+messages and explicit suggestion decisions. Pick-and-place remains desktop-only.
 
 See [../memory/architecture.md](../memory/architecture.md) for crate details.

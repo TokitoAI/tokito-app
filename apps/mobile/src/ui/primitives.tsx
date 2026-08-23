@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   View,
+  type StyleProp,
   type ImageSourcePropType,
   type TextInputProps,
   type ViewStyle,
@@ -51,7 +52,7 @@ export function PrimaryButton({
   busy?: boolean;
   disabled?: boolean;
   danger?: boolean;
-  style?: ViewStyle | undefined;
+  style?: StyleProp<ViewStyle> | undefined;
 }): JSX.Element {
   return (
     <Pressable
@@ -125,8 +126,8 @@ export function Card({
   style,
 }: {
   children: ReactNode;
-  onPress?: () => void;
-  style?: ViewStyle | undefined;
+  onPress?: (() => void) | undefined;
+  style?: StyleProp<ViewStyle> | undefined;
 }): JSX.Element {
   if (onPress !== undefined) {
     return (

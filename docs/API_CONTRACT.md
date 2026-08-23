@@ -21,8 +21,10 @@ Default base: `https://api.tokito.dev`.
 
 One signed-in device registration replaces repeated "Share to Companion".
 The client performs a consistent bootstrap once, persists the returned cursor,
-and then consumes ordered SSE events. Local edits enter a SQLite outbox before
-network submission and are idempotent by `command_id`.
+and then consumes ordered SSE events. Permitted local actions enter a SQLite
+outbox before network submission and are idempotent by `command_id`. Companion
+commands are restricted to `chat` and `suggestions`; desktop remains the writer
+for project/design metadata, BOM, and schematic resources.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -42,18 +44,17 @@ the user explicitly chooses the server copy or rebases their local edit.
 
 Resource scopes and payload contracts:
 
-| Resource | Scope | Payload |
-|---|---|---|
-| `project` | project, no design | `{id,name,slug,updated_at,design_ids,deleted?}` |
-| `design` | project + design | `{id,name,sheet_count,updated_at,deleted?}` |
-| `schematic` | project + design | Canonical serialized Tokito schematic document |
-| `bom` | project + design | `{lines:[{ref,value,footprint,qty,...}]}` |
-| `chat` | project + design | `{messages:[{id,role,content,created_at,...}]}` |
-| `suggestions` | project + design | `{items:[{id,kind,title,summary,status,...}]}` |
+| Resource | Scope | Companion access | Payload |
+|---|---|---|---|
+| `project` | project, no design | read-only | `{id,name,slug,updated_at,design_ids,deleted?}` |
+| `design` | project + design | read-only | `{id,name,sheet_count,updated_at,deleted?}` |
+| `schematic` | project + design | read-only | Canonical serialized Tokito schematic document |
+| `bom` | project + design | read-only | `{lines:[{ref,value,footprint,qty,...}]}` |
+| `chat` | project + design | read/write | `{messages:[{id,role,content,created_at,...}]}` |
+| `suggestions` | project + design | decision write | `{items:[{id,kind,title,summary,status,...}]}` |
 
-Payloads are whole versioned resources, capped at 2 MiB. Pick-and-place is not
-a synchronized resource. Everything else is independently addressable per
-project and design.
+Payloads are whole versioned resources, capped at 2 MiB. Transporting a resource
+does not grant every client write authority. Pick-and-place is not synchronized.
 
 Creation uses a stable UUID assigned by the originating client. Deletion is a
 versioned `deleted: true` tombstone rather than an absent resource, ensuring an

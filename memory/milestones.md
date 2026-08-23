@@ -10,8 +10,8 @@
 | **M5** | Proposal approve/reject + desktop apply loop | Done |
 | **M6** | Immutable SVG/PDF schematic previews | Done |
 | **M7** | Durable SSE, local cache/outbox, and conflict quarantine | Done |
-| **M8** | Two-way project, design, BOM, chat, suggestion, and schematic resources | Done |
-| **M9** | Tablet-first live workspace and touch schematic editor | Done |
+| **M8** | Realtime project, design, BOM, chat, suggestion, and schematic transport | Done |
+| **M9** | First-class phone/tablet review layouts and touch schematic viewer | Done |
 
 **How to apply:** one concern per PR; CI green before merge; no megacommits.
 Land library/server before UI when adding a new route.

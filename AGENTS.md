@@ -6,10 +6,13 @@
 
 ## Product
 
-Tokito Companion is Tokito's **realtime mobile workspace** — account, synced
-projects and designs, BOM, chat, AI proposal review, and canonical schematic
-editing. Pick-and-place and desktop-only CAD workflows stay in
-`TokitoAI/tokito`; supported resources sync in both directions.
+Tokito Companion is Tokito's **mobile-first realtime review surface** — account,
+synced projects/designs, live read-only schematic and BOM inspection, design
+chat, and AI proposal review. It follows the Figma-mobile boundary: desktop is
+the sole author of project structure, BOM, and CAD resources; Companion authors
+only chat messages and explicit approve/reject decisions. Phone and tablet are
+both first-class: phone uses a compact flow; tablet uses master/detail and wide
+review panes without changing product capabilities.
 
 ## How this notebook works
 

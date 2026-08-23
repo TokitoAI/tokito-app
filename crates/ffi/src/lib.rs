@@ -178,8 +178,8 @@ impl SyncSubscription {
         let _ = self.stop.send(true);
     }
 
-    /// Persist first, then wake the network worker. A successful return means
-    /// the edit survives process/network failure even if Tokito Cloud is down.
+    /// Persist a Companion-authored chat or review action, then wake the
+    /// network worker. CAD and workspace-management resources are read-only.
     pub fn enqueue_command(
         &self,
         project_id: String,
@@ -232,8 +232,7 @@ impl Drop for SyncSubscription {
 
 fn validate_resource_scope(resource: &str, design_id: Option<&str>) -> Result<(), CompanionError> {
     let valid = match resource {
-        "project" => design_id.is_none(),
-        "design" | "schematic" | "bom" | "chat" | "suggestions" => design_id.is_some(),
+        "chat" | "suggestions" => design_id.is_some(),
         _ => false,
     };
     if valid {
@@ -635,5 +634,22 @@ mod tests {
     fn cloud_error_maps_network() {
         let err: CompanionError = CloudError::Network("boom".into()).into();
         assert_eq!(err, CompanionError::Network { msg: "boom".into() });
+    }
+
+    #[test]
+    fn companion_can_only_author_chat_and_review_decisions() {
+        assert!(validate_resource_scope("chat", Some("design-id")).is_ok());
+        assert!(validate_resource_scope("suggestions", Some("design-id")).is_ok());
+        for resource in ["project", "design", "schematic", "bom", "pcb"] {
+            assert_eq!(
+                validate_resource_scope(resource, Some("design-id")),
+                Err(CompanionError::Unexpected),
+                "{resource} must remain read-only on Companion"
+            );
+        }
+        assert_eq!(
+            validate_resource_scope("chat", None),
+            Err(CompanionError::Unexpected)
+        );
     }
 }

@@ -37,9 +37,12 @@ type WorkspaceValue = {
   resources: SyncResource[];
   conflicts: SyncConflict[];
   getResource(projectId: string, designId: string | null, resource: SyncResourceName): SyncResource | undefined;
-  update(projectId: string, designId: string | null, resource: SyncResourceName, payload: unknown): Promise<string>;
+  update(projectId: string, designId: string | null, resource: CompanionWritableResource, payload: unknown): Promise<string>;
   resolveConflict(commandId: string, keepLocal: boolean): Promise<void>;
 };
+
+/** Mobile authors conversation and explicit review decisions, never CAD data. */
+export type CompanionWritableResource = Extract<SyncResourceName, "chat" | "suggestions">;
 
 const WorkspaceContext = createContext<WorkspaceValue | null>(null);
 
@@ -133,9 +136,12 @@ export function RealtimeWorkspaceProvider({
   const update = useCallback(async (
     projectId: string,
     designId: string | null,
-    resource: SyncResourceName,
+    resource: CompanionWritableResource,
     payload: unknown,
   ): Promise<string> => {
+    if (resource !== "chat" && resource !== "suggestions") {
+      throw new Error(`Companion cannot author the ${String(resource)} resource`);
+    }
     if (subscriptionId === null || !client.enqueueSyncCommand) {
       throw new Error("Realtime sync is not connected yet");
     }

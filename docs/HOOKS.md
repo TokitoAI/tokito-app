@@ -14,11 +14,13 @@
    command idempotency, the durable event journal, and resumable SSE.
 3. Both clients register a stable installation id, bootstrap once, then resume
    the ordered SSE journal from their committed cursor.
-4. Every mutation is committed to a local SQLite outbox before its authenticated
+4. Every permitted Companion mutation is committed to a local SQLite outbox before its authenticated
    HTTP command is attempted. A 409 is quarantined for an explicit keep-local
    or use-server decision.
 5. Project/design metadata, BOM, chat, suggestions, and canonical schematics are
-   independent per-design resources. Physical pick-and-place is not synced.
+   independent resources. Companion writes only `chat` and `suggestions`;
+   project/design, BOM, and schematic data are live read-only views. Physical
+   pick-and-place is not synced.
 
 ## Suggestions
 
@@ -29,6 +31,6 @@
 ## Non-hooks
 
 - Do not call `tokito-mcp` directly from Companion for symbol search.
-- Do not duplicate the Rust schematic engine in the app. Mobile edits the same
-  canonical document contract and desktop validates/applies it.
+- Do not duplicate the Rust schematic engine in the app. Mobile renders the
+  canonical document as a network-sealed read-only view; desktop owns CAD edits.
 - Do not use `tokito-backend` (legacy); cloud is `tokito-ai`.

@@ -1,15 +1,18 @@
 # Tokito Companion
 
-Realtime mobile workspace for the
+Mobile-first realtime review companion for the
 [Tokito](https://github.com/TokitoAI/tokito) schematic studio.
 
 - Sign in with the same Tokito Cloud account (JWT via `tokito-ai`)
-- Create and manage projects and designs independently
-- Edit BOM and chat resources; approve or reject AI proposals
-- Edit canonical schematics with durable two-way sync and offline outbox
+- Browse projects and designs; inspect live schematics and BOMs read-only
+- Continue design chat and approve or reject AI proposals
+- Pan, zoom, and inspect canonical schematics without exposing CAD mutation
 - Resume ordered SSE after disconnect without repeating “Share to Companion”
 
-Physical pick-and-place and desktop-only CAD workflows remain on desktop.
+Desktop owns project structure, BOM, schematic, PCB, and pick-and-place edits.
+Realtime transport remains bidirectional for Companion-authored chat and review
+decisions. Phone and tablet are first-class responsive layouts: compact tabs on
+phone; master/detail and wide review panes on tablet.
 
 **Stack:** React Native + TypeScript shell, Rust core (`tokito-companion-core`)
 exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
@@ -19,7 +22,7 @@ exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
 ```
 crates/core/     # typed cloud clients, SSE resume, SQLite cache/outbox
 crates/ffi/      # UniFFI CompanionClient (cdylib/staticlib) for RN
-apps/mobile/     # React Native + TypeScript realtime workspace
+apps/mobile/     # React Native + TypeScript mobile review surface
 docs/            # architecture, API contract, hooks
 memory/          # agent notebook
 scripts/generate-bindings.sh   # Kotlin UniFFI smoke (gitignored output)
@@ -60,8 +63,8 @@ Uninstall any older **debug-signed** Companion before installing upload-signed
 builds (signature mismatch).
 
 Package id: `dev.tokito.companion`. UI tokens match desktop `tokito_ui` dark
-palette (mint accent, brand tile, Phosphor icons). Tablets ≥768dp get a
-master/detail split.
+palette (mint accent, brand tile, Phosphor icons). Phone controls use 44dp+
+targets; tablets ≥768dp use a dedicated master/detail composition.
 
 ## Docs
 

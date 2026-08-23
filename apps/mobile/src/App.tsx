@@ -21,7 +21,7 @@ import { CompanionError } from "./native/types";
 import { ProjectDetailScreen } from "./screens/ProjectDetailScreen";
 import { ProjectListScreen } from "./screens/ProjectListScreen";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
-import { LiveSchematicEditorScreen } from "./screens/LiveSchematicEditorScreen";
+import { LiveSchematicViewerScreen } from "./screens/LiveSchematicViewerScreen";
 import { SignInScreen } from "./screens/SignInScreen";
 import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
@@ -179,7 +179,7 @@ export default function App({
     return (
       <RealtimeWorkspaceProvider client={client} token={token}>
         <StatusBar style="light" />
-        <LiveSchematicEditorScreen
+        <LiveSchematicViewerScreen
           projectId={route.projectId}
           designId={route.designId}
           onBack={() => setRoute({ name: "project", id: route.projectId })}

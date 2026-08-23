@@ -87,8 +87,8 @@ export function SignInScreen({
             </View>
           </View>
           <Text style={styles.lede}>
-            Sign in with your Tokito Cloud account to manage projects, BOM,
-            chat, proposals, and live schematics from any device.
+            Review live projects and schematics, continue design chat, and
+            approve Tokito proposals from your phone.
           </Text>
 
           {step === "email" ? (
