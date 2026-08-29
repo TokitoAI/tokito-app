@@ -95,9 +95,38 @@ below for what the second pass added):
 | `no_recognized_package_code` | 61 | BOM description has no recognized standard package code |
 | `package_recognized_but_unresolved` | 5 | A package code was recognized (5 solder jumpers, `0402`) but they are correctly not real mountable parts per their own BOM description ("SOLDER BLOB JUMPER ... NO PART TO ORDER") |
 
-83.1% of the 391 real components got a real, verified, non-fabricated
-model from KiCad's library (325), plus the user-approved `U1` placeholder
-box (below) = 326/391 (83.4%) with 3D bodies.
+326 of the 391 real components got a real, verified, non-fabricated model
+from KiCad's library, plus 10 manual datasheet-backed entries (below) =
+**336/391 (85.9%) with 3D bodies**.
+
+### Fourth pass: free manufacturer datasheets, no accounts
+
+Instead of account-gated vendor CAD portals, this pass used freely
+published manufacturer documents (each downloaded and read, saved under
+gitignored `build/ar-assets/frdm-mcxn236/datasheets/`):
+
+- **`Q1`** (BOM says `SOT-323`): real KiCad library model
+  `SOT-323_SC-70.step` -- a resolver rule, exact package family.
+- **`Y1`/`Y2`/`Y3`** (BOM says only "XTAL ... SMT", no package): each
+  Wurth datasheet was downloaded from we-online.com and read. Y1
+  (830064296) is a standard 3.2x2.5mm 4-pad ceramic crystal, Y2
+  (830009678) a 3.2x1.5mm 2-pad watch crystal, Y3 (830108212309) a
+  2.0x1.6mm 4-pad crystal -- all three have **exact package-family
+  models in KiCad's library** (`Crystal_SMD_3225-4Pin`,
+  `Crystal_SMD_3215-2Pin`, `Crystal_SMD_2016-4Pin`), attached as manual
+  overrides with the datasheet as provenance.
+- **`J10`/`J11`** (GCT `USB4085-GF-A`): GCT publishes the full product
+  drawing openly (gct.co/files/drawings/usb4085.pdf, no login). Box at
+  the drawing's real shell dimensions: 8.94 x 9.17 x 3.16mm above board.
+- **`SW1`-`SW3`** (Wurth `434123025826`): Wurth's free datasheet gives
+  4.2 x 3.2mm body, H=2.5mm. Box at those dimensions.
+- **`U8`** (NXP `LPC55S69JEV98`): NXP package SOT1982-1 = VFBGA98,
+  7 x 7 x 0.86mm. Box at those dimensions.
+
+All boxes are tagged `dimension_accurate_placeholder_not_true_package_shape`
+with the source document URL as provenance; the crystal/SOT-323 entries
+are real library models (`exact_family`). Every model path was verified
+to exist on disk before being written into `manual_model_overrides.json`.
 
 ### Second pass: LED/SOT-89/SOT-363/bare-header families
 
@@ -199,8 +228,13 @@ python tools/attach_3d_models_text.py \
   errors), across both resolution passes.
 - GLB grew from 2 nodes / 1 mesh (board-only) -> 592 nodes / 296 meshes
   (first pass, 295 models) -> 634 nodes / 317 meshes (second pass, 316
-  models) -> **655 nodes / 327 meshes** (third pass: 325 library models +
-  the `U1` placeholder box).
+  models) -> 655 nodes / 327 meshes (third pass) -> **681 nodes / 337
+  meshes** (fourth pass: 326 library models + 10 datasheet-backed manual
+  entries). The final isometric render was visually inspected: the U8
+  MCU-Link box sits by the USB edge, both USB-C boxes at the board edge,
+  button boxes at the three corners, and the crystals show real
+  metallic-lidded bodies next to the MCU -- nothing floating or
+  mirrored.
 - Visually rendered (`kicad-cli pcb render`, both top orthographic and
   isometric views) after each pass and actually inspected: correctly
   shaped, properly seated resistor/capacitor/SOT-23 bodies, plus (second

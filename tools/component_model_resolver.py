@@ -26,6 +26,7 @@ from xlsx_bom_parser import (
     extract_sot23_variant,
     extract_tht_socket_spec,
     has_sod523_package,
+    has_sot323_package,
     has_sot363_package,
     is_led_description,
     parse_bom_records,
@@ -112,6 +113,13 @@ def resolve_sot363_model(library_root: Path) -> tuple[str | None, str]:
     return str(path), "matched real installed KiCad official 3D model file"
 
 
+def resolve_sot323_model(library_root: Path) -> tuple[str | None, str]:
+    path = library_root / "Package_TO_SOT_SMD.3dshapes" / "SOT-323_SC-70.step"
+    if not path.is_file():
+        return None, f"expected model file does not exist on disk: {path}"
+    return str(path), "matched real installed KiCad official 3D model file"
+
+
 def resolve_tht_socket_model(rows: int, cols: int, pitch_mm: float, right_angle: bool, library_root: Path) -> tuple[str | None, str]:
     """Only for a THT female socket connector (THT_SOCKET_PATTERN). This is
     a generic family match on real pin-count and pitch from the BOM text
@@ -155,6 +163,7 @@ def resolve_all(
         sot23_variant = extract_sot23_variant(description) if description else None
         is_sod523 = has_sod523_package(description) if description else False
         is_sot363 = has_sot363_package(description) if description else False
+        is_sot323 = has_sot323_package(description) if description else False
         bare_header_spec = extract_bare_header_spec(description) if description else None
         tht_socket_spec = extract_tht_socket_spec(description) if description else None
 
@@ -190,6 +199,12 @@ def resolve_all(
             status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
             evidence = reason
             package_code = "SOT-363"
+            model_kind = "exact_family" if model_path else None
+        elif is_sot323:
+            model_path, reason = resolve_sot323_model(library_root)
+            status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
+            evidence = reason
+            package_code = "SOT-323"
             model_kind = "exact_family" if model_path else None
         elif bare_header_spec is not None:
             rows, cols, pitch_mm = bare_header_spec

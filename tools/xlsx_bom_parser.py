@@ -143,6 +143,13 @@ def has_sot363_package(description: str) -> bool:
     return SOT363_PATTERN.search(description) is not None
 
 
+SOT323_PATTERN = re.compile(r"\bSOT[- ]?323\b", re.IGNORECASE)
+
+
+def has_sot323_package(description: str) -> bool:
+    return SOT323_PATTERN.search(description) is not None
+
+
 LED_MARKER_PATTERN = re.compile(r"\bLED\b", re.IGNORECASE)
 
 

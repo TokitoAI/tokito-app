@@ -148,6 +148,22 @@ class ResolveThtSocketModelTest(unittest.TestCase):
             self.assertIn("does not exist", reason)
 
 
+class ResolveSot323ModelTest(unittest.TestCase):
+    def test_resolves_when_file_exists(self) -> None:
+        from component_model_resolver import resolve_sot323_model
+        from xlsx_bom_parser import has_sot323_package
+
+        self.assertTrue(has_sot323_package("TRANS MOSFET N-CH 30V .1A SOT-323"))
+        self.assertFalse(has_sot323_package("DIODE TVS UNIDIR 3.3VWM 12VC SOT363"))
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "Package_TO_SOT_SMD.3dshapes"
+            folder.mkdir()
+            (folder / "SOT-323_SC-70.step").write_text("x", encoding="utf-8")
+            model_path, _ = resolve_sot323_model(library_root)
+            self.assertIsNotNone(model_path)
+
+
 class ResolveLedChipModelTest(unittest.TestCase):
     def test_resolves_when_file_exists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
