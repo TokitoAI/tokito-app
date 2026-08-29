@@ -8,9 +8,9 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
@@ -60,8 +60,15 @@ class ValidationError(RuntimeError):
 
 def load_json(path: Path) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON number {value}")
+            ),
+        )
     except json.JSONDecodeError as exc:
+        raise ValidationError(f"{path}: invalid JSON: {exc}") from exc
+    except ValueError as exc:
         raise ValidationError(f"{path}: invalid JSON: {exc}") from exc
 
 
@@ -95,12 +102,24 @@ def validate_value(path: str, value: Any, schema: dict[str, Any]) -> None:
         for key, child in schema.get("properties", {}).items():
             if key in value:
                 validate_value(f"{path}.{key}", value[key], child)
+        known = set(schema.get("properties", {}))
+        additional = schema.get("additionalProperties", True)
+        unknown = sorted(set(value) - known)
+        if additional is False and unknown:
+            fail(f"{path}: unknown keys: {', '.join(unknown)}")
+        if isinstance(additional, dict):
+            for key in unknown:
+                validate_value(f"{path}.{key}", value[key], additional)
     elif expected_type == "array":
         if not isinstance(value, list):
             fail(f"{path}: expected array")
         min_items = schema.get("minItems")
         if min_items is not None and len(value) < min_items:
             fail(f"{path}: expected at least {min_items} items")
+        if schema.get("uniqueItems"):
+            canonical = [json.dumps(item, sort_keys=True, separators=(",", ":")) for item in value]
+            if len(canonical) != len(set(canonical)):
+                fail(f"{path}: array items must be unique")
         child = schema.get("items")
         if child:
             for index, item in enumerate(value):
@@ -113,16 +132,27 @@ def validate_value(path: str, value: Any, schema: dict[str, Any]) -> None:
         pattern = schema.get("pattern")
         if pattern and not re.fullmatch(pattern, value):
             fail(f"{path}: value does not match {pattern}")
+        if schema.get("format") == "date-time":
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                fail(f"{path}: expected RFC 3339 date-time")
+            if parsed.tzinfo is None:
+                fail(f"{path}: date-time must include a UTC offset")
     elif expected_type == "integer":
         if not isinstance(value, int) or isinstance(value, bool):
             fail(f"{path}: expected integer")
         if "minimum" in schema and value < schema["minimum"]:
             fail(f"{path}: value is below minimum {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            fail(f"{path}: value is above maximum {schema['maximum']}")
     elif expected_type == "number":
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             fail(f"{path}: expected number")
         if "minimum" in schema and value < schema["minimum"]:
             fail(f"{path}: value is below minimum {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            fail(f"{path}: value is above maximum {schema['maximum']}")
     elif expected_type == "boolean":
         if not isinstance(value, bool):
             fail(f"{path}: expected boolean")
@@ -237,6 +267,32 @@ def validate_docs() -> None:
         ".github/rulesets/main-pr-gates.example.json",
         ["pull_request", "required_linear_history", "required_status_checks"],
     )
+    require_text(
+        "docs/CORPUS_GOVERNANCE.md",
+        [
+            "tools/corpus_governance.py",
+            "physical board",
+            "near-duplicate",
+            "seal-change-set",
+            "apply-changes",
+            "manifest_digest",
+        ],
+    )
+
+
+def validate_corpus_contract_presence() -> None:
+    required = [
+        "schemas/corpus.dataset-card.schema.json",
+        "schemas/corpus.inventory-manifest.schema.json",
+        "schemas/corpus.annotation-manifest.schema.json",
+        "schemas/corpus.split-manifest.schema.json",
+        "schemas/corpus.change-set.schema.json",
+        "tools/corpus_governance.py",
+        "tools/test_corpus_governance.py",
+    ]
+    missing = [path for path in required if not (ROOT / path).is_file()]
+    if missing:
+        fail(f"missing corpus governance contracts: {', '.join(missing)}")
 
 
 def validate_ci_event() -> None:
@@ -248,7 +304,7 @@ def validate_ci_event() -> None:
         return
 
     event = load_json(Path(event_path))
-    close_pattern = re.compile(r"\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#\d+\b", re.I)
+    close_pattern = re.compile(r"\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#\d+\b", re.IGNORECASE)
 
     if event_name == "pull_request":
         body = (event.get("pull_request") or {}).get("body") or ""
@@ -282,6 +338,7 @@ def main() -> int:
     validate_examples(schemas)
     validate_tracked_artifacts(tracked_files())
     validate_workflow_runners()
+    validate_corpus_contract_presence()
     validate_docs()
     validate_ci_event()
     print(f"Validated {len(schemas)} schemas and Group 3 governance checks.")

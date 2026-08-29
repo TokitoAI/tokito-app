@@ -46,9 +46,10 @@ flowchart LR
 
 ## Current status
 
-Documentation and architecture baseline only. There is intentionally no model,
-runtime, Android app/library, Python package, or placeholder implementation yet.
-Implementation begins from tracked issues on the
+The main branch contains the architecture baseline and executable,
+standard-library-only corpus governance tooling. It does not yet claim a model,
+shipping Android runtime, or device-qualified capability. Runtime implementation
+continues through tracked issues on the
 [Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
 
 ## Documentation
@@ -59,6 +60,7 @@ Implementation begins from tracked issues on the
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
+- [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
 - [Evidence manifests](docs/EVIDENCE_MANIFESTS.md) - machine-readable model, corpus, evaluation, security, and release records

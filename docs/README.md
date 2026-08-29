@@ -10,6 +10,7 @@ The documentation is split by authority and purpose:
 | [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) | Typed tools, observations, errors, and versioning |
 | [MODEL_STRATEGY.md](MODEL_STRATEGY.md) | Model composition, export, backend, and lifecycle |
 | [EVALUATION.md](EVALUATION.md) | Corpus policy, metrics, benchmarks, and release gates |
+| [CORPUS_GOVERNANCE.md](CORPUS_GOVERNANCE.md) | Executable corpus manifests, hashing, leakage audits, and revision workflow |
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Trust boundary and data-handling policy |
 | [DELIVERY_GATES.md](DELIVERY_GATES.md) | Evidence-gated implementation sequence |
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |

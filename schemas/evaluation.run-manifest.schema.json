@@ -20,10 +20,14 @@
     "created_at": { "type": "string", "minLength": 1 },
     "inputs": {
       "type": "object",
-      "required": ["dataset_revision", "split_revision", "model_bundle_digest", "preprocessing_digest"],
+      "required": ["dataset_revision", "dataset_manifest_digest", "inventory_manifest_digest", "annotation_manifest_digest", "split_revision", "split_manifest_digest", "model_bundle_digest", "preprocessing_digest"],
       "properties": {
         "dataset_revision": { "type": "string", "minLength": 1 },
+        "dataset_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "inventory_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "annotation_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "split_revision": { "type": "string", "minLength": 1 },
+        "split_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "model_bundle_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "preprocessing_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
       }
