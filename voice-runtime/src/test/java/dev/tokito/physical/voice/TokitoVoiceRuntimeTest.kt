@@ -2,6 +2,8 @@ package dev.tokito.physical.voice
 
 import dev.tokito.physical.voice.internal.AudioFocusGate
 import dev.tokito.physical.voice.internal.AudioInput
+import dev.tokito.physical.voice.internal.AudioRoute
+import dev.tokito.physical.voice.internal.AudioRouteKind
 import dev.tokito.physical.voice.internal.PreparedBackend
 import dev.tokito.physical.voice.internal.SpeechSynthesizer
 import dev.tokito.physical.voice.internal.StreamingRecognizer
@@ -100,10 +102,82 @@ class TokitoVoiceRuntimeTest {
         fixture.runtime.close()
     }
 
+    @Test
+    fun localVadAndWakePhraseMoveActivationIntoListening() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startActivation()
+        assertEquals(VoiceRuntimeState.AwaitingWake, fixture.runtime.state.value)
+
+        val wake = async(start = CoroutineStart.UNDISPATCHED) {
+            fixture.runtime.events.filterIsInstance<VoiceEvent.WakeWordDetected>().first()
+        }
+        fixture.recognizer.emit("hey tokito", false)
+
+        assertEquals("hey tokito", withTimeout(2_000) { wake.await() }.phrase)
+        withTimeout(2_000) { fixture.runtime.state.first { it == VoiceRuntimeState.Listening } }
+        assertEquals(2, fixture.recognizer.startCount)
+        assertEquals(1, fixture.recognizer.stopCount)
+        fixture.runtime.close()
+    }
+
+    @Test
+    fun unrelatedSpeechDoesNotActivateAndFocusLossStopsCapture() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startActivation()
+        fixture.recognizer.emit("place the diode", true)
+        assertEquals(VoiceRuntimeState.AwaitingWake, fixture.runtime.state.value)
+
+        fixture.focus.loseCapture()
+        val failed = withTimeout(2_000) {
+            fixture.runtime.state.filterIsInstance<VoiceRuntimeState.Failed>().first()
+        }
+        assertEquals(VoiceErrorCode.AUDIO_FOCUS_DENIED, failed.error.code)
+        assertEquals(1, fixture.audio.stopCount)
+        fixture.runtime.close()
+    }
+
+    @Test
+    fun captureFailureStopsWakeRecognizerBeforePublishingFailure() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startActivation()
+
+        fixture.audio.fail(IllegalStateException("microphone disconnected"))
+        val failed = withTimeout(2_000) {
+            fixture.runtime.state.filterIsInstance<VoiceRuntimeState.Failed>().first()
+        }
+
+        assertEquals(VoiceErrorCode.CAPTURE_FAILURE, failed.error.code)
+        assertEquals(1, fixture.recognizer.stopCount)
+        assertEquals(1, fixture.audio.stopCount)
+        fixture.runtime.close()
+    }
+
+    @Test
+    fun ttsReturnsToWakeModeAndRouteChangesAreTyped() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startActivation()
+
+        val route = async(start = CoroutineStart.UNDISPATCHED) {
+            fixture.runtime.events.filterIsInstance<VoiceEvent.AudioRouteChanged>().first()
+        }
+        fixture.audio.emitRoute(AudioRoute(AudioRouteKind.BLUETOOTH, 42))
+        assertEquals(VoiceAudioRoute.BLUETOOTH, route.await().route)
+
+        fixture.runtime.speak("Ready when you are")
+        assertEquals(VoiceRuntimeState.AwaitingWake, fixture.runtime.state.value)
+        assertEquals(2, fixture.recognizer.startCount)
+        fixture.runtime.close()
+    }
+
     private class Fixture(blockSpeech: Boolean = false) {
         val recognizer = FakeRecognizer()
         val synthesizer = FakeSynthesizer(blockSpeech)
         val audio = FakeAudioInput()
+        val focus = FakeFocus()
         val runtime = TokitoVoiceRuntime(
             config = VoiceRuntimeConfig(
                 bargeIn = BargeInConfig(
@@ -113,6 +187,18 @@ class TokitoVoiceRuntimeTest {
                     requiredActiveFrames = 2,
                     rollingWindowFrames = 3,
                 ),
+                activation = ActivationConfig(
+                    minimumWakeConfidence = 0.80f,
+                    vad = VadConfig(
+                        calibrationMillis = 40,
+                        minimumRms = 0.01f,
+                        noiseMultiplier = 2f,
+                        attackFrames = 2,
+                        releaseFrames = 3,
+                        preRollMillis = 40,
+                    ),
+                    vadEventIntervalMillis = 1,
+                ),
             ),
             backendFactory = object : VoiceBackendFactory {
                 override suspend fun prepare(
@@ -121,7 +207,7 @@ class TokitoVoiceRuntimeTest {
                 ) = PreparedBackend(recognizer, synthesizer, "fixture")
             },
             audioInput = audio,
-            focusGate = FakeFocus(),
+            focusGate = focus,
         )
     }
 
@@ -180,11 +266,19 @@ class TokitoVoiceRuntimeTest {
         override val sampleRate = 16_000
         override val supportsEchoCancellation = true
         private var consumer: ((FloatArray) -> Unit)? = null
+        private var failureConsumer: ((Throwable) -> Unit)? = null
+        private var routeListener: ((AudioRoute) -> Unit)? = null
         var stopCount = 0
         override fun start(consumer: (FloatArray) -> Unit, onFailure: (Throwable) -> Unit) {
             this.consumer = consumer
+            failureConsumer = onFailure
         }
+        override fun setRouteListener(listener: ((AudioRoute) -> Unit)?) {
+            routeListener = listener
+        }
+        fun emitRoute(route: AudioRoute) = routeListener?.invoke(route)
         fun emit(samples: FloatArray) = consumer?.invoke(samples)
+        fun fail(error: Throwable) = failureConsumer?.invoke(error)
         override fun stop() {
             stopCount++
             consumer = null
@@ -193,8 +287,13 @@ class TokitoVoiceRuntimeTest {
     }
 
     private class FakeFocus : AudioFocusGate {
-        override fun acquireCapture() = true
+        private var captureLoss: (() -> Unit)? = null
+        override fun acquireCapture(onLoss: () -> Unit): Boolean {
+            captureLoss = onLoss
+            return true
+        }
         override fun acquireSpeech(onLoss: () -> Unit) = true
-        override fun abandon() = Unit
+        override fun abandon() { captureLoss = null }
+        fun loseCapture() = captureLoss?.invoke()
     }
 }

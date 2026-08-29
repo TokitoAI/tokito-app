@@ -48,8 +48,9 @@ flowchart LR
 
 The repository now includes a standalone Android application and an executable
 offline voice-runtime library. The implemented slice provides microphone
-capture, streaming English speech recognition, local English speech synthesis,
-typed partial/final transcript events, audio focus, cancellation, and barge-in.
+capture, adaptive local VAD, configurable local wake phrases, streaming English
+speech recognition, local English speech synthesis, typed partial/final
+transcript events, route and audio-focus handling, cancellation, and barge-in.
 It uses Moonshine Voice with app-private model storage and a verified SHA-256
 inventory. Camera, perception, local reasoning, and AR guidance remain tracked
 work; their absence is not hidden behind placeholder capabilities.

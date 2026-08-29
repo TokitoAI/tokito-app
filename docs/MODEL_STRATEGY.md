@@ -56,6 +56,12 @@ and exact-device measurements pass the published gates. The abstraction keeps
 recognizer, synthesizer, audio input, focus, and orchestration separate so a
 candidate can be replaced without changing the public voice contract.
 
+Issue #18 adds the executable activation front end around that candidate:
+adaptive local VAD, bounded pre-roll, configurable local wake-phrase matching,
+audio-focus interruption, route reporting, and TTS/barge-in state restoration.
+Its confidence output is intentionally not called calibrated until the frozen
+quiet/bench-noise corpus and exact-device false-accept/false-reject gates pass.
+
 ## Local orchestration contract
 
 The text LLM receives bounded conversation, compact observation summaries, and

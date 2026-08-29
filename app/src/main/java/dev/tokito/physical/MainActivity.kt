@@ -24,7 +24,7 @@ class MainActivity : AppCompatActivity() {
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) launchAction { voice.startListening() }
+        if (granted) launchAction { voice.startActivation() }
         else binding.statusText.text = "Microphone permission denied"
     }
 
@@ -45,11 +45,18 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onStop() {
+        if (voice.state.value == VoiceRuntimeState.Listening || voice.state.value == VoiceRuntimeState.AwaitingWake) {
+            lifecycleScope.launch { runCatching { voice.stopListening() } }
+        }
+        super.onStop()
+    }
+
     private fun bindActions() {
         binding.initializeButton.setOnClickListener { launchAction { voice.initialize() } }
         binding.startButton.setOnClickListener {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                launchAction { voice.startListening() }
+                launchAction { voice.startActivation() }
             } else {
                 microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
             }
@@ -77,6 +84,7 @@ class MainActivity : AppCompatActivity() {
             VoiceRuntimeState.Uninitialized -> "Not initialized"
             is VoiceRuntimeState.Provisioning -> "Provisioning ${state.artifact}"
             is VoiceRuntimeState.Ready -> "Ready · ${state.capabilities.joinToString()}"
+            VoiceRuntimeState.AwaitingWake -> "Listening locally for Hey Tokito"
             VoiceRuntimeState.Listening -> "Listening locally"
             is VoiceRuntimeState.Speaking -> "Speaking · tap Interrupt or speak to barge in"
             is VoiceRuntimeState.Failed -> "${state.error.code}: ${state.error.message}"
@@ -85,7 +93,7 @@ class MainActivity : AppCompatActivity() {
         val ready = state is VoiceRuntimeState.Ready || state is VoiceRuntimeState.Listening
         binding.initializeButton.isEnabled = state == VoiceRuntimeState.Uninitialized || state is VoiceRuntimeState.Failed
         binding.startButton.isEnabled = state is VoiceRuntimeState.Ready
-        binding.stopButton.isEnabled = state == VoiceRuntimeState.Listening
+        binding.stopButton.isEnabled = state == VoiceRuntimeState.Listening || state == VoiceRuntimeState.AwaitingWake
         binding.speakButton.isEnabled = ready
         binding.interruptButton.isEnabled = state is VoiceRuntimeState.Speaking
         binding.progressBar.visibility = if (state is VoiceRuntimeState.Provisioning) android.view.View.VISIBLE else android.view.View.GONE
@@ -105,6 +113,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             is VoiceEvent.BargeInDetected -> binding.statusText.text = "Barge-in detected"
+            is VoiceEvent.WakeWordDetected -> binding.statusText.text = "${event.phrase} · ${(event.confidence * 100).toInt()}%"
+            is VoiceEvent.VoiceActivity -> Unit
             is VoiceEvent.Error -> binding.statusText.text = "${event.failure.code}: ${event.failure.message}"
             else -> Unit
         }

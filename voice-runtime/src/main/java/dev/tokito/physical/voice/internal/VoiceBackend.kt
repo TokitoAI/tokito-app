@@ -25,11 +25,15 @@ internal interface AudioInput : Closeable {
     val sampleRate: Int
     val supportsEchoCancellation: Boolean
     fun start(consumer: (FloatArray) -> Unit, onFailure: (Throwable) -> Unit)
+    fun setRouteListener(listener: ((AudioRoute) -> Unit)?)
     fun stop()
 }
 
+internal data class AudioRoute(val kind: AudioRouteKind, val deviceId: Int)
+internal enum class AudioRouteKind { BUILT_IN_MIC, WIRED_HEADSET, BLUETOOTH, USB, OTHER }
+
 internal interface AudioFocusGate {
-    fun acquireCapture(): Boolean
+    fun acquireCapture(onLoss: () -> Unit): Boolean
     fun acquireSpeech(onLoss: () -> Unit): Boolean
     fun abandon()
 }

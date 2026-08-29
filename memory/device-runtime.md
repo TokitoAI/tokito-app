@@ -25,3 +25,9 @@ tiny-streaming STT with spelling fusion and `piper_en_US-amy-low` TTS. Android
 capture, focus, AEC/noise suppression, typed transcript events, synthesis
 replacement/queueing, and barge-in live in `voice-runtime`. This is not an
 accepted release backend until the connected iQOO passes issue #8 and Gate 4.
+
+The issue #18 activation baseline also lives in `voice-runtime`: adaptive local
+VAD with bounded pre-roll, configurable local wake-phrase matching, typed
+confidence and route events, capture-focus loss handling, and deterministic
+TTS/barge-in restoration. The score thresholds are candidates, not calibrated
+claims, until false accepts/rejects and power are measured on the exact iQOO.

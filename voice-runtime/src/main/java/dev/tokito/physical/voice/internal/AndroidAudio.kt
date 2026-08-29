@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -18,15 +20,26 @@ internal class AndroidAudioInput(
     override val sampleRate: Int = 16_000,
 ) : AudioInput {
     private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val running = AtomicBoolean(false)
     private var worker: Thread? = null
     private var record: AudioRecord? = null
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     @Volatile private var echoCancellationActive = false
+    @Volatile private var routeListener: ((AudioRoute) -> Unit)? = null
+    private var deviceCallbackRegistered = false
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = notifyRoute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = notifyRoute()
+    }
 
     override val supportsEchoCancellation: Boolean
         get() = echoCancellationActive
+
+    override fun setRouteListener(listener: ((AudioRoute) -> Unit)?) {
+        routeListener = listener
+    }
 
     override fun start(consumer: (FloatArray) -> Unit, onFailure: (Throwable) -> Unit) {
         check(
@@ -54,6 +67,13 @@ internal class AndroidAudioInput(
             .build()
         check(audioRecord.state == AudioRecord.STATE_INITIALIZED) { "AudioRecord failed to initialize" }
         record = audioRecord
+        try {
+            audioManager.registerAudioDeviceCallback(deviceCallback, null)
+            deviceCallbackRegistered = true
+        } catch (error: Throwable) {
+            releaseAudioRecord()
+            throw error
+        }
         if (AcousticEchoCanceler.isAvailable()) {
             echoCanceler = AcousticEchoCanceler.create(audioRecord.audioSessionId)?.apply { enabled = true }
             echoCancellationActive = echoCanceler?.enabled == true
@@ -89,6 +109,7 @@ internal class AndroidAudioInput(
             check(audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                 "microphone did not enter recording state"
             }
+            notifyRoute()
             while (running.get() && !Thread.currentThread().isInterrupted) {
                 val read = audioRecord.read(shorts, 0, shorts.size, AudioRecord.READ_BLOCKING)
                 if (read < 0) throw IllegalStateException("AudioRecord.read failed: $read")
@@ -106,6 +127,10 @@ internal class AndroidAudioInput(
 
     @Synchronized
     private fun releaseAudioRecord() {
+        if (deviceCallbackRegistered) {
+            runCatching { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
+            deviceCallbackRegistered = false
+        }
         echoCanceler?.release()
         noiseSuppressor?.release()
         echoCanceler = null
@@ -113,6 +138,18 @@ internal class AndroidAudioInput(
         echoCancellationActive = false
         record?.release()
         record = null
+    }
+
+    private fun notifyRoute() {
+        val device = record?.routedDevice ?: return
+        val kind = when (device.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_MIC, AudioDeviceInfo.TYPE_TELEPHONY -> AudioRouteKind.BUILT_IN_MIC
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> AudioRouteKind.WIRED_HEADSET
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET -> AudioRouteKind.BLUETOOTH
+            AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> AudioRouteKind.USB
+            else -> AudioRouteKind.OTHER
+        }
+        routeListener?.invoke(AudioRoute(kind, device.id))
     }
 
     companion object {
@@ -125,9 +162,9 @@ internal class AndroidAudioFocusGate(context: Context) : AudioFocusGate {
     private var activeRequest: AudioFocusRequest? = null
 
     @Synchronized
-    override fun acquireCapture(): Boolean = request(
+    override fun acquireCapture(onLoss: () -> Unit): Boolean = request(
         gain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
-        onLoss = {},
+        onLoss = onLoss,
     )
 
     @Synchronized
