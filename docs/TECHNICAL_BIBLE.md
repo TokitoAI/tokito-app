@@ -153,6 +153,17 @@ available with an explicit unbound identity.
 
 ## 7. Event-driven visual inference
 
+### Metric 3D digital twin
+
+An optional 3D PCB asset is bound to the immutable assembly-context revision,
+board origin, metric units, axes, bounds and content digest. The renderer
+accepts only a validated GLB 2 package and uses the current camera calibration
+and board-pose revision; it does not infer scale from a screen rectangle. Stale,
+low-confidence or context-mismatched registration suppresses the model. A
+calibration object may prove renderer conformance but is never substituted for
+a missing project asset. Asset production is independent from runtime control
+flow and cannot introduce board-name branches.
+
 An inference request contains task type, ROI, source frame revision, context,
 deadline, required confidence, and cancellation token. Processing stages are:
 

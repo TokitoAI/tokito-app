@@ -66,6 +66,13 @@ flowchart TB
     Audio --> Board
 ```
 
+The 3D renderer consumes a digest-verified GLB whose metric origin and axes are
+bound to the same immutable assembly context used by tools and observations.
+The CAD/Gerber converter is replaceable tooling; it cannot be called from the
+shipping Android hot path. Camera calibration and a fresh board pose compose
+the asset into the camera frame. Invalid assets or registration loss suppress
+3D content instead of retaining the last transform.
+
 ## Planned deployable artifacts
 
 The repository will eventually produce:
@@ -143,6 +150,14 @@ Renders board acquisition, tracking quality, component targets, regions,
 warnings, confidence, and step guidance over the live camera view. Rendering
 consumes the canonical coordinate-frame graph and never invents independent
 pixel transforms. Touch and speech are equal local interaction paths.
+
+The renderer consumes immutable, sequence-ordered scenes through a bounded
+single-slot mailbox. Every primitive carries a coordinate frame, transform
+revision, observation time, expiry, and uncertainty. Scene projection is
+suppressed when any required edge is missing, expired, non-invertible, or from
+a different revision. Lifecycle suspension invalidates both registration and
+pending scenes. See [AR_RUNTIME.md](AR_RUNTIME.md) and
+[DIGITAL_TWIN_AR.md](DIGITAL_TWIN_AR.md).
 
 ### 8. Evidence layer
 

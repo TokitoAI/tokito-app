@@ -1,6 +1,9 @@
 # Architecture facts
 
 - Continuous camera work is lightweight tracking/registration/change detection.
+- Metric 3D overlays consume a validated GLB package bound to the immutable
+  assembly-context revision. Filament renders it from fresh calibrated board
+  poses; the converter that produced the asset is outside the Android runtime.
 - Heavy vision inference is explicit, ROI-bounded, deadline-bounded, and
   cancellable.
 - The runtime emits structured observations with evidence and provenance;
