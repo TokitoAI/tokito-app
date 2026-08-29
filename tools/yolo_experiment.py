@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import shutil
@@ -91,6 +92,17 @@ def copy_training_image(source: Path, target: Path) -> str:
     return sha256_file(target)
 
 
+def image_dimensions(path: Path) -> tuple[int, int]:
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise YoloExperimentError(
+            "Pillow is required to inspect training images"
+        ) from exc
+    with Image.open(path) as image:
+        return image.size
+
+
 def validate_yolo_label(path: Path, class_count: int) -> int:
     rows = [
         line.strip()
@@ -121,6 +133,89 @@ def validate_yolo_label(path: Path, class_count: int) -> int:
     return len(rows)
 
 
+def _rotate_point(
+    x: float,
+    y: float,
+    angle_degrees: float,
+    image_width: int,
+    image_height: int,
+) -> tuple[float, float]:
+    """Map a normalized point through Pillow's pixel-space centre rotation."""
+    radians = math.radians(angle_degrees)
+    cosine = math.cos(radians)
+    sine = math.sin(radians)
+    dx = x * image_width - image_width / 2.0
+    dy = y * image_height - image_height / 2.0
+    return (
+        (cosine * dx + sine * dy + image_width / 2.0) / image_width,
+        (-sine * dx + cosine * dy + image_height / 2.0) / image_height,
+    )
+
+
+def rotate_yolo_label(
+    source: Path,
+    target: Path,
+    angle_degrees: float,
+    image_width: int,
+    image_height: int,
+) -> int:
+    """Rotate YOLO boxes, clip them to the image, and write deterministic labels."""
+    output_rows: list[str] = []
+    for row_number, row in enumerate(
+        (line.strip() for line in source.read_text(encoding="utf-8").splitlines()),
+        start=1,
+    ):
+        if not row:
+            continue
+        fields = row.split()
+        if len(fields) != 5:
+            raise YoloExperimentError(f"{source}:{row_number}: expected 5 YOLO fields")
+        class_id = int(fields[0])
+        center_x, center_y, width, height = (float(value) for value in fields[1:])
+        corners = (
+            (center_x - width / 2.0, center_y - height / 2.0),
+            (center_x + width / 2.0, center_y - height / 2.0),
+            (center_x + width / 2.0, center_y + height / 2.0),
+            (center_x - width / 2.0, center_y + height / 2.0),
+        )
+        transformed = [
+            _rotate_point(x, y, angle_degrees, image_width, image_height)
+            for x, y in corners
+        ]
+        minimum_x = max(0.0, min(x for x, _ in transformed))
+        maximum_x = min(1.0, max(x for x, _ in transformed))
+        minimum_y = max(0.0, min(y for _, y in transformed))
+        maximum_y = min(1.0, max(y for _, y in transformed))
+        if maximum_x <= minimum_x or maximum_y <= minimum_y:
+            continue
+        output_rows.append(
+            f"{class_id} {(minimum_x + maximum_x) / 2.0:.9f} "
+            f"{(minimum_y + maximum_y) / 2.0:.9f} "
+            f"{maximum_x - minimum_x:.9f} {maximum_y - minimum_y:.9f}"
+        )
+    target.write_text("\n".join(output_rows) + "\n", encoding="utf-8")
+    return len(output_rows)
+
+
+def rotate_training_image(source: Path, target: Path, angle_degrees: float) -> str:
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise YoloExperimentError(
+            "Pillow is required for rotation augmentation"
+        ) from exc
+    with Image.open(source) as image:
+        normalized = ImageOps.exif_transpose(image).convert("RGB")
+        rotated = normalized.rotate(
+            angle_degrees,
+            resample=Image.Resampling.BICUBIC,
+            expand=False,
+            fillcolor=(114, 114, 114),
+        )
+        rotated.save(target, "JPEG", subsampling=0, quality=95)
+    return sha256_file(target)
+
+
 def _write_data_yaml(
     output_dir: Path, class_names: list[str], *, holdout: bool
 ) -> Path:
@@ -146,6 +241,8 @@ def prepare_dataset(
     *,
     local_smoke: bool,
     holdout_image_id: str | None = None,
+    rotation_angles: Sequence[float] = (),
+    rotation_grid: Sequence[float] = (),
 ) -> dict[str, Any]:
     output_dir = output_dir.resolve()
     review = load_json(review_manifest_path)
@@ -171,11 +268,19 @@ def prepare_dataset(
         record["image_id"] for record in records
     }:
         raise YoloExperimentError(f"unknown holdout image ID: {holdout_image_id}")
+    if rotation_angles and len(rotation_angles) != len(records):
+        raise YoloExperimentError(
+            "rotation angle count must equal the reviewed image count"
+        )
+    if rotation_angles and rotation_grid:
+        raise YoloExperimentError(
+            "use either per-image rotation angles or a shared rotation grid"
+        )
     for split in ("train", "holdout"):
         (output_dir / "images" / split).mkdir(parents=True, exist_ok=True)
         (output_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
     prepared: list[dict[str, Any]] = []
-    for record in records:
+    for record_index, record in enumerate(records):
         image_id = record["image_id"]
         intake_image = intake_by_id.get(image_id)
         if intake_image is None:
@@ -208,6 +313,44 @@ def prepare_dataset(
                 "split": split,
             }
         )
+        augmentation_angles = (
+            [float(rotation_angles[record_index])]
+            if rotation_angles
+            else [float(angle) for angle in rotation_grid]
+        )
+        for angle in augmentation_angles:
+            if not math.isfinite(angle):
+                raise YoloExperimentError("rotation angles must be finite")
+            normalized_angle = angle % 360.0
+            augmented_id = f"{image_id}__rotate_{normalized_angle:g}"
+            augmented_image = output_dir / "images" / split / f"{augmented_id}.jpg"
+            augmented_label = output_dir / "labels" / split / f"{augmented_id}.txt"
+            augmented_media_sha256 = rotate_training_image(
+                image_target, augmented_image, normalized_angle
+            )
+            augmented_box_count = rotate_yolo_label(
+                label_target,
+                augmented_label,
+                normalized_angle,
+                *image_dimensions(image_target),
+            )
+            prepared.append(
+                {
+                    "image_id": augmented_id,
+                    "parent_image_id": image_id,
+                    "augmentation": {
+                        "kind": "centre_rotation",
+                        "angle_degrees_counter_clockwise": normalized_angle,
+                        "canvas_policy": "preserve_size_clip_outside",
+                        "fill_rgb": [114, 114, 114],
+                    },
+                    "media_sha256": record["media_sha256"],
+                    "prepared_media_sha256": augmented_media_sha256,
+                    "label_sha256": sha256_file(augmented_label),
+                    "box_count": augmented_box_count,
+                    "split": split,
+                }
+            )
 
     yaml_path = _write_data_yaml(
         output_dir, class_names, holdout=bool(holdout_image_id)
@@ -221,6 +364,12 @@ def prepare_dataset(
         "item_count": len(prepared),
         "box_count": sum(item["box_count"] for item in prepared),
         "holdout_image_id": holdout_image_id,
+        "rotation_angles_by_source": (
+            [float(angle) % 360.0 for angle in rotation_angles]
+            if rotation_angles
+            else []
+        ),
+        "rotation_grid": [float(angle) % 360.0 for angle in rotation_grid],
         "source_trainable": trainable,
         "release_eligible": trainable and not local_smoke,
         "evaluation_valid": False,
@@ -441,6 +590,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     prepare.add_argument("--output-dir", required=True, type=Path)
     prepare.add_argument("--local-smoke", action="store_true")
     prepare.add_argument("--holdout-image-id")
+    prepare.add_argument(
+        "--rotation-angles",
+        help="comma-separated, one deterministic CCW angle per reviewed image",
+    )
+    prepare.add_argument(
+        "--rotation-grid",
+        help="comma-separated angles applied to every reviewed image",
+    )
 
     train = subparsers.add_parser("train")
     train.add_argument("--dataset-dir", required=True, type=Path)
@@ -469,6 +626,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output_dir,
             local_smoke=args.local_smoke,
             holdout_image_id=args.holdout_image_id,
+            rotation_angles=(
+                [float(value) for value in args.rotation_angles.split(",")]
+                if args.rotation_angles
+                else []
+            ),
+            rotation_grid=(
+                [float(value) for value in args.rotation_grid.split(",")]
+                if args.rotation_grid
+                else []
+            ),
         )
     elif args.command == "train":
         result = train_model(

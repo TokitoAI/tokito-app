@@ -21,6 +21,78 @@ The preparer normalizes a truncated JPEG only in its copied training asset,
 records both the immutable source digest and actual prepared-image digest, and
 never alters the supplied source file.
 
+## Rotation augmentation
+
+`prepare --rotation-angles` accepts exactly one deterministic angle per
+reviewed source image. It preserves each original and creates one rotated
+descendant, transforms and clips its labels, records the parent ID and angle,
+and keeps the descendant in the parent's split. Geometry is rotated in pixel
+space using the real image width and height; normalized-coordinate rotation is
+invalid for non-square camera images. For nine images, for example:
+
+```bash
+--rotation-angles 20,60,100,140,180,220,260,300,340
+```
+
+Do not copy augmented descendants into a different split. Rotation improves
+orientation coverage but cannot create new boards, acquisition sessions,
+lighting, physical components, or valid held-out evidence.
+
+For dense orientation smoke training, `--rotation-grid` applies every listed
+angle to every source while retaining lineage and split membership. It is
+mutually exclusive with `--rotation-angles`:
+
+```bash
+--rotation-grid 45,90,135,180,225,270,315
+```
+
+## Four-corner pose and semantic landmarks
+
+An axis-aligned detector box cannot register a board plane. Use
+`tools/yolo_pose_experiment.py` with a reviewed local pose manifest. The first
+four keypoints have a fixed clockwise image-coordinate contract:
+
+1. `board_top_left`
+2. `board_top_right`
+3. `board_bottom_right`
+4. `board_bottom_left`
+
+For small data, train only these four corners and store reviewed semantic guide
+landmarks (headers, switches, ports, processors, sensors, and LEDs) as
+normalized board-plane coordinates in `projected_landmarks`. Once the pose is
+accepted, one homography maps every reviewed landmark into the camera image.
+This is more stable and internally consistent than asking a small pose model to
+independently regress every part. Invisible or cropped corners carry visibility
+zero; they are never guessed. The preparer validates the ordered convex
+quadrilateral and transforms every visible corner through the same
+deterministic rotation as the image.
+
+Inference does not trust keypoint confidence alone. The predicted quadrilateral
+must also be clockwise, convex, non-degenerate, inside the image, and consistent
+with the detected board box. A failed gate records a `projection_status` and
+abstains from projecting component locations.
+
+```bash
+python tools/yolo_pose_experiment.py prepare \
+  --pose-manifest <session>/review/pose-review-manifest.json \
+  --review-manifest <session>/review/review_manifest.json \
+  --intake-manifest <session>/intake_manifest.json \
+  --output-dir datasets/local/yolo-pose-smoke/frdm-guide \
+  --holdout-image-id <reviewed-image-id> \
+  --rotation-angles 20,60,100,140,180,220,260,300,340
+
+python tools/yolo_pose_experiment.py train \
+  --dataset-dir datasets/local/yolo-pose-smoke/frdm-guide \
+  --output-dir models/local/yolo-pose-smoke/frdm-guide \
+  --base-model yolo11n-pose.pt --epochs 100 --device cpu
+```
+
+Printed-guide landmarks are useful only for validating the annotation and pose
+pipeline. They do not become physical-board positives. Production identity is
+resolved by registering a physical board, transforming a candidate into board
+coordinates, and consulting the reviewed assembly context; it is not encoded
+as one detector class per reference designator.
+
 ## Reproducible smoke run
 
 Prepare eight images and reserve one explicit same-session image for the
@@ -32,7 +104,8 @@ python tools/yolo_experiment.py prepare \
   --intake-manifest <session>/intake_manifest.json \
   --output-dir datasets/local/yolo-smoke/frdm-guide \
   --local-smoke \
-  --holdout-image-id <reviewed-image-id>
+  --holdout-image-id <reviewed-image-id> \
+  --rotation-angles 20,60,100,140,180,220,260,300,340
 ```
 
 Train a compact checkpoint:

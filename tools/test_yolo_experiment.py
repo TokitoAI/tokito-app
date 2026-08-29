@@ -104,6 +104,51 @@ class YoloExperimentTest(unittest.TestCase):
             with self.assertRaisesRegex(YoloExperimentError, "out of range"):
                 prepare_dataset(review, intake, root / "out", local_smoke=False)
 
+    def test_rotation_augmentation_stays_with_parent_split(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            review, intake = self.fixture(root)
+            output = root / "out"
+            manifest = prepare_dataset(
+                review,
+                intake,
+                output,
+                local_smoke=True,
+                holdout_image_id="image-1",
+                rotation_angles=[45.0],
+            )
+            self.assertEqual(manifest["item_count"], 2)
+            augmented = manifest["items"][1]
+            self.assertEqual(augmented["parent_image_id"], "image-1")
+            self.assertEqual(augmented["split"], "holdout")
+            self.assertEqual(
+                augmented["augmentation"]["angle_degrees_counter_clockwise"], 45.0
+            )
+            self.assertTrue(
+                (output / "images" / "holdout" / "image-1__rotate_45.jpg").is_file()
+            )
+            label = (
+                output / "labels" / "holdout" / "image-1__rotate_45.txt"
+            ).read_text(encoding="utf-8")
+            values = [float(value) for value in label.split()[1:]]
+            self.assertAlmostEqual(values[0], 0.5)
+            self.assertAlmostEqual(values[1], 0.5)
+            self.assertAlmostEqual(values[2], 0.353553391)
+            self.assertAlmostEqual(values[3], 0.353553391)
+
+    def test_rotation_schedule_must_cover_every_reviewed_image(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            review, intake = self.fixture(root)
+            with self.assertRaisesRegex(YoloExperimentError, "angle count"):
+                prepare_dataset(
+                    review,
+                    intake,
+                    root / "out",
+                    local_smoke=True,
+                    rotation_angles=[10.0, 20.0],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

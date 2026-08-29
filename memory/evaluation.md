@@ -29,3 +29,11 @@ explicitly requested local data only when every media and annotation digest is
 verified; it stays `release_eligible: false` and `evaluation_valid: false`.
 Same-session holdouts demonstrate pipeline execution, not detector
 generalization. Checkpoints and rendered reports remain ignored local output.
+Deterministic rotation descendants record their source lineage and always stay
+in the parent's split. Four-corner/landmark experiments use
+`tools/yolo_pose_experiment.py`; the ordered corner contract is clockwise from
+top-left, and cropped or unreviewed landmarks are visibility-zero rather than
+inferred. Semantic component points should be reviewed in normalized board
+coordinates and projected through an accepted four-corner homography. Pose
+confidence never bypasses the convexity, image-bound, box-consistency, area,
+and edge-length gate; unsafe geometry must abstain.
