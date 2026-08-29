@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -32,6 +33,117 @@ from kicad_pcb_placements import (
     find_all,
     parse_pcb_tree,
 )
+
+
+def _circumcenter(p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float]) -> tuple[float, float] | None:
+    """Center of the circle through three real points, or None if they are
+    (near-)collinear."""
+    ax, ay = p1
+    bx, by = p2
+    cx, cy = p3
+    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-9:
+        return None
+    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+    return (ux, uy)
+
+
+def _arc_intermediate_points(start: tuple[float, float], mid: tuple[float, float], end: tuple[float, float], samples: int = 8) -> list[tuple[float, float]]:
+    """Points sampled along the true circular arc through three real points
+    (KiCad gr_arc start/mid/end), from start to end passing through mid,
+    excluding both endpoints. Derived deterministically from the arc's own
+    real geometry -- nothing invented. Collinear degenerate arcs yield no
+    intermediate points (a straight segment)."""
+    center = _circumcenter(start, mid, end)
+    if center is None:
+        return []
+    cx, cy = center
+    radius = math.hypot(start[0] - cx, start[1] - cy)
+    a_start = math.atan2(start[1] - cy, start[0] - cx)
+    a_mid = math.atan2(mid[1] - cy, mid[0] - cx)
+    a_end = math.atan2(end[1] - cy, end[0] - cx)
+
+    def ccw_delta(from_angle: float, to_angle: float) -> float:
+        delta = (to_angle - from_angle) % (2 * math.pi)
+        return delta
+
+    # Pick the sweep direction in which the mid angle is actually passed.
+    if ccw_delta(a_start, a_mid) <= ccw_delta(a_start, a_end):
+        sweep = ccw_delta(a_start, a_end)
+        direction = 1.0
+    else:
+        sweep = ccw_delta(a_end, a_start)
+        direction = -1.0
+
+    points = []
+    for i in range(1, samples + 1):
+        angle = a_start + direction * sweep * (i / (samples + 1))
+        points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    return points
+
+
+def build_outline_polygon(segments: Sequence[dict[str, Any]], tolerance_mm: float = 0.01, arc_samples: int = 8) -> list[dict[str, float]]:
+    """Chains real Edge.Cuts segments into one ordered closed polygon of
+    {x, y} points -- the exact shape the canonical assembly-context
+    importer requires (ordered, >=3 finite points, non-zero signed area).
+    Segments are joined by endpoint matching within tolerance; arc segments
+    contribute intermediate points sampled along their true circle. Raises
+    rather than silently emitting a broken polygon if the segments do not
+    form a single closed loop."""
+    remaining = []
+    for segment in segments:
+        if "start" not in segment or "end" not in segment:
+            raise ValueError(f"outline segment lacks start/end: {segment}")
+        remaining.append(segment)
+    if not remaining:
+        raise ValueError("no outline segments")
+
+    def pt(node: dict[str, float]) -> tuple[float, float]:
+        return (node["x"], node["y"])
+
+    def close_enough(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        return math.hypot(a[0] - b[0], a[1] - b[1]) <= tolerance_mm
+
+    def segment_points(segment: dict[str, Any], flipped: bool) -> list[tuple[float, float]]:
+        start, end = pt(segment["start"]), pt(segment["end"])
+        if flipped:
+            start, end = end, start
+        if segment.get("type") == "gr_arc" and "mid" in segment:
+            intermediate = _arc_intermediate_points(start, pt(segment["mid"]), end, arc_samples)
+        else:
+            intermediate = []
+        return [start, *intermediate, end]
+
+    first = remaining.pop(0)
+    chain = segment_points(first, flipped=False)
+    while remaining:
+        current_end = chain[-1]
+        for index, candidate in enumerate(remaining):
+            if close_enough(pt(candidate["start"]), current_end):
+                chain.extend(segment_points(candidate, flipped=False)[1:])
+                remaining.pop(index)
+                break
+            if close_enough(pt(candidate["end"]), current_end):
+                chain.extend(segment_points(candidate, flipped=True)[1:])
+                remaining.pop(index)
+                break
+        else:
+            raise ValueError(f"outline does not chain into a single loop; {len(remaining)} segment(s) unreachable from {current_end}")
+
+    if not close_enough(chain[0], chain[-1]):
+        raise ValueError("outline chain does not close back to its starting point")
+    chain = chain[:-1]  # drop the duplicated closing point
+
+    if len(chain) < 3:
+        raise ValueError("closed outline has fewer than 3 points")
+    twice_area = 0.0
+    for (x1, y1), (x2, y2) in zip(chain, chain[1:] + chain[:1]):
+        twice_area += x1 * y2 - x2 * y1
+    if not math.isfinite(twice_area) or twice_area == 0.0:
+        raise ValueError("outline polygon is degenerate (zero signed area)")
+
+    return [{"x": x, "y": y} for x, y in chain]
 
 
 def sha256_file(path: Path) -> str:
@@ -204,7 +316,13 @@ def build_reference_package(
     brd: Path,
     board_id: str,
     board_revision: str,
+    handedness: str,
+    handedness_evidence: str,
 ) -> dict[str, Any]:
+    if handedness not in ("left", "right"):
+        raise ValueError("handedness must be the verified declaration 'left' or 'right'")
+    if not handedness_evidence.strip():
+        raise ValueError("a handedness declaration requires the evidence that verified it")
     tree = parse_pcb_tree(kicad_pcb)
     footprints = find_all(tree, "footprint")
     placements = []
@@ -217,7 +335,8 @@ def build_reference_package(
     source_id = f"{board_id}-allegro-brd"
     components, footprint_classification_rows = build_components(placements, bom_map, source_id)
     landmarks = build_landmarks(footprint_classification_rows)
-    outline = extract_board_outline(tree)
+    outline_segments = extract_board_outline(tree)
+    outline = build_outline_polygon(outline_segments)
 
     classification_counts: dict[str, int] = {}
     for row in footprint_classification_rows:
@@ -230,8 +349,9 @@ def build_reference_package(
             "revision": board_revision,
             "coordinate_frame_id": "kicad-import-native-mm",
             "units": "mm",
-            "handedness": "not_yet_verified_against_physical_board",
+            "handedness": handedness,
             "outline": outline,
+            "outline_segments": outline_segments,
         },
         "components": components,
         "landmarks": landmarks,
@@ -262,6 +382,15 @@ def build_reference_package(
             "calibrated or verified against physical board registration (issue #13, owned separately).",
             "footprint values are geometry-derived descriptors, not authoritative KiCad/JEDEC footprint "
             "names -- the Allegro importer does not preserve a footprint library identity.",
+            "board.outline is an ordered closed polygon chained from the real Edge.Cuts segments, with "
+            "arc segments sampled along their true circle (computed from each arc's own real "
+            "start/mid/end points); the raw segments are preserved in board.outline_segments for "
+            "provenance.",
+            f"handedness evidence: {handedness_evidence}",
+            "integrity.signature_id remains 'not_yet_signed': the platform integration owns the "
+            "signature scheme and trusted-key policy (docs/ASSEMBLY_CONTEXT.md), so this candidate "
+            "MUST NOT be packaged into a production APK or activated by the runtime until it is "
+            "signed and verifier-accepted.",
         ],
         "footprint_classification_report": {
             "counts_by_category": classification_counts,
@@ -283,10 +412,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--brd", required=True, type=Path)
     parser.add_argument("--board-id", required=True)
     parser.add_argument("--board-revision", required=True)
+    parser.add_argument("--handedness", required=True, choices=("left", "right"), help="The verified handedness declaration; the canonical importer rejects anything else.")
+    parser.add_argument("--handedness-evidence", required=True, help="What verified the declaration (e.g. a photo-validation document reference).")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
 
-    bundle = build_reference_package(args.kicad_pcb, args.bom, args.brd, args.board_id, args.board_revision)
+    bundle = build_reference_package(
+        args.kicad_pcb, args.bom, args.brd, args.board_id, args.board_revision,
+        args.handedness, args.handedness_evidence,
+    )
     args.output.write_text(json.dumps(bundle, indent=2, sort_keys=True), encoding="utf-8")
 
     print(
@@ -295,7 +429,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "output": str(args.output),
                 "component_count": len(bundle["components"]),
                 "landmark_count": len(bundle["landmarks"]),
-                "outline_segment_count": len(bundle["board"]["outline"]),
+                "outline_point_count": len(bundle["board"]["outline"]),
+                "outline_segment_count": len(bundle["board"]["outline_segments"]),
                 "footprint_classification_counts": bundle["footprint_classification_report"]["counts_by_category"],
                 "status": bundle["status"],
             },

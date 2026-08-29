@@ -53,7 +53,14 @@ Real results from the actual board:
   designators is present in the real `SCH-90828_C.BOM`, with its vendor part
   number recorded alongside. This is independent confirmation that the
   recovered designators are real, not fabricated.
-- **11 real board-outline segments** extracted from the `Edge.Cuts` layer.
+- **Board outline as an ordered closed polygon of 43 `{x,y}` points**,
+  chained from the 11 real `Edge.Cuts` segments (arc segments sampled
+  along their true circle, computed from each arc's own real
+  start/mid/end points). This is the exact shape PR #68's canonical
+  importer requires (>=3 finite points, non-zero signed area); the
+  enclosed area, 6486.6mm^2, independently sanity-checks against the
+  board's ~118 x 55mm bounding box. The raw segments are preserved in
+  `board.outline_segments` for provenance.
 - **190 footprints with no usable reference designator**, all fully
   classified from real pad geometry only (no identity is asserted, only a
   geometric category and the measurement that produced it):
@@ -107,9 +114,21 @@ The emitted JSON is explicitly `"status": "candidate_pending_importer_and_regist
   PCB coordinate space. It has not been calibrated or verified against a
   physical board registration transform (issue #13, owned separately, not
   implemented here).
-- `board.handedness` is left as `"not_yet_verified_against_physical_board"`
-  rather than an asserted value, since this has not been independently
-  confirmed against the real board.
+- `board.handedness` is declared `"left"` (the importer accepts only
+  `left`/`right`), with the verification recorded in the bundle's
+  `status_notes`: `docs/FRDM_MCXN236_PHOTO_VALIDATION.md` established
+  that real placements render un-mirrored against the top-view iQOO
+  photos, fixing the frame as x-right/y-down viewed from the top side --
+  a left-handed triad with z toward the top-side viewer. The declaration
+  is a required CLI input (`--handedness` + `--handedness-evidence`),
+  never a tool default.
+- `integrity.signature_id` remains `"not_yet_signed"`: per
+  `docs/ASSEMBLY_CONTEXT.md` the platform integration owns the signature
+  scheme and trusted-key policy, so a real signature cannot originate
+  from this tooling. **This candidate must not be packaged into a
+  production APK or activated by the runtime until it is signed and
+  verifier-accepted** -- fabricating a signature id here would be
+  exactly the placeholder-as-capability violation the repo forbids.
 
 ## Held-out capture set: current gap
 

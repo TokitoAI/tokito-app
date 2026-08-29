@@ -8,11 +8,55 @@ import tempfile
 import unittest
 
 from build_frdm_reference_package import (
+    build_outline_polygon,
     build_reference_package,
     classify_unresolved_footprint,
     footprint_bounding_box_mm,
     parse_bom,
 )
+
+
+def _seg(x1, y1, x2, y2, kind="gr_line", mid=None):
+    segment = {"type": kind, "start": {"x": x1, "y": y1}, "end": {"x": x2, "y": y2}}
+    if mid is not None:
+        segment["mid"] = {"x": mid[0], "y": mid[1]}
+    return segment
+
+
+class BuildOutlinePolygonTest(unittest.TestCase):
+    def test_chains_out_of_order_and_flipped_segments(self) -> None:
+        # square given out of order, one segment reversed
+        segments = [
+            _seg(0, 0, 10, 0),
+            _seg(0, 10, 0, 0),
+            _seg(10, 10, 0, 10),
+            _seg(10, 10, 10, 0),  # reversed relative to the loop direction
+        ]
+        polygon = build_outline_polygon(segments)
+        self.assertEqual(len(polygon), 4)
+        xs = sorted(p["x"] for p in polygon)
+        self.assertEqual(xs, [0, 0, 10, 10])
+
+    def test_arc_contributes_points_on_its_true_circle(self) -> None:
+        import math
+        # semicircle of radius 5 around (5,0) from (0,0) through (5,5) to (10,0), closed by a line
+        segments = [
+            _seg(0, 0, 10, 0, kind="gr_arc", mid=(5, 5)),
+            _seg(10, 0, 0, 0),
+        ]
+        polygon = build_outline_polygon(segments, arc_samples=6)
+        self.assertGreaterEqual(len(polygon), 8)
+        for p in polygon:
+            if p["y"] > 0.01:  # a sampled arc point
+                self.assertAlmostEqual(math.hypot(p["x"] - 5, p["y"]), 5.0, places=6)
+
+    def test_open_chain_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            build_outline_polygon([_seg(0, 0, 10, 0), _seg(10, 0, 10, 10)])
+
+    def test_zero_area_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            build_outline_polygon([_seg(0, 0, 10, 0), _seg(10, 0, 5, 0), _seg(5, 0, 0, 0)])
 
 
 PCB_FIXTURE = """
@@ -23,6 +67,24 @@ PCB_FIXTURE = """
     (end 10.0 0.0)
     (layer "Edge.Cuts")
     (uuid "line1")
+  )
+  (gr_line
+    (start 10.0 0.0)
+    (end 10.0 10.0)
+    (layer "Edge.Cuts")
+    (uuid "line2")
+  )
+  (gr_line
+    (start 10.0 10.0)
+    (end 0.0 10.0)
+    (layer "Edge.Cuts")
+    (uuid "line3")
+  )
+  (gr_line
+    (start 0.0 10.0)
+    (end 0.0 0.0)
+    (layer "Edge.Cuts")
+    (uuid "line4")
   )
   (footprint ""
     (layer "F.Cu")
@@ -146,12 +208,16 @@ class BuildFrdmReferencePackageTest(unittest.TestCase):
             brd_path = Path(directory) / "board.brd"
             brd_path.write_bytes(b"fake-allegro-board-bytes")
 
-            bundle = build_reference_package(pcb_path, bom_path, brd_path, "test-board", "Rev X")
+            bundle = build_reference_package(pcb_path, bom_path, brd_path, "test-board", "Rev X", "left", "test-evidence")
 
             self.assertEqual(bundle["schema_version"], {"major": 1, "minor": 0})
             self.assertEqual(bundle["board"]["board_id"], "test-board")
             self.assertEqual(bundle["board"]["revision"], "Rev X")
-            self.assertEqual(len(bundle["board"]["outline"]), 1)
+            self.assertEqual(len(bundle["board"]["outline"]), 4)
+            self.assertEqual(bundle["board"]["handedness"], "left")
+            self.assertEqual(len(bundle["board"]["outline_segments"]), 4)
+            for point in bundle["board"]["outline"]:
+                self.assertEqual(sorted(point), ["x", "y"])
 
             self.assertEqual(len(bundle["components"]), 1)
             component = bundle["components"][0]
@@ -179,6 +245,9 @@ class BuildFrdmReferencePackageTest(unittest.TestCase):
         pcb_with_two_pad_unresolved = """
 (kicad_pcb
   (version 20250114)
+  (gr_line (start 0.0 0.0) (end 6.0 0.0) (layer "Edge.Cuts") (uuid "l1"))
+  (gr_line (start 6.0 0.0) (end 6.0 6.0) (layer "Edge.Cuts") (uuid "l2"))
+  (gr_line (start 6.0 6.0) (end 0.0 0.0) (layer "Edge.Cuts") (uuid "l3"))
   (footprint ""
     (layer "F.Cu")
     (uuid "ddd")
@@ -206,7 +275,7 @@ class BuildFrdmReferencePackageTest(unittest.TestCase):
             brd_path = Path(directory) / "board.brd"
             brd_path.write_bytes(b"fake-allegro-board-bytes")
 
-            bundle = build_reference_package(pcb_path, bom_path, brd_path, "test-board", "Rev X")
+            bundle = build_reference_package(pcb_path, bom_path, brd_path, "test-board", "Rev X", "left", "test-evidence")
 
             counts = bundle["footprint_classification_report"]["counts_by_category"]
             self.assertEqual(counts.get("unresolved_component_like"), 1)
