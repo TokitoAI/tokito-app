@@ -1,0 +1,8 @@
+<View>
+  <Header value="FRDM-MCXN236 printed-reference review" />
+  <Text name="policy" value="Box only the visible printed board depiction. Never label a guide, datasheet, package, or screen image as a physical board. For cropped depictions, stop at the photograph boundary and do not infer hidden pixels." />
+  <Image name="image" value="$image" zoom="true" rotateControl="false" />
+  <RectangleLabels name="label" toName="image" choice="single" showInline="true">
+    <Label value="NXP_FRDM-MCXN236_printed_board_depiction" background="#B5179E" />
+  </RectangleLabels>
+</View>
