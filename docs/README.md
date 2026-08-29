@@ -12,6 +12,7 @@ The documentation is split by authority and purpose:
 | [EVALUATION.md](EVALUATION.md) | Corpus policy, metrics, benchmarks, and release gates |
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Trust boundary and data-handling policy |
 | [DELIVERY_GATES.md](DELIVERY_GATES.md) | Evidence-gated implementation sequence |
+| [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
 | [decisions/](decisions/) | Architecture Decision Records |
 | [proposals/](proposals/) | Source proposals; informative, not normative |
 
