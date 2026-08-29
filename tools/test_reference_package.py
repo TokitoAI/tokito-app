@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+from unittest.mock import patch
 import unittest
 
-from reference_package.manifest import validate_manifest
+from reference_package.manifest import fetch_allowed_sources, validate_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,9 +108,51 @@ class ReferencePackageTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
         self.assertTrue(json.loads(completed.stdout)["ok"])
 
+    def test_fetch_rejects_oversized_response_without_final_artifact(self) -> None:
+        manifest = load_example()
+        source = next(source for source in manifest["sources"] if source["fetch_allowed"])
+        source["expected_digest"] = None
+
+        with tempfile.TemporaryDirectory() as directory, patch("reference_package.manifest.urlopen", return_value=_Response(b"too-large")):
+            with self.assertRaisesRegex(ValueError, "response exceeds max_bytes"):
+                fetch_allowed_sources(manifest, Path(directory), max_bytes=3)
+            self.assertFalse((Path(directory) / f"{source['source_id']}.html").exists())
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_fetch_publishes_verified_response_atomically(self) -> None:
+        manifest = load_example()
+        source = next(source for source in manifest["sources"] if source["fetch_allowed"])
+        payload = b"verified artifact"
+        source["expected_digest"] = "sha256:" + hashlib.sha256(payload).hexdigest()
+
+        with tempfile.TemporaryDirectory() as directory, patch("reference_package.manifest.urlopen", return_value=_Response(payload)):
+            fetched = fetch_allowed_sources(manifest, Path(directory), max_bytes=len(payload))
+            artifact = Path(fetched[0].path)
+            self.assertEqual(artifact.read_bytes(), payload)
+            self.assertEqual(list(Path(directory).glob(".*")), [])
+
 
 def true_value() -> bool:
     return True
+
+
+class _Response:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+        self._position = 0
+
+    def __enter__(self) -> "_Response":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        return None
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            size = len(self._payload)
+        chunk = self._payload[self._position : self._position + size]
+        self._position += len(chunk)
+        return chunk
 
 
 if __name__ == "__main__":

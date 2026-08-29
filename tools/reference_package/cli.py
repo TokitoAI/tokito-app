@@ -20,6 +20,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     fetch_parser = subcommands.add_parser("fetch", help="Fetch public artifacts explicitly marked fetch_allowed.")
     fetch_parser.add_argument("--manifest", required=True, type=Path)
     fetch_parser.add_argument("--output", type=Path)
+    fetch_parser.add_argument("--max-bytes", required=True, type=int)
 
     args = parser.parse_args(argv)
     manifest = load_manifest(args.manifest)
@@ -34,7 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     output = args.output or Path(manifest["retrieval_policy"]["default_output_directory"])
     try:
-        fetched = fetch_allowed_sources(manifest, output)
+        fetched = fetch_allowed_sources(manifest, output, args.max_bytes)
     except OSError as exc:
         print(json.dumps({"error": {"code": "fetch_failed", "message": str(exc)}}, indent=2, sort_keys=True))
         return 1

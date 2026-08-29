@@ -6,7 +6,9 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import os
 from pathlib import Path
+import tempfile
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -110,11 +112,14 @@ def validate_manifest(manifest: dict[str, Any]) -> ValidationResult:
     return ValidationResult(tuple(messages))
 
 
-def fetch_allowed_sources(manifest: dict[str, Any], output_dir: Path) -> list[FetchResult]:
+def fetch_allowed_sources(manifest: dict[str, Any], output_dir: Path, max_bytes: int) -> list[FetchResult]:
     result = validate_manifest(manifest)
     if not result.ok:
         formatted = "; ".join(f"{message.path}: {message.message}" for message in result.messages)
         raise ValueError(f"manifest is not valid: {formatted}")
+
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be greater than zero")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     fetched: list[FetchResult] = []
@@ -125,15 +130,9 @@ def fetch_allowed_sources(manifest: dict[str, Any], output_dir: Path) -> list[Fe
             continue
         url = source["url"]
         request = Request(url, headers={"User-Agent": "TokitoSourcePackageValidator/1.0"})
-        with urlopen(request, timeout=30) as response:
-            body = response.read()
-        digest = "sha256:" + hashlib.sha256(body).hexdigest()
-        expected_digest = source.get("expected_digest")
-        if expected_digest and expected_digest != digest:
-            raise ValueError(f"{source['source_id']}: digest mismatch")
         path = output_dir / _artifact_filename(source)
-        path.write_bytes(body)
-        fetched.append(FetchResult(source["source_id"], str(path), digest, len(body)))
+        digest, bytes_written = _stream_verified_artifact(source, request, path, max_bytes)
+        fetched.append(FetchResult(source["source_id"], str(path), digest, bytes_written))
     return fetched
 
 
@@ -215,3 +214,30 @@ def _artifact_filename(source: dict[str, Any]) -> str:
         "metadata": ".json",
     }[source["artifact_format"]]
     return f"{source['source_id']}{suffix}"
+
+
+def _stream_verified_artifact(source: dict[str, Any], request: Request, path: Path, max_bytes: int) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    bytes_written = 0
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent, prefix=f".{path.name}.", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            with urlopen(request, timeout=30) as response:
+                while chunk := response.read(1024 * 1024):
+                    bytes_written += len(chunk)
+                    if bytes_written > max_bytes:
+                        raise ValueError(f"{source['source_id']}: response exceeds max_bytes")
+                    digest.update(chunk)
+                    temporary.write(chunk)
+
+        rendered_digest = "sha256:" + digest.hexdigest()
+        expected_digest = source.get("expected_digest")
+        if expected_digest and expected_digest != rendered_digest:
+            raise ValueError(f"{source['source_id']}: digest mismatch")
+        os.replace(temporary_path, path)
+        temporary_path = None
+        return rendered_digest, bytes_written
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
