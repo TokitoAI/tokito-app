@@ -13,6 +13,7 @@ from component_info import (
     extract_board_nets,
     find_components,
     get_component_info,
+    get_connection_guidance,
     reference_class,
 )
 
@@ -154,6 +155,50 @@ class BuildAndQueryIndexTest(unittest.TestCase):
         self.assertEqual(find_components(index, "r1"), ["R1"])
         self.assertEqual(find_components(index, "vishay"), ["D1"])
         self.assertEqual(find_components(index, "nothing-here"), [])
+
+
+class ConnectionGuidanceTest(unittest.TestCase):
+    def test_terminals_carry_role_net_and_directed_endpoints(self) -> None:
+        guidance = get_connection_guidance(build_index(), "D1")
+        self.assertEqual(guidance["status"], "ok")
+        self.assertEqual(guidance["polarity_status"], "source_verified")
+        by_pad = {t["pad"]: t for t in guidance["terminals"]}
+        self.assertEqual(by_pad["A"]["role"], "anode")
+        self.assertEqual(by_pad["C"]["role"], "cathode")
+        self.assertEqual(by_pad["C"]["net"], "P5V0")
+        endpoint = by_pad["C"]["connected_endpoints"][0]
+        self.assertEqual(endpoint["reference"], "R1")
+        self.assertEqual(endpoint["glb_node_name"], "R1")
+        # D1 at (10,-20), R1 at (30,-20): direction is +20 in x, 0 in y --
+        # straight from the two authored placements, nothing invented
+        self.assertEqual(endpoint["direction_from_component_mm"], {"dx": 20.0, "dy": 0.0})
+
+    def test_no_role_claim_without_source_polarity(self) -> None:
+        guidance = get_connection_guidance(build_index(), "R1")
+        self.assertEqual(guidance["polarity_status"], "not_available_from_source")
+        self.assertTrue(all(t["role"] is None for t in guidance["terminals"]))
+
+    def test_unknown_reference_is_an_explicit_status(self) -> None:
+        guidance = get_connection_guidance(build_index(), "Z99")
+        self.assertEqual(guidance["status"], "unknown_reference")
+        self.assertNotIn("terminals", guidance)
+
+    def test_endpoint_truncation_is_reported_not_hidden(self) -> None:
+        index = build_index()
+        guidance = get_connection_guidance(index, "D1", max_endpoints_per_net=0)
+        by_pad = {t["pad"]: t for t in guidance["terminals"]}
+        self.assertEqual(by_pad["C"]["connected_endpoints"], [])
+        self.assertEqual(by_pad["C"]["endpoint_count_total"], 1)
+        self.assertTrue(by_pad["C"]["endpoints_truncated"])
+
+    def test_netless_pad_yields_no_endpoints(self) -> None:
+        index = build_index()
+        index["components"]["R1"]["pads"].append({"number": "3", "net": None})
+        guidance = get_connection_guidance(index, "R1")
+        pad3 = next(t for t in guidance["terminals"] if t["pad"] == "3")
+        self.assertIsNone(pad3["net"])
+        self.assertEqual(pad3["connected_endpoints"], [])
+        self.assertEqual(pad3["endpoint_count_total"], 0)
 
 
 if __name__ == "__main__":

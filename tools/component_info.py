@@ -183,6 +183,90 @@ def get_component_info(index: dict[str, Any], reference: str, max_peers_per_net:
     return result
 
 
+def get_connection_guidance(
+    index: dict[str, Any], reference: str, max_endpoints_per_net: int = 25
+) -> dict[str, Any]:
+    """Deterministic connection-guidance facts for one component: per
+    terminal, the copper net, its role (anode/cathode only when the source
+    artifact names the pads), and every other endpoint on that net with its
+    board position, GLB node, and the geometric direction from this
+    component to it. Everything is read from the board's own net
+    assignments and authored placements -- the LLM lane phrases this, the
+    AR lane draws it; neither is allowed to invent any of it.
+
+    Explicit statuses instead of guesses: unknown_reference for a bad
+    designator; per-terminal net null (with no endpoints) when the pad has
+    no copper net in the source; polarity_status says whether orientation
+    guidance is source-verified or must not be given."""
+    component = index["components"].get(reference)
+    if component is None:
+        return {"status": "unknown_reference", "reference": reference}
+
+    polarity = component.get("polarity_or_pin_one")
+    pad_roles: dict[str, str] = {}
+    if isinstance(polarity, dict):
+        if polarity.get("anode_pad"):
+            pad_roles[polarity["anode_pad"]] = "anode"
+        if polarity.get("cathode_pad"):
+            pad_roles[polarity["cathode_pad"]] = "cathode"
+
+    own_position = component["board_position_mm"]
+    terminals = []
+    for pad in component["pads"]:
+        net = pad["net"]
+        all_endpoints = [
+            endpoint
+            for endpoint in (index["net_connectivity"].get(net, []) if net else [])
+            if endpoint["reference"] != reference
+        ]
+        endpoints = []
+        for endpoint in all_endpoints[:max_endpoints_per_net]:
+            peer = index["components"].get(endpoint["reference"])
+            peer_position = peer["board_position_mm"] if peer else None
+            endpoints.append(
+                {
+                    "reference": endpoint["reference"],
+                    "pad": endpoint["pad"],
+                    "component_class": peer["component_class"] if peer else None,
+                    "board_position_mm": peer_position,
+                    "glb_node_name": peer["glb_node_name"] if peer else None,
+                    # direction from this component's centroid to the peer's,
+                    # in board mm -- the AR overlay's arrow, from placement
+                    # data alone
+                    "direction_from_component_mm": {
+                        "dx": round(peer_position["x"] - own_position["x"], 3),
+                        "dy": round(peer_position["y"] - own_position["y"], 3),
+                    }
+                    if peer_position
+                    else None,
+                }
+            )
+        terminals.append(
+            {
+                "pad": pad["number"],
+                "role": pad_roles.get(pad["number"]),
+                "net": net,
+                "endpoint_count_total": len(all_endpoints),
+                "endpoints_truncated": len(all_endpoints) > max_endpoints_per_net,
+                "connected_endpoints": endpoints,
+            }
+        )
+
+    return {
+        "status": "ok",
+        "board_id": index.get("board_id"),
+        "reference": reference,
+        "component_class": component["component_class"],
+        "bom": component["bom"],
+        "side": component["side"],
+        "board_position_mm": own_position,
+        "glb_node_name": component["glb_node_name"],
+        "polarity_status": "source_verified" if pad_roles else "not_available_from_source",
+        "polarity_or_pin_one": polarity,
+        "terminals": terminals,
+    }
+
+
 def find_components(index: dict[str, Any], query: str) -> list[str]:
     """References whose designator, BOM description, or part number contains
     the query (case-insensitive). Substring match only -- semantic queries
@@ -210,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-json", type=Path, help="write the built index here")
     parser.add_argument("--index-json", type=Path, help="query an already-built index")
     parser.add_argument("--component", help="reference designator to query")
+    parser.add_argument("--connection-guidance", help="reference designator to build connection guidance for")
     parser.add_argument("--search", help="substring to search designators/BOM text for")
     args = parser.parse_args(argv)
 
@@ -235,6 +320,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"error": f"unknown reference {args.component!r}"}))
             return 1
         print(json.dumps(info, indent=2))
+    if args.connection_guidance:
+        guidance = get_connection_guidance(index, args.connection_guidance)
+        print(json.dumps(guidance, indent=2))
+        if guidance["status"] != "ok":
+            return 1
     if args.search:
         print(json.dumps(find_components(index, args.search), indent=2))
     return 0

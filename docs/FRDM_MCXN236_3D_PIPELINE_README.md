@@ -146,6 +146,30 @@ The index deliberately contains **structured facts only** -- prose
 explanations (LLM lane) and on-screen highlighting (AR lane) are the
 consumers, not part of this artifact.
 
+### Connection guidance (`get_connection_guidance()`)
+
+`component_info.py --connection-guidance <REF>` answers "where and how
+does this component connect" deterministically, per terminal:
+
+- the copper **net** and every other `(reference, pad)` endpoint on it,
+  each with its board position, GLB node name, and the geometric
+  **direction vector** from the queried component to that endpoint
+  (board mm, straight from the two authored placements) -- the data an
+  AR arrow or an LLM sentence is built from;
+- the terminal **role** (`anode`/`cathode`) *only* when the vendor
+  footprint itself names the pads (`polarity_status:
+  "source_verified"`); otherwise `polarity_status:
+  "not_available_from_source"` and roles stay null -- direction
+  instructions must not be given for such parts;
+- honest endpoint truncation (`endpoint_count_total`,
+  `endpoints_truncated`) for large nets (GND has 236 endpoints), and an
+  explicit `unknown_reference` status instead of a guess.
+
+Real-board example: `D1` (Vishay `MSS1P3L` Schottky) reports anode on
+`P5V_USB_HS` (toward `L3`/`C40`/`TP14`) and cathode on `P5V0`;
+`D14` (a dual CAN protector with pads 1/2/3) correctly refuses polarity
+roles because its footprint provides none.
+
 ## Where the outputs live
 
 Everything generated is under `build/ar-assets/frdm-mcxn236/generated/`
