@@ -28,7 +28,7 @@ from xlsx_bom_parser import (
 
 
 def make_component(reference: str, x: float = 0.0, y: float = 0.0, rotation: float = 0.0, side: str = "top") -> dict:
-    return {"reference_designator": reference, "centroid": {"x": x, "y": y}, "rotation_degrees": rotation, "side": side}
+    return {"reference_designator": reference, "centroid": {"x": x, "y": y}, "rotation_degrees": rotation, "side": side, "footprint_bbox_mm": {"width": 1.5, "height": 0.6}}
 
 
 class ExtractChipPackageCodeTest(unittest.TestCase):
@@ -146,6 +146,30 @@ class ResolveThtSocketModelTest(unittest.TestCase):
             model_path, reason = resolve_tht_socket_model(2, 16, 2.54, False, Path(directory))
             self.assertIsNone(model_path)
             self.assertIn("does not exist", reason)
+
+
+class ModelRotateZTest(unittest.TestCase):
+    def test_socket_with_local_x_pads_needs_90(self) -> None:
+        from component_model_resolver import model_rotate_z_deg
+        # J1-style: pad rows along local X, but PinSocket canonical axis is Y
+        self.assertEqual(model_rotate_z_deg({"width": 19.43, "height": 4.19}, "Y"), 90.0)
+
+    def test_socket_with_local_y_pads_is_aligned(self) -> None:
+        from component_model_resolver import model_rotate_z_deg
+        self.assertEqual(model_rotate_z_deg({"width": 4.06, "height": 39.62}, "Y"), 0.0)
+
+    def test_passive_with_local_y_pads_needs_90(self) -> None:
+        from component_model_resolver import model_rotate_z_deg
+        self.assertEqual(model_rotate_z_deg({"width": 0.6, "height": 1.7}, "X"), 90.0)
+
+    def test_near_square_is_exempt(self) -> None:
+        from component_model_resolver import model_rotate_z_deg
+        self.assertEqual(model_rotate_z_deg({"width": 4.22, "height": 4.22}, "Y"), 0.0)
+
+    def test_invalid_axis_raises(self) -> None:
+        from component_model_resolver import model_rotate_z_deg
+        with self.assertRaises(ValueError):
+            model_rotate_z_deg({"width": 1.0, "height": 2.0}, "Z")
 
 
 class ResolveSot323ModelTest(unittest.TestCase):

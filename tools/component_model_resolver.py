@@ -54,6 +54,35 @@ CHIP_PASSIVE_LIBRARIES = {
     "L": ("Inductor_SMD.3dshapes", "L"),
 }
 
+ELONGATION_THRESHOLD = 1.15
+"""A footprint's local pad bbox must be this much longer in one axis than
+the other before an axis is asserted; near-square parts get no model
+rotation."""
+
+
+def model_rotate_z_deg(bbox: dict[str, float], canonical_axis: str) -> float:
+    """Rotation (degrees, about Z, in the footprint's local frame) needed to
+    align a family model with this footprint's real pad-array axis.
+
+    KiCad model families have a canonical pad-array axis, read directly
+    from KiCad's own authored footprints (each attaches its model with
+    rotate 0 0 0): PinSocket/PinHeader pin rows run along local Y (pin1
+    (0,0), pin3 (0,2.54), ...), while chip passives/LEDs/SOIC/SOT/SOD/
+    crystal pads run along local X (e.g. R_0603 pads at (+-0.825, 0)).
+    Allegro-imported footprints don't follow either convention
+    consistently, so the footprint's real local axis is measured from its
+    own pad bbox and compared against the family's canonical axis."""
+    if canonical_axis not in ("X", "Y"):
+        raise ValueError(f"canonical_axis must be 'X' or 'Y', got {canonical_axis!r}")
+    width, height = bbox["width"], bbox["height"]
+    if width >= height * ELONGATION_THRESHOLD:
+        local_axis = "X"
+    elif height >= width * ELONGATION_THRESHOLD:
+        local_axis = "Y"
+    else:
+        return 0.0
+    return 0.0 if local_axis == canonical_axis else 90.0
+
 
 def reference_prefix(reference: str) -> str:
     prefix = ""
@@ -171,6 +200,7 @@ def resolve_all(
         status = "no_recognized_package_code"
         evidence = f"BOM description: {description!r}" if description else "reference not found in BOM"
         model_kind = None
+        canonical_axis = "X"
 
         if package_code is not None and is_led:
             model_path, reason = resolve_led_chip_model(package_code, library_root)
@@ -213,6 +243,7 @@ def resolve_all(
             evidence = reason
             package_code = f"HDR-{rows}x{cols}-{pitch_mm}mm"
             model_kind = "generic_family_approximate" if model_path else None
+            canonical_axis = "Y"
         elif tht_socket_spec is not None:
             rows, cols, pitch_mm, right_angle = tht_socket_spec
             model_path, reason = resolve_tht_socket_model(rows, cols, pitch_mm, right_angle, library_root)
@@ -220,6 +251,7 @@ def resolve_all(
             evidence = reason
             package_code = f"SKT-{rows}x{cols}-{pitch_mm}mm" + ("-RA" if right_angle else "")
             model_kind = "generic_family_approximate" if model_path else None
+            canonical_axis = "Y"
 
         results.append(
             {
@@ -234,6 +266,7 @@ def resolve_all(
                 "package_code": package_code,
                 "model_path": model_path,
                 "model_kind": model_kind,
+                "model_rotate_z_deg": model_rotate_z_deg(component["footprint_bbox_mm"], canonical_axis) if model_path else 0.0,
                 "status": status,
                 "evidence": evidence,
             }

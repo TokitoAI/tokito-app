@@ -221,6 +221,46 @@ python tools/attach_3d_models_text.py \
   build/ar-assets/frdm-mcxn236/generated/LAY-90828_C_populated.kicad_pcb
 ```
 
+## Fifth pass: model-orientation fix and GLB node naming
+
+Two real defects found after the fourth pass, both fixed generically:
+
+**1. 90-degree model misalignment (14 components).** KiCad model
+families have a canonical pad-array axis, read directly from KiCad's own
+authored footprints (each attaches its model with `rotate 0 0 0`):
+PinSocket/PinHeader pin rows run along local **Y** (pin1 (0,0), pin3
+(0,2.54), ...), while chip passive/LED/SOIC/SOT/SOD/crystal pads run
+along local **X** (e.g. `R_0603` pads at (+-0.825, 0)). The
+Allegro-imported footprints follow neither convention consistently, so
+any footprint whose real local pad axis disagreed with its family's
+canonical axis rendered its body 90 degrees off -- visibly protruding
+past the board edge for the large sockets `J1`, `J3`, `J4`. The fix is
+fully data-driven: `model_rotate_z_deg()` measures each footprint's own
+local pad-bbox axis (threshold 1.15x elongation; near-square parts
+exempt) and compares it against the family's canonical axis, writing the
+compensating model Z-rotation. 14 components were corrected: `J1`,
+`J3`, `J4` (sockets), `JP1`-`JP8` (jumper headers), `Q1`, `U3`, `D14`
+(SOT parts). No per-reference values anywhere. Verified by top + side
+re-renders: every socket now lies flush along its edge, nothing
+protrudes, nothing floats (side view shows all bodies on the board plane
+with THT pins correctly below). An earlier claim that the renders were
+fully verified missed the `J1`/`J3`/`J4` misalignment -- corrected here.
+
+**2. GLB nodes were named `${REFERENCE}` (391 components).** The Allegro
+importer leaves the literal placeholder as each footprint's canonical
+Reference property, so `kicad-cli` named every exported GLB component
+node `${REFERENCE}` -- making per-component mesh lookup impossible for
+the AR consumer. The attach step now rewrites the placeholder to the
+real recovered designator inside each footprint's own span (391
+repaired, exactly the recovered-designator count). The exported GLB now
+carries **340 distinct real node names** (`U1`, `J9`, `C1`, ...), zero
+placeholders, enabling direct mesh isolation in the AR runtime.
+
+Known remaining approximation: the right-angle Pmod socket (`J7`) is
+axis-aligned correctly, but its 180-degree facing (opening toward vs
+away from the board edge) has not been independently verified against
+the physical board -- flag for review against the photos before AR use.
+
 ## Verified results
 
 - `kicad-cli pcb export glb` accepted the spliced file cleanly (same

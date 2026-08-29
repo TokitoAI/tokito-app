@@ -71,15 +71,18 @@ def find_footprint_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def build_model_sexpr(model_path: str, indent: str = "\t\t") -> str:
+def build_model_sexpr(model_path: str, rotate_z_deg: float = 0.0, indent: str = "\t\t") -> str:
     escaped = model_path.replace("\\", "\\\\").replace('"', '\\"')
     return (
         f'\n{indent}(model "{escaped}"\n'
         f"{indent}\t(offset (xyz 0 0 0))\n"
         f"{indent}\t(scale (xyz 1 1 1))\n"
-        f"{indent}\t(rotate (xyz 0 0 0))\n"
+        f"{indent}\t(rotate (xyz 0 0 {rotate_z_deg:g}))\n"
         f"{indent})"
     )
+
+
+PLACEHOLDER_REFERENCE_PROPERTY = '(property "Reference" "${REFERENCE}"'
 
 
 def attach_models(input_path: Path, resolution_rows: list[dict[str, Any]], output_path: Path) -> dict[str, Any]:
@@ -93,24 +96,32 @@ def attach_models(input_path: Path, resolution_rows: list[dict[str, Any]], outpu
     if len(spans) != len(placements):
         raise ValueError(f"footprint span count ({len(spans)}) does not match parsed footprint count ({len(placements)}); refusing to splice")
 
-    model_by_reference = {row["reference"]: row["model_path"] for row in resolution_rows if row["model_path"] is not None}
+    rows_by_reference = {row["reference"]: row for row in resolution_rows if row["model_path"] is not None}
 
-    insertions: list[tuple[int, str]] = []
-    attached = 0
-    for placement, (_, end) in zip(placements, spans):
-        model_path = model_by_reference.get(placement["reference"])
-        if model_path is None:
-            continue
-        insertions.append((end, build_model_sexpr(model_path)))
-        attached += 1
-
-    insertions.sort(key=lambda item: item[0])
     pieces = []
     previous = 0
-    for position, insertion_text in insertions:
-        pieces.append(text[previous:position])
-        pieces.append(insertion_text)
-        previous = position
+    attached = 0
+    references_repaired = 0
+    for placement, (start, end) in zip(placements, spans):
+        pieces.append(text[previous:start])
+        span_text = text[start:end]
+        # The Allegro importer leaves a literal "${REFERENCE}" placeholder as
+        # the footprint's canonical Reference property, which then names GLB
+        # nodes "${REFERENCE}" and breaks per-component mesh lookup downstream.
+        # The real designator was already recovered from this same footprint's
+        # own Reference text, so rewrite the placeholder to it.
+        if not placement["is_placeholder_reference"] and PLACEHOLDER_REFERENCE_PROPERTY in span_text:
+            span_text = span_text.replace(
+                PLACEHOLDER_REFERENCE_PROPERTY,
+                f'(property "Reference" "{placement["reference"]}"',
+            )
+            references_repaired += 1
+        pieces.append(span_text)
+        row = rows_by_reference.get(placement["reference"])
+        if row is not None:
+            pieces.append(build_model_sexpr(row["model_path"], float(row.get("model_rotate_z_deg", 0.0))))
+            attached += 1
+        previous = end
     pieces.append(text[previous:])
 
     output_path.write_text("".join(pieces), encoding="utf-8")
@@ -120,6 +131,7 @@ def attach_models(input_path: Path, resolution_rows: list[dict[str, Any]], outpu
         "output": str(output_path),
         "footprint_count": len(placements),
         "models_attached": attached,
+        "placeholder_references_repaired": references_repaired,
     }
 
 

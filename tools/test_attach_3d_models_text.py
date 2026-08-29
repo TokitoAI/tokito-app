@@ -31,6 +31,11 @@ FIXTURE = """
       (at 0 0 0)
       (layer "F.SilkS")
     )
+    (property "Reference" "${REFERENCE}"
+      (at 0 0 0)
+      (layer "B.Fab")
+      (hide yes)
+    )
   )
 )
 """
@@ -67,8 +72,38 @@ class BuildModelSexprTest(unittest.TestCase):
         self.assertIn("(scale (xyz 1 1 1))", result)
         self.assertIn("(rotate (xyz 0 0 0))", result)
 
+    def test_rotation_is_written_when_supplied(self) -> None:
+        result = build_model_sexpr("model.step", rotate_z_deg=90.0)
+        self.assertIn("(rotate (xyz 0 0 90))", result)
+
 
 class AttachModelsTest(unittest.TestCase):
+    def test_placeholder_reference_rewritten_to_real_designator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "board.kicad_pcb"
+            input_path.write_text(FIXTURE, encoding="utf-8")
+            output_path = Path(directory) / "populated.kicad_pcb"
+
+            result = attach_models(input_path, [], output_path)
+
+            self.assertEqual(result["placeholder_references_repaired"], 1)
+            output_text = output_path.read_text(encoding="utf-8")
+            self.assertNotIn("${REFERENCE}", output_text)
+            # U1's placeholder became a second real "U1" reference property
+            self.assertEqual(output_text.count('(property "Reference" "U1"'), 2)
+
+    def test_model_rotation_flows_from_resolution_row(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "board.kicad_pcb"
+            input_path.write_text(FIXTURE, encoding="utf-8")
+            output_path = Path(directory) / "populated.kicad_pcb"
+
+            rows = [{"reference": "R1", "model_path": "/m/R.step", "model_rotate_z_deg": 90.0}]
+            attach_models(input_path, rows, output_path)
+
+            output_text = output_path.read_text(encoding="utf-8")
+            self.assertIn("(rotate (xyz 0 0 90))", output_text)
+
     def test_splices_model_only_into_matched_footprint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             input_path = Path(directory) / "board.kicad_pcb"
