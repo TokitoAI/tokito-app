@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tokito_background">#090C11</color>
+    <color name="tokito_surface">#11161E</color>
+    <color name="tokito_primary">#19D3B1</color>
+    <color name="tokito_on_primary">#001F1A</color>
+    <color name="tokito_text">#E8EEF5</color>
+    <color name="tokito_muted">#98A6B5</color>
+</resources>

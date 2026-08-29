@@ -47,6 +47,15 @@ device decide the accepted bundle.
 Whisper is not the default. It may enter comparative evaluation, but the
 English-only streaming candidates above are the primary starting point.
 
+## Current voice implementation candidate
+
+Issues #19 and #21 currently use Moonshine Voice 0.1.5 as the first executable
+Android candidate: English tiny-streaming STT with spelling fusion and the
+`piper_en_US-amy-low` voice. This selection is provisional until held-out speech
+and exact-device measurements pass the published gates. The abstraction keeps
+recognizer, synthesizer, audio input, focus, and orchestration separate so a
+candidate can be replaced without changing the public voice contract.
+
 ## Local orchestration contract
 
 The text LLM receives bounded conversation, compact observation summaries, and

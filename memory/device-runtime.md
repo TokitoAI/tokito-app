@@ -19,3 +19,9 @@ Moonshine or sherpa-onnx for STT, KittenTTS or sherpa-onnx TTS models for
 synthesis, Qwen3-0.6B for text planning, and SmolVLM 256M/500M for bounded
 visual reasoning. None is selected until license, export, conformance, and
 physical-device gates pass.
+
+The first executable voice candidate is Moonshine Voice 0.1.5 using English
+tiny-streaming STT with spelling fusion and `piper_en_US-amy-low` TTS. Android
+capture, focus, AEC/noise suppression, typed transcript events, synthesis
+replacement/queueing, and barge-in live in `voice-runtime`. This is not an
+accepted release backend until the connected iQOO passes issue #8 and Gate 4.

@@ -4,6 +4,7 @@ build/
 dist/
 .gradle/
 .kotlin/
+**/build/
 __pycache__/
 *.py[cod]
 .venv/

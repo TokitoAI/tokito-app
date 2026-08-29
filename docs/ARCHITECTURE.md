@@ -79,8 +79,11 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-No artifact exists at bootstrap. File names and package coordinates become
-normative only through the runtime-foundation epic and an accepted ADR.
+The repository now contains an initial Android application and `voice-runtime`
+library implementing the local STT/TTS slice. Their package coordinates remain
+development coordinates until the runtime-foundation epic accepts the public
+ABI. Vision, dialogue, tool, and AR artifacts remain gated work rather than
+stubbed capabilities.
 
 ## Runtime layers
 

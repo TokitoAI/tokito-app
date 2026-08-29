@@ -46,10 +46,17 @@ flowchart LR
 
 ## Current status
 
-Documentation and architecture baseline only. There is intentionally no model,
-runtime, Android app/library, Python package, or placeholder implementation yet.
-Implementation begins from tracked issues on the
-[Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
+The repository now includes a standalone Android application and an executable
+offline voice-runtime library. The implemented slice provides microphone
+capture, streaming English speech recognition, local English speech synthesis,
+typed partial/final transcript events, audio focus, cancellation, and barge-in.
+It uses Moonshine Voice with app-private model storage and a verified SHA-256
+inventory. Camera, perception, local reasoning, and AR guidance remain tracked
+work; their absence is not hidden behind placeholder capabilities.
+
+The voice candidate has passed JVM tests and Android assembly. Target-device
+performance and release-signing remain acceptance gates and are not claimed as
+complete until measured on the exact iQOO device.
 
 ## Documentation
 
@@ -58,6 +65,7 @@ Implementation begins from tracked issues on the
 - [Product scope](docs/PRODUCT_SCOPE.md) - user outcomes and non-goals
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
+- [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
@@ -65,7 +73,18 @@ Implementation begins from tracked issues on the
 - [CI/CD](docs/CI_CD.md) - pull request flow, current CI checks, and branch-policy status
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
-## Planned implementation shape
+## Build and verify
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
+```
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+Provisioning models is an explicit user action in the test application; after
+provisioning, recognition and synthesis execute locally.
+
+## Implementation shape
 
 Python is reserved for dataset preparation, training, export, evaluation, and a
 reference harness. The shipping phone hot path will be an Android-native
