@@ -55,8 +55,10 @@ cancellation, barge-in,
 locale-explicit electrical measurement parsing, and bounded spoken/touch
 confirmation before a reading becomes evidence.
 It uses Moonshine Voice with app-private model storage and a verified SHA-256
-inventory. Camera, perception, local reasoning, and AR guidance remain tracked
-work; their absence is not hidden behind placeholder capabilities.
+inventory. The reusable registered AR presentation module and its standalone
+manual-registration conformance app are also present; automatic camera
+tracking, perception, and local reasoning remain tracked work and are not
+advertised as implemented capabilities.
 
 The voice candidate has passed JVM tests and Android assembly. Target-device
 performance and release-signing remain acceptance gates and are not claimed as
@@ -75,6 +77,7 @@ tooling merged on the runtime-foundation path.
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
 - [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
+- [AR runtime](docs/AR_RUNTIME.md) - coordinate, scene, lifecycle, and conformance contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary

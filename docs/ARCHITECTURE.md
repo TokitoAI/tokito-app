@@ -81,10 +81,12 @@ The repository will eventually produce:
 
 The repository now contains an initial Android application, `voice-runtime`,
 and `measurement-runtime` implementing local STT/TTS and deterministic spoken
-measurement confirmation. Their package coordinates remain
+measurement confirmation. Registered presentation lives in
+`android/ar-runtime`, while `android/ar-demo` is its manual-registration
+conformance host. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
-ABI. Vision, dialogue, tool, and AR artifacts remain gated work rather than
-stubbed capabilities.
+ABI. Automatic vision, dialogue, and physical-tool artifacts remain gated work
+rather than stubbed capabilities.
 
 ## Runtime layers
 
