@@ -30,3 +30,16 @@ jobs:
         with:
           validate-wrappers: true
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+      - name: Upload debug evidence
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: tokito-physical-voice-debug-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/reports/lint-results-debug.html
+            voice-runtime/build/reports/lint-results-debug.html
+            voice-runtime/build/reports/tests/testDebugUnitTest/
+            voice-runtime/build/test-results/testDebugUnitTest/
