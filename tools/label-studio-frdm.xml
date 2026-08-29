@@ -1,0 +1,15 @@
+<View>
+  <Header value="FRDM-MCXN236 visible-object review" />
+  <Text name="policy" value="Box only visible, identifiable objects. Do not infer hidden parts or reference designators." />
+  <Image name="image" value="$image" zoom="true" rotateControl="false" />
+  <RectangleLabels name="label" toName="image" choice="single" showInline="false">
+    <Label value="NXP_FRDM-MCXN236_full_board" background="#00CDB4" />
+    <Label value="NXP_FRDM-MCXN236_ic_package" background="#7567FF" />
+    <Label value="NXP_FRDM-MCXN236_connector" background="#FF9F1C" />
+    <Label value="NXP_FRDM-MCXN236_led" background="#E84855" />
+    <Label value="NXP_FRDM-MCXN236_switch" background="#F9C74F" />
+    <Label value="NXP_FRDM-MCXN236_header" background="#277DA1" />
+    <Label value="NXP_FRDM-MCXN236_passive_component" background="#90BE6D" />
+    <Label value="NXP_FRDM-MCXN236_test_point" background="#F3722C" />
+  </RectangleLabels>
+</View>

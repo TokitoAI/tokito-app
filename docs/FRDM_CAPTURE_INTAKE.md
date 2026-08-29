@@ -40,6 +40,46 @@ The generated label files are intentionally empty until reviewed in CVAT, Label
 Studio, Roboflow, or another annotation tool. Empty label files from this stage
 are not negative examples.
 
+### Label Studio review
+
+Tokito's checked-in Label Studio configuration is
+`tools/label-studio-frdm.xml`. Generate import tasks from an intake manifest:
+
+```bash
+python tools/annotation_review.py prepare \
+  --intake-manifest datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/intake_manifest.json \
+  --document-root datasets/local \
+  --license-status approved \
+  --source-uri local://iqoo/<session-id> \
+  --output datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/label-studio-tasks.json
+```
+
+Run Label Studio with `LOCAL_FILES_SERVING_ENABLED=true` and
+`LOCAL_FILES_DOCUMENT_ROOT` set to the absolute `datasets/local` path. Create a
+project with the checked-in XML, then add a **Local Files** source-storage
+connection whose path is a child of that document root (for example the
+absolute `datasets/local/nxp-frdm-mcxn236` path). Save the connection without
+syncing; the generated task JSON remains the authoritative task list. Import
+that JSON into the project. Each task binds the image ID, session ID, media
+digest, ordered classes, source, and license-review state. After one
+accountable reviewer completes each task, visually spot-check the regions,
+export Label Studio JSON, and convert it to normalized YOLO labels:
+
+```bash
+python tools/annotation_review.py import \
+  --export datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/label-studio-export.json \
+  --output-dir datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/review \
+  --session-id <session-id> \
+  --license-status approved
+```
+
+The importer rejects multiple active reviews, missing reviewer identity,
+unknown classes, rotated boxes, invalid geometry, session/license drift, and
+overwriting prior reviewed output. A `pending` or `rejected` source is always
+marked `trainable: false`; changing a CLI flag cannot silently promote it.
+Use `--allow-empty` only when a reviewer has confirmed a true negative image.
+The reviewed labels and review manifest remain under ignored local storage.
+
 Canonical image IDs include board, session, side, viewpoint, lighting, and
 sequence:
 
