@@ -61,6 +61,8 @@ Implementation begins from tracked issues on the
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
+- [Evidence manifests](docs/EVIDENCE_MANIFESTS.md) - machine-readable model, corpus, evaluation, security, and release records
+- [CI/CD](docs/CI_CD.md) - pull request flow, current CI checks, and branch-policy status
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
 ## Planned implementation shape

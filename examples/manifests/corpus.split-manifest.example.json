@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "tokito-example-corpus",
+  "split_revision": "not-yet-frozen",
+  "split_unit": "board_session",
+  "splits": {
+    "train": ["board-a/session-001"],
+    "validation": ["board-b/session-001"],
+    "calibration": ["board-c/session-001"],
+    "test": ["board-d/session-001"]
+  },
+  "leakage_audit": {
+    "duplicate_check": "not-yet-run",
+    "near_duplicate_check": "not-yet-run",
+    "board_session_disjoint": true
+  },
+  "immutability": {
+    "manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "frozen_at": "not-yet-frozen"
+  }
+}

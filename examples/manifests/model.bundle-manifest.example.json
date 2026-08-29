@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "bundle_id": "tokito-example-bundle",
+  "bundle_revision": "not-yet-built",
+  "capability": "component_inspection",
+  "source": {
+    "training_revision": "not-yet-trained",
+    "license": "not-yet-approved",
+    "checkpoint_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "export": {
+    "format": "not-yet-selected",
+    "artifact_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "quantization": "not-yet-selected",
+    "reproducible_command": "not-yet-defined"
+  },
+  "preprocessing": {
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "labels": ["present", "absent", "orientation_unknown"],
+  "calibration": {
+    "policy_id": "tokito-example-calibration",
+    "revision": "not-yet-fit"
+  },
+  "backend_requirements": ["not-yet-measured"],
+  "conformance": {
+    "reference_vectors_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "thresholds": {
+      "max_absolute_error": "not-yet-set"
+    },
+    "results_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "activation": {
+    "signature": "not-yet-signed",
+    "minimum_runtime_version": "not-yet-released",
+    "rollback_bundle_id": "not-yet-available"
+  }
+}

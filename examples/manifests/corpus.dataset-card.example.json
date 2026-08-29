@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "tokito-example-corpus",
+  "dataset_revision": "not-yet-frozen",
+  "purpose": "Schema-valid template for future board/session corpus evidence.",
+  "sources": [
+    {
+      "source_id": "example-source",
+      "origin": "not-yet-collected",
+      "license": "not-yet-approved",
+      "consent_basis": "not-yet-recorded",
+      "intended_use": "model-selection-and-evaluation"
+    }
+  ],
+  "annotation_schema": {
+    "revision": "not-yet-frozen",
+    "labels": ["component_identity", "package", "led_state"],
+    "geometry": ["box", "polygon", "board_transform"],
+    "uncertainty": "required for ambiguous labels and low-quality evidence",
+    "unobservable_regions": "explicit region masks are required"
+  },
+  "retention": "raw media remains local unless explicit consent is recorded",
+  "exclusions": ["unsupported classes remain visible in open-set analysis"],
+  "hashes": {
+    "manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
