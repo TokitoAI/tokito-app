@@ -220,3 +220,15 @@ empty list.
   context revision, and tool identity match the admitted call. A different
   identity using the same ID is rejected and never observes another session's
   result.
+
+The idempotency ledger has a versioned deterministic snapshot. A production
+integration must persist those bytes atomically in app-private storage and
+restore them before admitting reconnect retries after process recreation.
+Unknown, malformed, or identity-inconsistent snapshots fail closed. Session
+sensor state is not restored after process death; a new session must reacquire
+permissions, calibration, and registration.
+
+One execution guard carries the caller deadline and cancellation signal through
+camera, audio, preprocessing, and inference adapters. Every stage checks the
+same guard before work; cancellation and deadline expiry are terminal typed
+outcomes, never advisory flags.
