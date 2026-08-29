@@ -4,6 +4,8 @@ build/
 dist/
 .gradle/
 .kotlin/
+.cxx/
+**/.cxx/
 **/build/
 __pycache__/
 *.py[cod]

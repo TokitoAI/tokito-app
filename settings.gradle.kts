@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "tokito-physical-runtime"
-include(":app", ":voice-runtime")
+include(":app", ":voice-runtime", ":dialogue-runtime")

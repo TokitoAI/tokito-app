@@ -58,6 +58,12 @@ candidate can be replaced without changing the public voice contract.
 
 ## Local orchestration contract
 
+The current executable baseline is documented in
+[Local dialogue runtime](DIALOGUE_RUNTIME.md): Qwen3-0.6B Q8_0 through pinned
+llama.cpp, with exact model integrity checks, bounded serialized generation,
+strict outcome parsing, and deterministic capability validation. This remains
+a candidate until issue #38 and Gate 5 device evidence pass.
+
 The text LLM receives bounded conversation, compact observation summaries, and
 the current capability schema. It can propose a tool and arguments, ask a
 question, or produce conversational guidance. It cannot directly publish a

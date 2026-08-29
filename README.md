@@ -46,17 +46,23 @@ flowchart LR
 
 ## Current status
 
-The repository now includes a standalone Android application and an executable
-offline voice-runtime library. The implemented slice provides microphone
-capture, streaming English speech recognition, local English speech synthesis,
-typed partial/final transcript events, audio focus, cancellation, and barge-in.
-It uses Moonshine Voice with app-private model storage and a verified SHA-256
-inventory. Camera, perception, local reasoning, and AR guidance remain tracked
-work; their absence is not hidden behind placeholder capabilities.
+The repository now includes a standalone Android application plus executable
+offline voice and dialogue libraries. The implemented voice slice provides
+microphone capture, streaming English speech recognition, local English speech
+synthesis, typed partial/final transcript events, audio focus, cancellation,
+and barge-in. It uses Moonshine Voice with app-private model storage and a
+verified SHA-256 inventory. The dialogue slice uses pinned llama.cpp and the
+official pinned Qwen3-0.6B Q8_0 GGUF, with resumable verified provisioning, bounded local
+generation, exact typed outcomes, and deterministic tool-policy validation.
+The validation app connects typed or recognized text through local dialogue to
+local TTS while declaring no unfinished physical tools. Camera, perception,
+physical tool execution, and AR guidance remain tracked work; their absence is
+not hidden behind placeholder capabilities.
 
-The voice candidate has passed JVM tests and Android assembly. Target-device
-performance and release-signing remain acceptance gates and are not claimed as
-complete until measured on the exact iQOO device.
+The voice and dialogue candidates have passed JVM tests and Android arm64
+assembly. Target-device performance, schema reliability, and release-signing
+remain acceptance gates and are not claimed complete until measured on the
+exact iQOO device.
 
 ## Documentation
 
@@ -66,6 +72,7 @@ complete until measured on the exact iQOO device.
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
+- [Local dialogue runtime](docs/DIALOGUE_RUNTIME.md) - executable LLM and constrained planner slice
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
@@ -82,7 +89,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 Provisioning models is an explicit user action in the test application; after
-provisioning, recognition and synthesis execute locally.
+provisioning, recognition, dialogue, and synthesis execute locally.
 
 ## Implementation shape
 

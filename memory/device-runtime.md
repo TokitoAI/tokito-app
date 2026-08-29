@@ -25,3 +25,10 @@ tiny-streaming STT with spelling fusion and `piper_en_US-amy-low` TTS. Android
 capture, focus, AEC/noise suppression, typed transcript events, synthesis
 replacement/queueing, and barge-in live in `voice-runtime`. This is not an
 accepted release backend until the connected iQOO passes issue #8 and Gate 4.
+
+The first executable text-dialogue candidate is the official Qwen3-0.6B Q8_0
+GGUF through llama.cpp pinned at commit
+`cc83d7b4824f73cfdda4dfbb47ee39804f71b328`. `dialogue-runtime` owns resumable
+digest-verified provisioning, bounded serialized generation, exact typed JSON
+outcomes, and deterministic capability validation. It is not an accepted
+release backend until issue #38 and Gate 5 pass on the declared iQOO device.

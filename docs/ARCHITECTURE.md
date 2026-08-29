@@ -79,11 +79,14 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-The repository now contains an initial Android application and `voice-runtime`
-library implementing the local STT/TTS slice. Their package coordinates remain
+The repository now contains an initial Android application, `voice-runtime`,
+and `dialogue-runtime` libraries implementing the local STT/TTS and text-LLM
+slices. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
-ABI. Vision, dialogue, tool, and AR artifacts remain gated work rather than
-stubbed capabilities.
+ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
+app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.
+Vision, physical tool, and AR artifacts remain gated work rather than stubbed
+capabilities.
 
 ## Runtime layers
 
