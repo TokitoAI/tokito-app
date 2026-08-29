@@ -10,6 +10,9 @@ inference path and it does not make YOLO the selected Tokito detector.
 `prepare` verifies every source-image and label digest against both the intake
 and review manifests. It rejects missing records, class-range drift, box-count
 drift, invalid normalized geometry, and a non-trainable review manifest.
+Pose preparation accepts provenance-verified `printed_reference` and
+`physical_capture` sessions. Both remain local, non-release smoke evidence
+until an independent holdout and the evaluation protocol make them eligible.
 
 An explicitly requested `--local-smoke` run may exercise training with local
 non-release data. The generated dataset, model, and prediction manifests remain
@@ -72,6 +75,50 @@ must also be clockwise, convex, non-degenerate, inside the image, and consistent
 with the detected board box. A failed gate records a `projection_status` and
 abstains from projecting component locations.
 
+For a known board package, pass one explicitly reviewed reference image and its
+pose record to refine the coarse YOLO proposal:
+
+```bash
+python tools/yolo_pose_experiment.py infer \
+  --checkpoint <best.pt> \
+  --training-manifest <training-manifest.json> \
+  --image <camera-frame.jpg> --output-dir <report-dir> \
+  --reference-image <reviewed-reference.jpg> \
+  --reference-pose-manifest <pose-review-manifest.json> \
+  --reference-image-id <reviewed-image-id>
+```
+
+The three reference arguments are all-or-nothing. Refinement detects ORB
+features only inside the reviewed reference quadrilateral and the expanded YOLO
+ROI, applies a two-neighbour ratio test, estimates a RANSAC homography, and
+requires minimum match count, inlier count/ratio, bounded inlier reprojection
+error, and the normal projection geometry gate. If any check fails, inference
+abstains rather than falling back to a plausible-looking but unverified overlay.
+The JSON result records match, consensus, reprojection, pose-source, and
+rejection evidence.
+
+Prefer the reviewed multi-view bank when an intake session contains several
+angles:
+
+```bash
+python tools/yolo_pose_experiment.py infer \
+  --checkpoint <best.pt> \
+  --training-manifest <training-manifest.json> \
+  --image <camera-frame.jpg> --output-dir <report-dir> \
+  --reference-pose-manifest <pose-review-manifest.json> \
+  --reference-intake-manifest <intake-manifest.json>
+```
+
+Bank mode attempts every view with four fully reviewed corners and excludes an
+exact byte-identical query. Partial views still train board detection and test
+abstention, but cannot invent missing corner truth. Weak references below 10%
+of the strongest RANSAC support are recorded but cannot vote. At least two
+qualified references must agree within 2% of the detected-board diagonal; the
+selected pose is the best-supported medoid of that consistent set.
+If only one reference qualifies, it may stand alone only with exceptional
+evidence: at least 250 RANSAC inliers, 80% inlier ratio, median reprojection at
+most 1.5 px, and p95 reprojection at most 3 px. Otherwise the bank abstains.
+
 ```bash
 python tools/yolo_pose_experiment.py prepare \
   --pose-manifest <session>/review/pose-review-manifest.json \
@@ -86,6 +133,11 @@ python tools/yolo_pose_experiment.py train \
   --output-dir models/local/yolo-pose-smoke/frdm-guide \
   --base-model yolo11n-pose.pt --epochs 100 --device cpu
 ```
+
+For larger local smoke corpora, `--final-validation-only` skips redundant
+same-training-set validation after every epoch, then runs and records one full
+validation pass against the final checkpoint. It is a throughput option, not a
+claim that the same-session validation set measures generalization.
 
 Printed-guide landmarks are useful only for validating the annotation and pose
 pipeline. They do not become physical-board positives. Production identity is
