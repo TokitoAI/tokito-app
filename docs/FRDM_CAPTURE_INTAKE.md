@@ -81,34 +81,57 @@ frames or near-identical burst photos between train, validation, and test.
 
 ## 3D/AR Asset Boundary
 
-The supplied package currently exposes OrCAD/Allegro design files, BOM files,
-and schematic PDF material. The intake manifest also inspects ZIP contents.
-The visible and archived files do not include Gerber/drill exports or STEP/WRL
-board/component models.
+The supplied package exposes OrCAD/Allegro design files, BOM files, and
+schematic PDF material. It does not include Gerber/drill exports, and no
+Gerber-based mesh generation is available from this drop.
 
-AR-ready 3D generation needs one of:
+KiCad 10 (installed locally: 10.0.5, via `winget install --id KiCad.KiCad
+--version 10.0.5`) successfully imports the Allegro board with
+`kicad-cli pcb import --output <out.kicad_pcb> <LAY-90828_C.brd>` (the
+`--format` flag defaults to `auto`; `kicad-cli pcb import --help` does not
+list `allegro` as an explicit `--format` choice, but `auto` detection
+correctly logs `Importing ... using Allegro format...`). The import produced
+581 footprints, 5532 tracks, 593 vias, and 37 zones with zero errors (only
+non-fatal antipad/thermal-relief/zero-sized-pad warnings). From the resulting
+`.kicad_pcb`, `kicad-cli pcb export glb|step|vrml` produce real GLB/STEP/VRML
+files.
 
-- Gerber copper/soldermask/silkscreen layers plus drill files for a board mesh;
-- a KiCad `.kicad_pcb` file that can be exported with open-source `kicad-cli`
-  to GLB, STEP, and VRML;
-- STEP/WRL board and component models exported by the CAD tool;
-- a reviewed assembly-context bundle with board outline, placements,
-  rotations, heights, and model references.
+**Completeness is board-substrate only.** The exported GLB has a single fused
+mesh (2 nodes, 1 mesh) and the STEP file has 2 solid shells: outline, copper,
+pads, and silkscreen, with no populated IC/connector/LED bodies. Allegro
+`.brd` files carry no 3D component model references, so this is expected, not
+a conversion failure. Do not present this GLB as a fully populated 3D model to
+reviewers or judges — it is a board-registration/AR-anchor asset, not a
+photorealistic render.
 
-KiCad 10 is the preferred open-source conversion route when an Allegro board
-can be imported into KiCad. The schematic is not a 3D model source; it provides
-electrical context, references, and nets. If Gerber and drill files exist,
-`gerber2blend` is a useful open-source fallback for board substrate geometry,
-but populated component models still require placement data and 3D package
-models.
+**`kicad-cli pcb export pos` is unreliable for this board's reference
+designators.** Every one of its 581 rows returned an empty or literal
+`${REFERENCE}` string in the Ref/Val/Package columns. The real designators do
+exist in the board file (as `property "Reference"` text on each footprint),
+but the Allegro importer does not populate the footprint's canonical
+reference field that `pos` export reads. Use
+`tools/kicad_pcb_placements.py` instead, which parses the `.kicad_pcb`
+s-expression tree directly and recovers the real per-footprint designator,
+value, side, position, and rotation:
 
-For the current `FRDM-MCXN236-DESIGN-FILES.zip`, the archive inventory contains
-`LAY-90828_C.brd`, `SCH-90828_C.DSN`, `SCH-90828_C.opj`, BOM files, and Allegro
-`.dat` support files. It does not expose Gerber or drill file extensions, so
-Gerber-based mesh generation is not yet available from this drop.
+```bash
+python tools/kicad_pcb_placements.py \
+  --input build/ar-assets/frdm-mcxn236/generated/LAY-90828_C.kicad_pcb \
+  --output-csv build/ar-assets/frdm-mcxn236/generated/frdm_mcxn236_real_placements.csv \
+  --output-json build/ar-assets/frdm-mcxn236/generated/frdm_mcxn236_real_placements.json
+```
 
-Use `tools/ar_asset_plan.py` to inspect the local source package and produce an
-AR asset plan:
+For this board it recovers 391 usable reference designators out of 581
+footprints (the remaining 190 have no reference text at all in the source
+file — plausibly test points, fiducials, or mounting holes, not a parser
+defect). A spot check of recovered designators `R87`, `R216`, `R133`, `C41`
+against `SCH-90828_C.BOM` confirms all four appear with matching part
+numbers, so the recovered designators are read from vendor data, not
+invented.
+
+Use `tools/ar_asset_plan.py` to inspect the local source package and produce
+an AR asset plan (it emits the full import/export/placement command sequence
+and the board-only-geometry and pos-export caveats above):
 
 ```bash
 python tools/ar_asset_plan.py \
@@ -116,9 +139,15 @@ python tools/ar_asset_plan.py \
   --output-dir build/ar-assets/frdm-mcxn236
 ```
 
-Until supported exports exist, the runtime should use planar board
-registration and 2D overlays. A fake 3D model would violate the no-placeholder
-capability rule.
+Generated GLB/STEP/VRML/`.kicad_pcb`/placement files are local build output
+(`build/`, gitignored) and are never committed to Git. The AR-handoff package
+for the teammate doing Android/AR rendering consists of:
+`frdm_mcxn236.glb` (render asset), `frdm_mcxn236_real_placements.csv`/`.json`
+(board-plane coordinates + reference designators), and this document's
+board-only-geometry caveat. Runtime registration and overlays should not
+assume populated component geometry until a reviewed 3D package library is
+added; a fake populated model would violate the no-placeholder capability
+rule.
 
 ## Future Runtime Path
 

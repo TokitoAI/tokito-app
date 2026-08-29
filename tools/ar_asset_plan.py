@@ -154,14 +154,17 @@ def plan_ar_asset_generation(source: Path, output_dir: Path) -> dict[str, Any]:
                 return plan
             kicad_board = output_dir / f"{board.stem}.kicad_pcb"
             plan["commands"] = [
-                ["kicad-cli", "pcb", "import", "--output", str(kicad_board), str(source / board)],
+                ["kicad-cli", "pcb", "import", "--output", str(kicad_board), "--report-format", "json", "--report-file", str(output_dir / "import_report.json"), str(source / board)],
                 ["kicad-cli", "pcb", "export", "glb", "--force", "--output", str(output_dir / f"{board.stem}.glb"), str(kicad_board)],
                 ["kicad-cli", "pcb", "export", "step", "--force", "--output", str(output_dir / f"{board.stem}.step"), str(kicad_board)],
                 ["kicad-cli", "pcb", "export", "vrml", "--force", "--output", str(output_dir / f"{board.stem}.wrl"), str(kicad_board)],
+                ["python", "tools/kicad_pcb_placements.py", "--input", str(kicad_board), "--output-csv", str(output_dir / f"{board.stem}_placements.csv"), "--output-json", str(output_dir / f"{board.stem}_placements.json")],
             ]
             if tools["kicad_cli"]:
                 plan["status"] = "ready_kicad_allegro_import"
                 plan["messages"].append("Allegro board file is present and kicad-cli is available; inspect the installed KiCad version and import report before accepting AR geometry.")
+                plan["messages"].append("The exported GLB/STEP will be board substrate only: Allegro .brd files carry no 3D component bodies, so populated-component claims require separate reviewed 3D package models.")
+                plan["messages"].append("Do not rely on 'kicad-cli pcb export pos' for reference designators on Allegro-imported boards; it can return blank or literal '${REFERENCE}' text. Use tools/kicad_pcb_placements.py, which reads the board file's own Reference property text and reports which footprints have no usable designator (for example test points or fiducials).")
             else:
                 plan["status"] = "blocked_missing_kicad_10_for_allegro_import"
                 plan["messages"].append("Allegro board file is present, but KiCad 10 kicad-cli is not installed or not on PATH for open-source import/export.")
