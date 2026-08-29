@@ -15,9 +15,15 @@ A client opens the runtime and receives:
 - active model bundle and preprocessing digests;
 - latency/thermal profile and current degradation state;
 - privacy/persistence capabilities.
+- standalone/offline readiness and locally available LLM, VLM, STT, and TTS
+  profiles.
 
 Unsupported tools are omitted. A registered tool may still return a typed
 runtime condition such as registration lost or permission denied.
+
+The standalone application is itself a client of this contract. Local dialogue
+and AR rendering consume the same typed events exposed to future integrations;
+they do not use privileged model-only shortcuts.
 
 ## Tool call envelope
 
@@ -27,6 +33,7 @@ runtime condition such as registration lost or permission denied.
   "tool_call_id": "uuid",
   "session_id": "uuid",
   "context_revision": "opaque-immutable-revision",
+  "origin": "local_dialogue",
   "tool": "inspect_component",
   "tool_version": "1.0",
   "deadline_monotonic_ms": 123456789,
@@ -102,11 +109,26 @@ Late backend callbacks after a terminal outcome are discarded and counted.
 
 ## Baseline tools
 
+### `discover_board`
+
+Detects and stabilizes a PCB or electronics work area without requiring a
+Tokito design. Returns a tracked board-plane frame, visible polygon, capture
+quality, uncertainty, and candidate board class. It abstains when a stable
+board region cannot be established.
+
+### `inspect_region`
+
+Performs a bounded generic inspection in an unbound board-plane or image ROI.
+It returns only capability-declared classes and evidence. A local VLM may
+generate candidates, but cannot promote them to observations without typed
+validation and calibrated thresholds.
+
 ### `locate_component`
 
-Requires design registration. Returns registered physical geometry and preview
-guidance for a design reference. It must abstain if multiple candidates cannot
-be disambiguated at the requested threshold.
+With design context, returns registered physical geometry and preview guidance
+for an exact reference. Without design context, accepts a supported generic
+description and returns ranked candidates without claiming design identity. It
+must abstain if candidates cannot be disambiguated at the requested threshold.
 
 ### `inspect_component`
 
