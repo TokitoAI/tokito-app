@@ -46,11 +46,14 @@ flowchart LR
 
 ## Current status
 
-The repository now includes a standalone Android application and an executable
-offline voice-runtime library. The implemented slice provides microphone
-capture, adaptive local VAD, configurable local wake phrases, streaming English
-speech recognition, local English speech synthesis, typed partial/final
-transcript events, route and audio-focus handling, cancellation, and barge-in.
+The repository now includes a standalone Android application plus executable
+offline voice and deterministic measurement runtime libraries. The implemented
+slice provides microphone capture, adaptive local VAD, configurable local wake
+phrases, streaming English speech recognition, local English speech synthesis,
+typed partial/final transcript events, route and audio-focus handling,
+cancellation, barge-in,
+locale-explicit electrical measurement parsing, and bounded spoken/touch
+confirmation before a reading becomes evidence.
 It uses Moonshine Voice with app-private model storage and a verified SHA-256
 inventory. Camera, perception, local reasoning, and AR guidance remain tracked
 work; their absence is not hidden behind placeholder capabilities.
@@ -71,6 +74,7 @@ tooling merged on the runtime-foundation path.
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
+- [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary

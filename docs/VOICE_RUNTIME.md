@@ -8,6 +8,11 @@ microphone capture, Android audio focus and route changes, transcript events,
 synthesis queueing, cancellation, and barge-in. The standalone `app` module is
 a hardware test surface; Companion is not involved.
 
+`MeasurementVoiceSession` is the typed bridge from final STT segments to the
+separate deterministic `measurement-runtime`. It uses local TTS for correction
+and confirmation prompts. It does not use the local LLM to normalize numbers,
+units, decimal separators, or relationships.
+
 The current executable candidate is Moonshine Voice 0.1.5 with:
 
 - the English tiny-streaming STT architecture plus spelling fusion;
@@ -34,6 +39,8 @@ flowchart LR
     Mode{Voice mode}
     STT[Moonshine streaming STT]
     Events[Typed partial and final transcript events]
+    Parser[Deterministic measurement parser]
+    Confirm[Bounded confirmation state]
     TTS[Moonshine Piper TTS]
     Speaker[Android AudioTrack]
     Barge[Adaptive local barge-in detector]
@@ -41,6 +48,8 @@ flowchart LR
     Mic --> AEC --> VAD --> Mode
     Mode -->|awaiting wake| STT --> Wake --> Events
     Mode -->|activated| STT --> Events
+    Events -->|final only| Parser --> Confirm
+    Confirm -->|prompt| TTS
     Mode -->|speaking| Barge
     TTS --> Speaker
     Barge -->|sustained speech| TTS
@@ -82,6 +91,8 @@ Raw audio and synthesized samples are not persisted by this implementation.
 The confidence values are runtime scores, not release calibration claims.
 False-accept/false-reject calibration across quiet and bench-noise slices and
 power measurement remain Gate 4 evidence on the exact iQOO device.
+Unconfirmed measurement drafts are bounded to one in-memory value and are
+cleared on confirmation, rejection, invalid input, or cancellation.
 
 ## Model provenance and licensing
 

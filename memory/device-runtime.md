@@ -46,3 +46,9 @@ VAD with bounded pre-roll, configurable local wake-phrase matching, typed
 confidence and route events, capture-focus loss handling, and deterministic
 TTS/barge-in restoration. The score thresholds are candidates, not calibrated
 claims, until false accepts/rejects and power are measured on the exact iQOO.
+
+Deterministic electrical measurement parsing lives in `measurement-runtime`.
+`MeasurementVoiceSession` accepts only final STT segments, retains at most one
+unconfirmed draft, speaks prompts through local TTS, and requires confirmation
+before emitting `engineer_voice` evidence. Numeric, locale, unit, and
+relationship normalization must never be delegated to the local LLM.
