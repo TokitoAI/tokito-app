@@ -192,6 +192,50 @@ in the real photos without a crop.
   `datasets/local` was read or modified by this work; the 22 iQOO images
   remain exactly as your teammate's labeling session will find them.
 
+## Photo-based identity confirmation for Tier 1 (no new attachments)
+
+The 22 real iQOO photos in `datasets/local/frdm-mcxn236/intake/nxp/`
+(the same single capture session used throughout this work -- no new
+photos have been added there) were inspected directly for legible
+silkscreen/package markings on Tier 1 unresolved components, cross-
+checked against `SCH-90828_C.BOM.xlsx`.
+
+Confirmed by directly reading the photo and matching against the BOM:
+
+| Reference | Visible marking in photo | BOM `MFG` / `MFG_PN` | Match |
+|---|---|---|---|
+| `U1` | "NXP MCXN236V CTAPA 2506 0P21K" | NXP SEMICONDUCTORS / `MCXN236VDFT` | Confirmed (MCU) |
+| `U8` | "LPC55S69 0.JEV98 2 W737117 sS022031B" | NXP SEMICONDUCTOR / `LPC55S69JEV98` | Confirmed (MCU-Link debug probe IC) |
+| `J10`, `J11` | "GCT" printed on both USB-C receptacle shells | GCT / `USB4085-GF-A` | Confirmed |
+| `SW3` | Silkscreen label "ISP SW3" next to a visible tactile button | WURTH ELEKTRONIK / `434123025826` | Location/function confirmed |
+
+**None of these got a new 3D model attached.** Confirming identity is not
+the same as having a real geometry source:
+
+- `U1` (VFBGA184) and `U8` (VFBGA98) are NXP-specific ball-grid-array
+  packages with no KiCad library equivalent -- a real model would need
+  NXP's own STEP file (if published) or a manufacturer/distributor CAD
+  download, not something safe to approximate generically.
+- `J10`/`J11` (`USB4085-GF-A`, manufacturer GCT) is a specific USB-C
+  receptacle mechanical part; KiCad's library has no USB-C receptacle
+  family at all (checked: no match under any `Connector_USB*` folder).
+  GCT's own site or a distributor (Digi-Key/Mouser) would carry the real
+  STEP file for this exact part number.
+- `SW3` (and `SW1`/`SW2`, same part): KiCad's `Button_Switch_SMD.3dshapes`
+  only has Panasonic and Nidec Copal tactile switches. The real part is a
+  **Würth Elektronik** `434123025826` -- none of the available generic
+  models is from that manufacturer, and without a confirmed dimensional
+  match this resolver does not substitute a different manufacturer's
+  part, the same discipline that correctly left `U2`'s `SOT-89-5`
+  unresolved earlier.
+
+The remaining 25 Tier 1 components (other ICs, most connectors, crystals)
+were not legibly identifiable at these photos' resolution/angle for
+their small package markings -- reported honestly as still unconfirmed,
+not guessed. Photos were used exclusively for reading existing text/
+identity; no image pixels were used to generate or approximate any 3D
+geometry.
+
 ## Files
 
 Generated files stay under `build/` (gitignored, not committed), same
