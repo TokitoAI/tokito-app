@@ -60,9 +60,9 @@ object CalibrationBoardAsset {
              "nodes":[
                {"name":"calibration-root","children":[1,2,3,4]},
                {"name":"board","mesh":0,"translation":[0.06,0.001,0.04],"scale":[0.12,0.002,0.08]},
-               {"name":"ref:U1","mesh":1,"translation":[0.038,0.006,0.038],"scale":[0.026,0.010,0.026]},
-               {"name":"ref:D1","mesh":2,"translation":[0.086,0.004,0.021],"scale":[0.018,0.006,0.008]},
-               {"name":"orientation","mesh":2,"translation":[0.010,0.004,0.010],"scale":[0.012,0.006,0.012]}
+               {"name":"calibration-cube-26mm","mesh":1,"translation":[0.038,0.006,0.038],"scale":[0.026,0.010,0.026]},
+               {"name":"calibration-bar-18mm","mesh":2,"translation":[0.086,0.004,0.021],"scale":[0.018,0.006,0.008]},
+               {"name":"origin-marker-12mm","mesh":2,"translation":[0.010,0.004,0.010],"scale":[0.012,0.006,0.012]}
              ],
              "meshes":[
                {"primitives":[{"attributes":{"POSITION":0},"indices":1,"material":0}]},
@@ -70,9 +70,9 @@ object CalibrationBoardAsset {
                {"primitives":[{"attributes":{"POSITION":0},"indices":1,"material":2}]}
              ],
              "materials":[
-               {"name":"board-ghost","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0.04,0.82,0.63,0.42],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true},
-               {"name":"component-primary","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0.45,0.35,1.0,0.72],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true},
-               {"name":"orientation-warning","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[1.0,0.58,0.16,0.82],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true}
+               {"name":"metric-plane","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0.12,0.16,0.20,0.22],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true},
+               {"name":"metric-height-block","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0.78,0.85,0.88,0.80],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true},
+               {"name":"metric-origin","extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0.00,0.82,0.69,0.90],"metallicFactor":0,"roughnessFactor":1},"alphaMode":"BLEND","doubleSided":true}
              ],
              "buffers":[{"byteLength":168}],
              "bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":96,"target":34962},{"buffer":0,"byteOffset":96,"byteLength":72,"target":34963}],

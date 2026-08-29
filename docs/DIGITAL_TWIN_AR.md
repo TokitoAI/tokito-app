@@ -36,8 +36,8 @@ the last pose is never silently reused.
 ## Conformance object
 
 `CalibrationBoardAsset` creates a deterministic real GLB 2 object in memory: a
-120 mm by 80 mm translucent board with raised `U1`, `D1` and orientation
-geometry. It exists only to exercise loading, metric pose, projection,
+120 mm by 80 mm neutral metrology plane with raised dimensioned blocks and an
+origin marker. It exists only to exercise loading, metric pose, projection,
 transparency and component-node selection before a project asset is available.
 It is labelled as calibration data and is never substituted for a missing PCB
 asset.
