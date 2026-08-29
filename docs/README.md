@@ -19,6 +19,7 @@ The documentation is split by authority and purpose:
 | [NATIVE_CORE.md](NATIVE_CORE.md) | Native fail-closed lifecycle, registration, scheduling, and thermal core |
 | [ASSEMBLY_CONTEXT.md](ASSEMBLY_CONTEXT.md) | Immutable optional board-context import and verification boundary |
 | [BACKEND_BENCHMARKS.md](BACKEND_BENCHMARKS.md) | Evidence requirements for measured native backend selection |
+| [ANDROID_RUNTIME_API.md](ANDROID_RUNTIME_API.md) | Reusable Android lifecycle and capability discovery boundary |
 | [decisions/](decisions/) | Architecture Decision Records |
 | [proposals/](proposals/) | Source proposals; informative, not normative |
 
