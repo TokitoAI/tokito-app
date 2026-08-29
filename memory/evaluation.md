@@ -23,3 +23,9 @@
 
 **How to apply:** no capability is production-supported until its held-out task
 metrics and target-device performance/thermal gates pass.
+
+Local YOLO smoke runs use `tools/yolo_experiment.py`. A smoke run may consume
+explicitly requested local data only when every media and annotation digest is
+verified; it stays `release_eligible: false` and `evaluation_valid: false`.
+Same-session holdouts demonstrate pipeline execution, not detector
+generalization. Checkpoints and rendered reports remain ignored local output.
