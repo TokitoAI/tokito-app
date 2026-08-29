@@ -11,20 +11,57 @@ use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeError {
+    InvalidArgument,
     InvalidTransition,
     InvalidConfiguration,
     UnsupportedCapability,
+    PermissionDenied,
+    LifecycleUnavailable,
     DeadlineExceeded,
     Cancelled,
     RegistrationLost,
     InvalidGeometry,
     ResourceExhausted,
+    ThermalLimited,
+    ModelUnavailable,
+    BackendFailure,
+    InternalInvariantViolation,
     DuplicateTerminalOutcome,
     ContextRevisionMismatch,
     IntegrityFailure,
     IncompatibleSchema,
     DuplicateReference,
     ConflictingDesignTruth,
+}
+
+impl RuntimeError {
+    pub fn retryable(self) -> bool {
+        matches!(
+            self,
+            Self::LifecycleUnavailable
+                | Self::DeadlineExceeded
+                | Self::RegistrationLost
+                | Self::ResourceExhausted
+                | Self::ThermalLimited
+                | Self::ModelUnavailable
+                | Self::BackendFailure
+        )
+    }
+
+    pub fn recovery_guidance(self) -> &'static str {
+        match self {
+            Self::PermissionDenied => "request the required permission in an active session",
+            Self::LifecycleUnavailable => "resume an active session and reacquire sensors",
+            Self::RegistrationLost => "recalibrate before requesting registered guidance",
+            Self::ResourceExhausted | Self::ThermalLimited => {
+                "wait for available local resources before retrying"
+            }
+            Self::ModelUnavailable => "install a verified compatible local model bundle",
+            Self::DeadlineExceeded | Self::Cancelled => "submit a new request if work is still needed",
+            Self::BackendFailure => "record backend evidence and use an accepted fallback only",
+            _ => "correct the request or report the runtime failure without exposing sensitive diagnostics",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1126,6 +1163,16 @@ mod tests {
         assert_eq!(
             session.transition(LifecycleSignal::Stop),
             Ok(SessionState::Stopping)
+        );
+    }
+
+    #[test]
+    fn typed_errors_keep_recovery_guidance_safe_and_actionable() {
+        assert!(RuntimeError::ThermalLimited.retryable());
+        assert!(!RuntimeError::PermissionDenied.retryable());
+        assert_eq!(
+            RuntimeError::ModelUnavailable.recovery_guidance(),
+            "install a verified compatible local model bundle"
         );
     }
 

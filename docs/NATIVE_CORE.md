@@ -19,6 +19,12 @@ The core owns only deterministic mechanisms required by the delivery gates:
 - latest-frame handoff and caller-configured storage quotas; and
 - caller-configured thermal concurrency policy.
 
+Runtime errors are typed and carry only retryability plus safe recovery
+guidance. They distinguish invalid input, unsupported capability, permission or
+lifecycle loss, deadline, cancellation, registration loss, resource/thermal
+pressure, model unavailability, backend failure, and invariant failure without
+returning raw media, paths, transcripts, tokens, or backend internals.
+
 It deliberately carries no device name, ABI, model, backend, threshold, queue
 capacity, or thermal cutoff. The Android layer must provide those only from the
 versioned device profile and accepted benchmark evidence.
