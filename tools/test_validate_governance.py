@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Regression tests for repository governance invariants."""
 
-from pathlib import Path
 import unittest
+from pathlib import Path
 
-from validate_governance import ValidationError, validate_workflow_runner_spec
+from validate_governance import (
+    ValidationError,
+    validate_value,
+    validate_workflow_runner_spec,
+)
 
 
 class WorkflowRunnerPolicyTest(unittest.TestCase):
@@ -35,6 +39,19 @@ class WorkflowRunnerPolicyTest(unittest.TestCase):
                 "[not-self-hosted, Linux, X64, tokito-vps, private-build]",
             )
 
+
+class SchemaSubsetTest(unittest.TestCase):
+    def test_unknown_properties_are_rejected_when_schema_is_strict(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "unknown keys"):
+            validate_value(
+                "fixture",
+                {"known": "yes", "unexpected": "no"},
+                {"type": "object", "additionalProperties": False, "properties": {"known": {"type": "string"}}},
+            )
+
+    def test_timezone_is_required_for_date_time(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "UTC offset"):
+            validate_value("fixture", "2026-08-29T00:00:00", {"type": "string", "format": "date-time"})
 
 if __name__ == "__main__":
     unittest.main()

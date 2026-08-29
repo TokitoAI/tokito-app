@@ -4,6 +4,10 @@ This document defines the future external contract independently of programming
 language or serialization. Concrete Kotlin/Rust/Python types must be generated
 or tested against one canonical schema once implementation begins.
 
+The canonical schema and neutral conformance fixtures are in
+[`contracts/`](../contracts/). They describe structure only; they do not enable
+an operation or select a model, backend, device profile, or resource limit.
+
 ## Capability handshake
 
 A client opens the runtime and receives:
@@ -199,6 +203,11 @@ Stable families:
 Every error includes retryability and safe recovery guidance. Internal paths,
 stack traces, raw transcripts, and model internals are not exposed by default.
 
+Evidence availability is explicit. An observation declares `available`,
+`redacted`, or `unavailable`; only `available` may carry evidence references.
+Redacted or unavailable evidence is not silently represented as a successful
+empty list.
+
 ## Compatibility
 
 - Major schema/tool version changes are incompatible and rejected.
@@ -207,3 +216,7 @@ stack traces, raw transcripts, and model internals are not exposed by default.
 - Capability discovery precedes tool use.
 - A context revision mismatch is a conflict, not an implicit upgrade.
 - Tool-call IDs make retries idempotent within the documented retention window.
+  The same ID may return a pending or completed outcome only when session,
+  context revision, and tool identity match the admitted call. A different
+  identity using the same ID is rejected and never observes another session's
+  result.

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/corpus.annotation-manifest.schema.json",
+  "title": "Tokito Corpus Annotation Manifest",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "dataset_revision", "annotation_revision", "created_at", "records", "integrity"],
+  "properties": {
+    "schema_version": { "const": "1.0" }, "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_revision": { "type": "string", "minLength": 1 }, "annotation_revision": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["annotation_id", "item_id", "review_status", "identity", "geometry", "state", "uncertainty", "unobservable_regions"],
+        "properties": {
+          "annotation_id": { "type": "string", "minLength": 1 }, "item_id": { "type": "string", "minLength": 1 },
+          "review_status": { "enum": ["unreviewed", "verified", "rejected"] },
+          "identity": { "type": "object", "additionalProperties": false, "required": ["class_id", "status"], "properties": { "class_id": { "type": "string", "minLength": 1 }, "status": { "enum": ["known", "unknown", "ambiguous"] }, "instance_id": { "type": "string", "minLength": 1 }, "reference_designator": { "type": "string", "minLength": 1 } } },
+          "geometry": { "type": "array", "items": { "type": "object" } },
+          "state": { "type": "object" },
+          "uncertainty": { "type": "object", "additionalProperties": false, "required": ["confidence", "ambiguous", "reasons"], "properties": { "confidence": { "type": "number", "minimum": 0, "maximum": 1 }, "ambiguous": { "type": "boolean" }, "reasons": { "type": "array", "items": { "type": "string", "minLength": 1 } } } },
+          "unobservable_regions": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    },
+    "integrity": { "type": "object", "additionalProperties": false, "required": ["inventory_manifest_digest", "manifest_digest"], "properties": { "inventory_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } }
+  }
+}
