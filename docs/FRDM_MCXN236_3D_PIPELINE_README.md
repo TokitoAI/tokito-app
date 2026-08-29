@@ -111,9 +111,11 @@ detail: `docs/FRDM_MCXN236_POPULATED_MODEL.md` and
 | `tools/kicad_pcb_placements.py` | imported `.kicad_pcb` | real reference designator, position, rotation, side, pad geometry, board outline per footprint |
 | `tools/build_frdm_reference_package.py` | `.kicad_pcb` + plain-text BOM | `frdm_mcxn236_reference_package.json`: 391 components + 190 classified non-component footprints (fiducials/mechanical) |
 | `tools/xlsx_bom_parser.py` | `.xlsx` BOM | per-reference `Description`/`MFG`/`MFG_PN`/`VALUE` records (generic, header-driven parsing) |
-| `tools/component_model_resolver.py` | reference package + xlsx BOM + KiCad 3D library path | `component_model_resolution.json`: resolved model path (or null) + status + evidence per component |
+| `tools/component_model_resolver.py` | reference package + xlsx BOM + KiCad 3D library path + `--kicad-pcb` (footprint geometry for exact model registration) + `--overrides-json` (manually-evidenced models) | `component_model_resolution.json`: resolved model path (or null) + status + evidence + registered model transform (rotation/offset + registration method) per component |
+| `tools/canonical_footprint.py` | our footprint's pads/fab outline + the KiCad-authored `.kicad_mod` for the same model | exact per-footprint model rotation and offset (numbered-pad or pad-geometry registration, body-side disambiguation) |
 | `tools/attach_3d_models_text.py` | `.kicad_pcb` + resolution JSON | populated `.kicad_pcb` (models spliced in, placement untouched) |
 | `kicad-cli pcb export glb/step/vrml` | populated `.kicad_pcb` | the actual 3D/AR assets |
+| `tools/verify_populated_glb.py` (+ `tools/glb_inspect.py`) | resolution JSON + exported GLB | numeric per-component check: predicted body centre vs body centre measured from GLB node bounds (336/336 within tolerance, max 0.05 mm) |
 | `kicad-cli pcb render` | populated `.kicad_pcb` | top/isometric PNG for visual verification |
 
 ## Where the outputs live

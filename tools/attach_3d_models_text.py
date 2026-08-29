@@ -71,11 +71,17 @@ def find_footprint_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def build_model_sexpr(model_path: str, rotate_z_deg: float = 0.0, indent: str = "\t\t") -> str:
+def build_model_sexpr(
+    model_path: str,
+    rotate_z_deg: float = 0.0,
+    offset_x_mm: float = 0.0,
+    offset_y_mm: float = 0.0,
+    indent: str = "\t\t",
+) -> str:
     escaped = model_path.replace("\\", "\\\\").replace('"', '\\"')
     return (
         f'\n{indent}(model "{escaped}"\n'
-        f"{indent}\t(offset (xyz 0 0 0))\n"
+        f"{indent}\t(offset (xyz {offset_x_mm:g} {offset_y_mm:g} 0))\n"
         f"{indent}\t(scale (xyz 1 1 1))\n"
         f"{indent}\t(rotate (xyz 0 0 {rotate_z_deg:g}))\n"
         f"{indent})"
@@ -119,7 +125,20 @@ def attach_models(input_path: Path, resolution_rows: list[dict[str, Any]], outpu
         pieces.append(span_text)
         row = rows_by_reference.get(placement["reference"])
         if row is not None:
-            pieces.append(build_model_sexpr(row["model_path"], float(row.get("model_rotate_z_deg", 0.0))))
+            # The resolution row's offset is in footprint-local FILE coordinates
+            # (y grows downward, same frame as pad "at" values). KiCad stores a
+            # model's offset y in the dialog's up-positive convention and
+            # applies it after the model rotation, so the y component flips
+            # sign exactly here, at the file boundary (verified empirically:
+            # a written offset (5, 12) moves the body +5, -12 in file coords).
+            pieces.append(
+                build_model_sexpr(
+                    row["model_path"],
+                    float(row.get("model_rotate_z_deg", 0.0)),
+                    offset_x_mm=float(row.get("model_offset_x_mm", 0.0)),
+                    offset_y_mm=-float(row.get("model_offset_y_mm", 0.0)),
+                )
+            )
             attached += 1
         previous = end
     pieces.append(text[previous:])

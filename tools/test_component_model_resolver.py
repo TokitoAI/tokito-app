@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 
 from component_model_resolver import (
+    apply_manual_overrides,
+    registered_model_transform,
     resolve_all,
     resolve_bare_header_model,
     resolve_chip_passive_model,
@@ -298,6 +300,79 @@ class ResolveAllTest(unittest.TestCase):
             self.assertEqual(by_ref["U1"]["status"], "no_recognized_package_code")
             self.assertEqual(by_ref["BH1"]["status"], "no_recognized_package_code")
             self.assertIn("not found in BOM", by_ref["BH1"]["evidence"])
+            # without footprint geometry, a resolved model's orientation must
+            # be flagged as heuristic, never presented as registered
+            self.assertEqual(by_ref["R1"]["model_registration"]["method"], "bbox_axis_heuristic_fallback")
+            self.assertEqual(by_ref["R1"]["model_offset_x_mm"], 0.0)
+
+
+class RegisteredModelTransformTest(unittest.TestCase):
+    def _library(self, directory: str) -> Path:
+        root = Path(directory)
+        model_dir = root / "3dmodels" / "Connector_PinSocket_2.54mm.3dshapes"
+        footprint_dir = root / "footprints" / "Connector_PinSocket_2.54mm.pretty"
+        model_dir.mkdir(parents=True)
+        footprint_dir.mkdir(parents=True)
+        (footprint_dir / "PinSocket_2x02_P2.54mm_Vertical.kicad_mod").write_text(
+            '(footprint "PinSocket_2x02_P2.54mm_Vertical"\n'
+            '  (pad "1" thru_hole rect (at 0 0) (size 1.7 1.7) (layers "*.Cu"))\n'
+            '  (pad "2" thru_hole oval (at -2.54 0) (size 1.7 1.7) (layers "*.Cu"))\n'
+            '  (pad "3" thru_hole oval (at 0 2.54) (size 1.7 1.7) (layers "*.Cu"))\n'
+            '  (pad "4" thru_hole oval (at -2.54 2.54) (size 1.7 1.7) (layers "*.Cu"))\n'
+            ")",
+            encoding="utf-8",
+        )
+        return model_dir / "PinSocket_2x02_P2.54mm_Vertical.step"
+
+    def test_registers_exact_rotation_from_geometry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model = self._library(directory)
+            # rows extend +X from pin 1: the J1 layout, which needs 270
+            geometry = {
+                "J1": {
+                    "pads": {"1": (0.0, 0.0), "2": (0.0, 2.54), "3": (2.54, 0.0), "4": (2.54, 2.54)},
+                    "body_overhang": None,
+                    "pad_field_center": (1.27, 1.27),
+                }
+            }
+            transform = registered_model_transform("J1", str(model), {"width": 4.0, "height": 2.5}, "Y", geometry)
+        self.assertEqual(transform["model_rotate_z_deg"], 270.0)
+        self.assertEqual(transform["model_registration"]["method"], "numbered_pads")
+
+    def test_falls_back_flagged_without_geometry(self) -> None:
+        transform = registered_model_transform("J1", "/nowhere/model.step", {"width": 4.0, "height": 1.0}, "Y", None)
+        self.assertEqual(transform["model_registration"]["method"], "bbox_axis_heuristic_fallback")
+        self.assertIn("--kicad-pcb", transform["model_registration"]["reason"])
+        self.assertEqual(transform["model_rotate_z_deg"], 90.0)
+
+
+class ApplyManualOverridesTest(unittest.TestCase):
+    def test_centered_placeholder_box_is_anchored_to_pad_field_center(self) -> None:
+        rows = [
+            {
+                "reference": "SW1",
+                "model_path": None,
+                "model_kind": None,
+                "model_rotate_z_deg": 0.0,
+                "model_offset_x_mm": 0.0,
+                "model_offset_y_mm": 0.0,
+                "model_registration": None,
+                "status": "no_recognized_package_code",
+            }
+        ]
+        overrides = [{"reference": "SW1", "model_path": "/build/box.wrl", "status": "manual_dimension_accurate_placeholder"}]
+        geometry = {"SW1": {"pads": {"1": (0.0, 0.0), "2": (3.0, 1.0)}, "body_overhang": None, "pad_field_center": (1.5, 0.5)}}
+
+        merged = apply_manual_overrides(rows, overrides, geometry)[0]
+
+        self.assertEqual(merged["model_path"], "/build/box.wrl")
+        self.assertEqual(merged["model_offset_x_mm"], 1.5)
+        self.assertEqual(merged["model_offset_y_mm"], 0.5)
+        self.assertEqual(merged["model_registration"]["method"], "centered_model_at_pad_field_center")
+
+    def test_override_for_unknown_reference_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            apply_manual_overrides([], [{"reference": "ZZ9", "model_path": "/m.step"}], None)
 
 
 if __name__ == "__main__":

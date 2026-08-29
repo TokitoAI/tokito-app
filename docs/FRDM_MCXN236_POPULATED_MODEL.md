@@ -260,6 +260,74 @@ Known remaining approximation: the right-angle Pmod socket (`J7`) is
 axis-aligned correctly, but its 180-degree facing (opening toward vs
 away from the board edge) has not been independently verified against
 the physical board -- flag for review against the photos before AR use.
+(Resolved in the sixth pass below: the fifth-pass heuristic had in fact
+left `J7` facing the wrong way and `J1`/`J3` rotated 180 degrees off.)
+
+## Sixth pass: exact canonical-footprint registration (no more heuristics)
+
+Two defects visible in the fifth-pass renders, reported from the actual
+images: the `J1` female socket body sat displaced off its footprint at
+the top of the render, and the `J7` right-angle Pmod body extended
+inward over `SW3` instead of outward off the board edge.
+
+Root cause: the fifth pass's bbox-axis heuristic can only answer "0 or
+90 degrees" -- it cannot see the **sign** of the pad field's direction
+from pin 1, which is exactly what varies between Allegro-imported
+footprints. Measured from the real board file: `J1`'s pin rows extend
+along **+X** from pin 1, `J4`'s along **-X**, `J9`/`J7`'s along **+Y**,
+while every KiCad socket model is authored for the canonical layout
+(pin1 (0,0), pin2 (-2.54,0), rows +Y). Since these models keep pin 1 at
+the model origin, a sign-wrong rotation (90 written where 270 is needed)
+swings the whole body to the wrong side of the footprint -- a
+displacement of the connector's full length, not a subtle error.
+
+The fix (`tools/canonical_footprint.py`) registers each footprint
+against the KiCad-authored canonical footprint for its model (the
+`.kicad_mod` with the same stem, `<Lib>.pretty` <-> `<Lib>.3dshapes`):
+
+1. **Numbered-pad registration**: try z-rotations {0, 90, 180, 270} of
+   the canonical pad layout; accept the one landing every same-numbered
+   pad within 0.5 mm (translation recovered simultaneously). 316 of 336
+   models registered this way, residual 0.00-0.05 mm.
+2. **Pad-geometry registration** for mirrored pin numbering (which no
+   z-rotation can reproduce): match the pad *point sets* under each
+   rotation; when several fit (a 2xN grid fits under 0 and 180), the
+   **body-overhang vector** decides -- our footprint's own fab-outline
+   centre minus pad centroid (from the Allegro import's real fab layer)
+   against the canonical footprint's. This resolved `J7` exactly: our
+   fab body extends +X (x in [1.07, 12.74] beyond pads at [0, 2.54]),
+   KiCad's extends -X, giving rotate 180 + offset (0, 12.7) -- the Pmod
+   now opens outward off the board edge, matching the photos. `Q1`-type
+   SOTs registered uniquely by geometry (the 3-pad triangle admits one
+   rotation); the old heuristic had them 180 degrees flipped.
+3. **Centred models** (the datasheet-dimensioned placeholder boxes,
+   authored centred at their own origin): anchored at the footprint's
+   real pad-field bbox centre (e.g. `J10` USB moved by its measured
+   (2.975, 2.18) mm correction). Single-pad parts (1x01 headers) are
+   rotationally symmetric and register by pin-to-pin translation.
+4. Anything unregistrable falls back to the old heuristic but is
+   **flagged** (`bbox_axis_heuristic_fallback`) in the resolution JSON,
+   never silently presented as registered. After the single-pad rule,
+   zero components remain on the fallback.
+
+File-format conventions were established **empirically** against
+kicad-cli 10.0.5 (controlled single-footprint exports measured in the
+GLB), not assumed: the model `rotate` z value is applied
+counterclockwise in footprint-local file coordinates; the model `offset`
+is applied after rotation, with the stored offset y **up-positive**
+(flipped relative to pad coordinates -- the writer negates it exactly
+once, at the file boundary). The resolution JSON keeps everything in
+pad-frame coordinates.
+
+Verification is now numeric, not eyeballed (`tools/verify_populated_glb.py`
++ `tools/glb_inspect.py`): for **all 336** components with models, the
+body centre predicted from placement + registration is compared against
+the body centre measured from the exported GLB's node bounds (glTF
+POSITION accessor min/max through the node transform chain, pure
+stdlib). Result: 336/336 within tolerance, max deviation **0.05 mm**
+(J7). Renders (top/iso/side) re-inspected on top of that: all sockets
+seated, Pmod opening outward, USB bodies on their footprints at the
+board edge.
 
 ## Verified results
 

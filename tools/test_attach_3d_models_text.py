@@ -76,6 +76,10 @@ class BuildModelSexprTest(unittest.TestCase):
         result = build_model_sexpr("model.step", rotate_z_deg=90.0)
         self.assertIn("(rotate (xyz 0 0 90))", result)
 
+    def test_offset_is_written_when_supplied(self) -> None:
+        result = build_model_sexpr("model.step", offset_x_mm=2.975, offset_y_mm=-12.7)
+        self.assertIn("(offset (xyz 2.975 -12.7 0))", result)
+
 
 class AttachModelsTest(unittest.TestCase):
     def test_placeholder_reference_rewritten_to_real_designator(self) -> None:
@@ -103,6 +107,30 @@ class AttachModelsTest(unittest.TestCase):
 
             output_text = output_path.read_text(encoding="utf-8")
             self.assertIn("(rotate (xyz 0 0 90))", output_text)
+
+    def test_offset_y_sign_flips_at_the_file_boundary(self) -> None:
+        # resolution rows carry the offset in footprint-local FILE
+        # coordinates (pad-frame, y down); KiCad's stored model offset y is
+        # up-positive, so the writer must negate exactly once.
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "board.kicad_pcb"
+            input_path.write_text(FIXTURE, encoding="utf-8")
+            output_path = Path(directory) / "populated.kicad_pcb"
+
+            rows = [
+                {
+                    "reference": "R1",
+                    "model_path": "/m/R.step",
+                    "model_rotate_z_deg": 180.0,
+                    "model_offset_x_mm": 2.54,
+                    "model_offset_y_mm": 12.7,
+                }
+            ]
+            attach_models(input_path, rows, output_path)
+
+            output_text = output_path.read_text(encoding="utf-8")
+            self.assertIn("(offset (xyz 2.54 -12.7 0))", output_text)
+            self.assertIn("(rotate (xyz 0 0 180))", output_text)
 
     def test_splices_model_only_into_matched_footprint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

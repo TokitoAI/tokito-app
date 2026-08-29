@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from canonical_footprint import load_board_footprint_geometry, register_model
 from xlsx_bom_parser import (
     expand_by_reference_designator,
     extract_bare_header_spec,
@@ -177,10 +178,47 @@ def resolve_bare_header_model(rows: int, cols: int, pitch_mm: float, library_roo
     return str(path), "matched real installed KiCad official 3D model file (generic pin-count/pitch family, not an exact vendor part)"
 
 
+def registered_model_transform(
+    reference: str,
+    model_path: str,
+    footprint_bbox_mm: dict[str, float],
+    canonical_axis: str,
+    footprint_geometry: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Exact per-footprint model transform via canonical-footprint pad
+    registration, falling back to the family bbox-axis heuristic (flagged as
+    such) only when registration evidence is unavailable. The heuristic can
+    only say 0 or 90 -- it cannot see the sign of the pad field's direction
+    from pin 1, which is what actually varies between Allegro-imported
+    footprints -- so a heuristic fallback is reported, never silently used."""
+    geometry = (footprint_geometry or {}).get(reference)
+    if geometry and geometry["pads"]:
+        registration = register_model(geometry["pads"], geometry["body_overhang"], model_path)
+        if registration is not None:
+            return {
+                "model_rotate_z_deg": float(registration["rotate_z_deg"]),
+                "model_offset_x_mm": round(registration["offset_x_mm"], 4),
+                "model_offset_y_mm": round(registration["offset_y_mm"], 4),
+                "model_registration": registration,
+            }
+        fallback_reason = "canonical footprint missing or pad registration failed"
+    elif geometry is not None:
+        fallback_reason = "footprint has no numbered pads"
+    else:
+        fallback_reason = "no footprint geometry provided (run with --kicad-pcb)"
+    return {
+        "model_rotate_z_deg": model_rotate_z_deg(footprint_bbox_mm, canonical_axis),
+        "model_offset_x_mm": 0.0,
+        "model_offset_y_mm": 0.0,
+        "model_registration": {"method": "bbox_axis_heuristic_fallback", "reason": fallback_reason},
+    }
+
+
 def resolve_all(
     components: list[dict[str, Any]],
     bom_by_reference: dict[str, dict[str, Any]],
     library_root: Path,
+    footprint_geometry: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     results = []
     for component in components:
@@ -253,6 +291,18 @@ def resolve_all(
             model_kind = "generic_family_approximate" if model_path else None
             canonical_axis = "Y"
 
+        if model_path:
+            transform = registered_model_transform(
+                reference, model_path, component["footprint_bbox_mm"], canonical_axis, footprint_geometry
+            )
+        else:
+            transform = {
+                "model_rotate_z_deg": 0.0,
+                "model_offset_x_mm": 0.0,
+                "model_offset_y_mm": 0.0,
+                "model_registration": None,
+            }
+
         results.append(
             {
                 "reference": reference,
@@ -266,12 +316,62 @@ def resolve_all(
                 "package_code": package_code,
                 "model_path": model_path,
                 "model_kind": model_kind,
-                "model_rotate_z_deg": model_rotate_z_deg(component["footprint_bbox_mm"], canonical_axis) if model_path else 0.0,
+                **transform,
                 "status": status,
                 "evidence": evidence,
             }
         )
     return results
+
+
+def apply_manual_overrides(
+    rows: list[dict[str, Any]],
+    override_rows: list[dict[str, Any]],
+    footprint_geometry: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Merges manually-evidenced model overrides into resolver rows.
+
+    An override pointing at an installed KiCad library model is registered
+    against its canonical footprint exactly like a resolver match. A
+    generated placeholder box (authored centred at its own origin, unlike
+    library models which are authored over their canonical footprint) is
+    anchored to the footprint's real pad-field centre instead -- Allegro
+    footprints keep pin 1 at the origin, so a centred box left at (0,0)
+    would sit displaced by half the part's span."""
+    rows_by_reference = {row["reference"]: row for row in rows}
+    for override in override_rows:
+        reference = override["reference"]
+        base = rows_by_reference.get(reference)
+        if base is None:
+            raise ValueError(f"override for unknown reference {reference!r}")
+        merged = {**base, **override}
+        geometry = (footprint_geometry or {}).get(reference)
+        registration = None
+        if geometry and geometry["pads"]:
+            registration = register_model(geometry["pads"], geometry["body_overhang"], override["model_path"])
+        if registration is not None:
+            merged["model_rotate_z_deg"] = float(registration["rotate_z_deg"])
+            merged["model_offset_x_mm"] = round(registration["offset_x_mm"], 4)
+            merged["model_offset_y_mm"] = round(registration["offset_y_mm"], 4)
+            merged["model_registration"] = registration
+        elif geometry and geometry["pad_field_center"] is not None:
+            merged["model_rotate_z_deg"] = 0.0
+            merged["model_offset_x_mm"] = round(geometry["pad_field_center"][0], 4)
+            merged["model_offset_y_mm"] = round(geometry["pad_field_center"][1], 4)
+            merged["model_registration"] = {
+                "method": "centered_model_at_pad_field_center",
+                "reason": "model authored centred at its origin; anchored to the footprint's real pad-field bbox centre",
+            }
+        else:
+            merged.setdefault("model_rotate_z_deg", 0.0)
+            merged.setdefault("model_offset_x_mm", 0.0)
+            merged.setdefault("model_offset_y_mm", 0.0)
+            merged["model_registration"] = {
+                "method": "no_transform_evidence",
+                "reason": "no footprint geometry available for this reference",
+            }
+        rows_by_reference[reference] = merged
+    return [rows_by_reference[row["reference"]] for row in rows]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -280,13 +380,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bom-xlsx", required=True, type=Path)
     parser.add_argument("--kicad-3d-library-root", required=True, type=Path)
     parser.add_argument("--output-json", required=True, type=Path)
+    parser.add_argument(
+        "--kicad-pcb",
+        type=Path,
+        help="imported .kicad_pcb for exact per-footprint model registration (pad positions + body outlines); without it, model orientation degrades to the flagged bbox-axis heuristic",
+    )
+    parser.add_argument(
+        "--overrides-json",
+        type=Path,
+        help="manually-evidenced model overrides ({'components': [...]}) merged after resolution",
+    )
     args = parser.parse_args(argv)
 
     bundle = json.loads(args.reference_package.read_text(encoding="utf-8"))
     bom_records = parse_bom_records(args.bom_xlsx)
     bom_by_reference = expand_by_reference_designator(bom_records)
+    footprint_geometry = load_board_footprint_geometry(args.kicad_pcb) if args.kicad_pcb else None
 
-    results = resolve_all(bundle["components"], bom_by_reference, args.kicad_3d_library_root)
+    results = resolve_all(bundle["components"], bom_by_reference, args.kicad_3d_library_root, footprint_geometry)
+
+    if args.overrides_json:
+        overrides = json.loads(args.overrides_json.read_text(encoding="utf-8"))
+        results = apply_manual_overrides(results, overrides["components"], footprint_geometry)
 
     counts: dict[str, int] = {}
     for row in results:
