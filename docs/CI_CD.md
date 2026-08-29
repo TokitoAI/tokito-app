@@ -13,7 +13,13 @@ added when those artifacts land.
    `Fixes #N`.
 3. Let CI run on the pull request.
 4. Resolve review conversations and keep history linear.
-5. Merge only after required checks and owner review pass.
+5. Merge when required checks pass, GitHub reports a clean merge state, the PR
+   is not a draft, and no requested change or review conversation is unresolved.
+6. Verify the post-merge `main` run and move the linked board card to **Done**.
+
+Agents do not wait for a second confirmation to merge an eligible PR they own
+or were explicitly delegated. A user instruction to hold or not merge overrides
+that default.
 
 Direct pushes to `main`, force-pushes to `main`, and branch deletion for `main`
 are not part of the accepted workflow. Issue
@@ -30,6 +36,20 @@ repository is explicitly authorized in the restricted Tokito VPS runner group;
 the job uses the runner's system `python3` and does not depend on GitHub-hosted
 runner billing capacity.
 
+## Runner invariant
+
+Every job in every file under `.github/workflows/` must select the full runner
+label set `[self-hosted, Linux, X64, tokito-vps, private-build]`. GitHub-hosted
+labels such as `ubuntu-latest`, `windows-latest`, and `macos-latest` are banned
+for this repository. `tools/validate_governance.py` scans all workflow files and
+fails if a `runs-on` declaration uses hosted capacity or omits a required VPS
+label.
+
+Operating-system-specific work requires a separately tracked, organization-
+managed self-hosted runner. It must be introduced together with an explicit
+label policy and validator update; billing exhaustion is never handled by
+silently switching workflow jobs back to GitHub-hosted runners.
+
 - Validates every schema under `schemas/` as JSON.
 - Validates every example manifest under `examples/manifests/` against the
   supported JSON Schema subset used by `tools/validate_governance.py`.
@@ -43,6 +63,8 @@ runner billing capacity.
   #44-#45 stay traceable from documentation.
 - Verifies that branch and pull-request policy is documented in `AGENTS.md` and
   the pull request template.
+- Runs governance regression tests and rejects any workflow that violates the
+  Tokito VPS runner invariant.
 
 ## Next jobs
 

@@ -50,6 +50,33 @@ protection for this private repository is tracked by issue #33 because the
 current organization plan does not yet support the needed repository rules.
 Do not make the repository public solely to work around that limitation.
 
+All repository changes, including CI, documentation, and agent-maintenance
+changes, go through an issue-scoped branch and pull request. An agent must not
+push a change directly to `main`. When an agent owns or has been explicitly
+delegated a pull request, it must merge the PR without waiting for another
+human confirmation once all of the following are true: the PR is not a draft,
+all required checks are successful, GitHub reports a clean merge state, and no
+review conversation or requested change remains unresolved. After merging, the
+agent must verify the `main` push workflow, close the issue if GitHub did not,
+and set its project card to **Done**. A user instruction to hold or not merge
+always overrides this default.
+
+## CI runner policy
+
+Every GitHub Actions job in this repository runs on the organization-managed
+`playground-linux-x64` runner using the complete label set
+`[self-hosted, Linux, X64, tokito-vps, private-build]`. Do not use
+`ubuntu-latest`, `windows-latest`, `macos-latest`, another GitHub-hosted label,
+or a partial VPS label set. This repository is authorized in the restricted
+Tokito VPS runner group. `tools/validate_governance.py` enforces the invariant
+across every workflow so a pull request cannot silently move CI back to billed
+GitHub-hosted capacity.
+
+A job that truly requires another operating system must not weaken or bypass
+this rule. Track the requirement in an issue, provision an organization-managed
+self-hosted runner with explicit labels, and update the validator and this
+policy together through a separately reviewed PR.
+
 ## Non-negotiable rules
 
 - **No stubs presented as capability.** Unimplemented tools are absent from the
@@ -101,6 +128,8 @@ Read, in full:
 - Preserve evidence manifests and benchmark summaries; do not hand-edit results.
 - Keep `.github/workflows/ci.yml` and `tools/validate_governance.py` green for
   documentation, schema, and evidence-contract changes.
+- Never weaken the VPS-only workflow validation to work around runner or billing
+  failures; repair the self-hosted runner or its repository authorization.
 
 ## Memory index
 
