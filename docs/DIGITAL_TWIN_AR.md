@@ -48,10 +48,11 @@ calibration object for two minutes. Backgrounding, camera loss, reset or missing
 calibration suppresses it immediately. Automatic discovery/tracking may update
 the same pose API continuously without changing the renderer or asset format.
 
-`Preview 3D` renders the same validated object with a declared synthetic pose
-for renderer bring-up when no measured target is present. The UI labels this
-state as not AR-registered. It does not install a frame-graph transform, claim
-tracking, or produce assembly guidance.
+The synthetic-pose renderer preview exists only in `android/ar-demo`. The
+shipping `app` never loads `CalibrationBoardAsset`, never exposes a synthetic
+3D action, and never derives metric board dimensions from calibration data.
+Product rendering requires an active assembly-context-bound package; its
+signed X/Z bounds supply the metric corner landmarks used by pose estimation.
 
 ## Required device evidence
 

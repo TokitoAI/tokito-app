@@ -246,26 +246,10 @@
                 android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/preview3dButton"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_weight="1"
-                        android:minWidth="0dp"
-                        android:paddingStart="4dp"
-                        android:paddingEnd="4dp"
-                        android:text="@string/preview_3d"
-                        android:textAllCaps="false"
-                        android:textSize="11sp"
-                        app:cornerRadius="14dp"
-                        app:strokeColor="@color/tokito_border" />
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/resetRegistrationButton"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="40dp"
-                        android:layout_marginStart="7dp"
                         android:layout_weight="1"
                         android:minWidth="0dp"
                         android:paddingStart="4dp"

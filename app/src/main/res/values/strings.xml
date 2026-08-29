@@ -12,7 +12,6 @@
     <string name="talk">Talk</string>
     <string name="stop">Stop</string>
     <string name="send">Send</string>
-    <string name="preview_3d">Preview 3D</string>
     <string name="reset_ar">Reset AR</string>
     <string name="assistant_welcome">Place a board in view. I can listen, reason locally, and present registered guidance here.</string>
     <string name="heard_placeholder">Your live transcript will appear here.</string>

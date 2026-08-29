@@ -5,15 +5,14 @@ import androidx.lifecycle.LifecycleOwner
 import ai.tokito.physical.ar.ArCameraSurface
 import ai.tokito.physical.ar.ArPresenter
 import ai.tokito.physical.ar.ArRuntime
-import ai.tokito.physical.ar.CalibrationBoardAsset
 import ai.tokito.physical.ar.CameraIntrinsics
 import ai.tokito.physical.ar.CoordinateFrame
 import ai.tokito.physical.ar.DigitalTwinRenderResult
 import ai.tokito.physical.ar.DigitalTwinValidation
 import ai.tokito.physical.ar.DigitalTwinValidator
+import ai.tokito.physical.ar.DigitalTwinManifest
 import ai.tokito.physical.ar.Guidance
 import ai.tokito.physical.ar.ManualBoardRegistrar
-import ai.tokito.physical.ar.MetricBoardPose
 import ai.tokito.physical.ar.MetricPoseEstimator
 import ai.tokito.physical.ar.OverlayPrimitive
 import ai.tokito.physical.ar.OverlayScene
@@ -22,7 +21,7 @@ import ai.tokito.physical.ar.Point2
 import ai.tokito.physical.ar.PoseEstimation
 import ai.tokito.physical.ar.RenderDecision
 import ai.tokito.physical.ar.SceneSubmission
-import ai.tokito.physical.ar.Vector3
+import java.io.File
 
 /** Product host for the shared registered-presentation runtime. */
 class ArSessionController(
@@ -37,7 +36,7 @@ class ArSessionController(
     private val poseEstimator = MetricPoseEstimator(validityNanos = REGISTRATION_VALIDITY_NANOS)
     private val corners = mutableListOf<Point2>()
     private var cameraStarted = false
-    private var twinReady = false
+    private var activeTwin: DigitalTwinManifest? = null
     private var hasRegistration = false
     private var sequence = 0L
 
@@ -49,7 +48,6 @@ class ArSessionController(
             )
         }.bind(owner)
         surface.overlay.setOnBoardTapListener(::acceptCorner)
-        loadCalibrationTwin()
         reset()
     }
 
@@ -87,45 +85,42 @@ class ArSessionController(
         onState(State("Register board", "Tap top-left, top-right, bottom-right, then bottom-left"))
     }
 
-    /** Honest renderer proof; it is intentionally not installed into the frame graph. */
-    fun preview3d() {
-        if (!twinReady) {
-            onState(State("3D unavailable", "The validated renderer asset is not ready"))
-            return
+    /**
+     * Activates only an assembly-context-bound project asset. Calibration and
+     * renderer-conformance objects are deliberately not accepted by the product host.
+     */
+    fun activateDigitalTwin(
+        manifestFile: File,
+        glbFile: File,
+        expectedAssemblyContextRevision: String,
+    ): DigitalTwinValidation {
+        val validation = DigitalTwinValidator().load(
+            manifestFile,
+            glbFile,
+            expectedAssemblyContextRevision,
+        )
+        if (validation !is DigitalTwinValidation.Accepted) {
+            activeTwin = null
+            surface.digitalTwin.clearAsset()
+            return validation
         }
-        corners.clear()
-        runtime.suspend()
-        surface.overlay.render(null)
-        surface.digitalTwin.post {
-            val width = surface.digitalTwin.width
-            val height = surface.digitalTwin.height
-            if (width <= 0 || height <= 0) {
-                onState(State("3D unavailable", "The render surface is not ready"))
-                return@post
+        activeTwin = validation.packageData.manifest
+        when (surface.digitalTwin.load(validation) { result ->
+            if (result !is DigitalTwinRenderResult.Loaded) {
+                activeTwin = null
+                surface.digitalTwin.clearAsset()
+                onState(State("3D unavailable", "The project digital twin was rejected by the renderer"))
             }
-            val now = System.nanoTime()
-            val intrinsics = CameraIntrinsics(
-                fx = width * 1.15,
-                fy = width * 1.15,
-                cx = width / 2.0,
-                cy = height / 2.0,
-                widthPx = width,
-                heightPx = height,
-            )
-            val pose = MetricBoardPose(
-                r1 = Vector3(0.966, 0.045, 0.255),
-                r2 = Vector3(-0.118, 0.951, 0.286),
-                r3 = Vector3(-0.230, -0.306, 0.924),
-                translationMetres = Vector3(-0.060, -0.040, 0.500),
-                revision = Long.MAX_VALUE,
-                observedAtNanos = now,
-                expiresAtNanos = now + REGISTRATION_VALIDITY_NANOS,
-                reprojectionRmsPx = 0.0,
-                confidence = 1.0,
-            )
-            surface.digitalTwin.updateRegistration(pose, intrinsics)
-            onState(State("3D proof", "Synthetic pose · not AR-registered"))
+        }) {
+            is DigitalTwinRenderResult.Rejected -> {
+                activeTwin = null
+                surface.digitalTwin.clearAsset()
+            }
+            DigitalTwinRenderResult.Initializing,
+            DigitalTwinRenderResult.Loaded,
+            -> Unit
         }
+        return validation
     }
 
     private fun onCameraStatus(status: ArCameraSurface.Status) {
@@ -167,17 +162,13 @@ class ArSessionController(
             onState(State("Registration changed", "Reset and register the board again"))
             return
         }
-        val intrinsics = surface.calibratedPreviewIntrinsics()
-        val pose = intrinsics?.let {
+        val twin = activeTwin
+        val intrinsics = if (twin == null) null else surface.calibratedPreviewIntrinsics()
+        val pose = if (twin == null || intrinsics == null) null else {
             poseEstimator.estimate(
-                boardPointsMetres = listOf(
-                    Point2(0.0, 0.0),
-                    Point2(CalibrationBoardAsset.BOARD_WIDTH_METRES, 0.0),
-                    Point2(CalibrationBoardAsset.BOARD_WIDTH_METRES, CalibrationBoardAsset.BOARD_HEIGHT_METRES),
-                    Point2(0.0, CalibrationBoardAsset.BOARD_HEIGHT_METRES),
-                ),
+                boardPointsMetres = twin.boardPlaneCorners(),
                 imagePointsPx = corners,
-                intrinsics = it,
+                intrinsics = intrinsics,
                 revision = registration.revision,
                 nowNanos = now,
             )
@@ -185,7 +176,7 @@ class ArSessionController(
         when (val decision = runtime.render()) {
             is RenderDecision.Suppressed -> onState(State("Overlay suppressed", decision.reason))
             is RenderDecision.Ready -> when {
-                !twinReady -> onState(State("Board registered", "2D guidance active; 3D asset unavailable", true))
+                twin == null -> onState(State("Board registered", "2D guidance active; no validated project digital twin", true))
                 intrinsics == null -> onState(State("Board registered", "2D guidance active; calibrated intrinsics unavailable", true))
                 pose is PoseEstimation.Rejected -> onState(State("Board registered", "3D pose rejected: ${pose.reason}", true))
                 pose is PoseEstimation.Accepted -> {
@@ -193,24 +184,6 @@ class ArSessionController(
                     onState(State("3D registered", "${"%.2f".format(pose.pose.reprojectionRmsPx)} px reprojection RMS", true))
                 }
             }
-        }
-    }
-
-    private fun loadCalibrationTwin() {
-        val packageData = CalibrationBoardAsset.create()
-        val validation = DigitalTwinValidator().validate(
-            packageData.manifest,
-            packageData.glb,
-            packageData.manifest.assemblyContextRevision,
-        )
-        if (validation !is DigitalTwinValidation.Accepted) return
-        twinReady = when (surface.digitalTwin.load(validation) { result ->
-            twinReady = result is DigitalTwinRenderResult.Loaded
-        }) {
-            DigitalTwinRenderResult.Loaded -> true
-            DigitalTwinRenderResult.Initializing,
-            is DigitalTwinRenderResult.Rejected,
-            -> false
         }
     }
 

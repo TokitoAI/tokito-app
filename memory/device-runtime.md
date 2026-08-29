@@ -37,6 +37,10 @@ mailbox. Every overlay primitive is frame-, revision-, time-, expiry-, and
 uncertainty-bound. Missing/stale transforms, lifecycle suspension, and a new
 registration revision clear geometry rather than preserving the last visual.
 The demo is conformance tooling and must never be cited as automatic vision.
+The shipping app must not load `CalibrationBoardAsset` or expose its synthetic
+pose preview. Product pose estimation takes metric board landmarks only from
+the active validated project digital-twin package; a missing package leaves 3D
+absent rather than substituting calibration geometry.
 Filament `ModelViewer` owns native teardown through its `TextureView` detach
 listener. Hosts mark `DigitalTwinView` destroyed and stop scheduling frames,
 but must not invoke `ModelViewer.destroy()` a second time during Activity

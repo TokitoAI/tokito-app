@@ -8,6 +8,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DigitalTwinAssetTest {
+    @Test
+    fun `board pose corners come from signed asset bounds`() {
+        val manifest = CalibrationBoardAsset.create().manifest.copy(
+            boundsMetres = Bounds3Contract(
+                minimum = Vector3Contract(-0.031, -0.002, 0.014),
+                maximum = Vector3Contract(0.089, 0.011, 0.094),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                Point2(-0.031, 0.014),
+                Point2(0.089, 0.014),
+                Point2(0.089, 0.094),
+                Point2(-0.031, 0.094),
+            ),
+            manifest.boardPlaneCorners(),
+        )
+    }
+
     private val validator = DigitalTwinValidator(maximumGlbBytes = 2L * 1024L * 1024L)
 
     @Test fun calibrationAssetIsARealValidatedGlb() {

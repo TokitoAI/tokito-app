@@ -99,7 +99,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun bindActions() {
         binding.modelButton.setOnClickListener { launchAction(::prepareLocalAi) }
-        binding.preview3dButton.setOnClickListener { ar.preview3d() }
         binding.resetRegistrationButton.setOnClickListener { ar.reset() }
         binding.beginMeasurementButton.setOnClickListener { launchAction(::beginMeasurement) }
         binding.confirmMeasurementButton.setOnClickListener {

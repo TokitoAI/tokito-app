@@ -41,7 +41,15 @@ data class DigitalTwinManifest(
     val boundsMetres: Bounds3Contract,
     val defaultOpacity: Double = 0.42,
     val componentNodePrefix: String = "ref:",
-)
+) {
+    /** Metric board-plane landmarks in the same clockwise order required by registration. */
+    fun boardPlaneCorners(): List<Point2> = listOf(
+        Point2(boundsMetres.minimum.x, boundsMetres.minimum.z),
+        Point2(boundsMetres.maximum.x, boundsMetres.minimum.z),
+        Point2(boundsMetres.maximum.x, boundsMetres.maximum.z),
+        Point2(boundsMetres.minimum.x, boundsMetres.maximum.z),
+    )
+}
 
 data class DigitalTwinPackage(val manifest: DigitalTwinManifest, val glb: ByteArray)
 
