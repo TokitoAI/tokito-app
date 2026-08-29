@@ -30,6 +30,12 @@ A complete PR:
 6. contains no unlicensed data, model weights, raw private captures, secrets, or
    generated build products.
 
+CI must pass before merge. At bootstrap, CI validates governance, evidence
+schemas, example manifests, documentation traceability, and forbidden tracked
+artifacts. Android, model export, device benchmark, and release jobs should be
+added only when their corresponding artifacts exist and can produce immutable
+evidence manifests.
+
 ## Evidence rules
 
 - Report hardware model, SoC, Android build, runtime/backend, thread policy,
@@ -39,6 +45,8 @@ A complete PR:
 - Report confidence intervals or per-board distributions, not only one average.
 - Record abstentions and failures; do not silently remove difficult samples.
 - Do not claim a metric from synthetic or training data as held-out evidence.
+- Generate machine-readable evidence using the contracts under `schemas/` and
+  keep examples under `examples/manifests/` schema-valid.
 
 ## Commit style
 

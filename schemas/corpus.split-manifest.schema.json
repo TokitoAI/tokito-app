@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/corpus.split-manifest.schema.json",
+  "title": "Tokito Corpus Split Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "split_revision",
+    "split_unit",
+    "splits",
+    "leakage_audit",
+    "immutability"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "split_revision": { "type": "string", "minLength": 1 },
+    "split_unit": { "const": "board_session" },
+    "splits": {
+      "type": "object",
+      "required": ["train", "validation", "calibration", "test"],
+      "properties": {
+        "train": { "type": "array", "items": { "type": "string" } },
+        "validation": { "type": "array", "items": { "type": "string" } },
+        "calibration": { "type": "array", "items": { "type": "string" } },
+        "test": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "leakage_audit": {
+      "type": "object",
+      "required": ["duplicate_check", "near_duplicate_check", "board_session_disjoint"],
+      "properties": {
+        "duplicate_check": { "type": "string", "minLength": 1 },
+        "near_duplicate_check": { "type": "string", "minLength": 1 },
+        "board_session_disjoint": { "type": "boolean" }
+      }
+    },
+    "immutability": {
+      "type": "object",
+      "required": ["manifest_digest", "frozen_at"],
+      "properties": {
+        "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "frozen_at": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -31,7 +31,18 @@ issue links are identifiers for the work required to substantiate each claim.
 | Standalone application and reusable Android runtime boundary | [ADR 0001](decisions/0001-separate-physical-runtime.md), [ADR 0003](decisions/0003-python-off-device.md), [ADR 0004](decisions/0004-standalone-fully-local-ar-product.md), and [architecture](ARCHITECTURE.md) | [#30](https://github.com/TokitoAI/tokito-physical-runtime/issues/30), [#37](https://github.com/TokitoAI/tokito-physical-runtime/issues/37) | Gate 6 |
 | End-to-end hackathon scenarios | [Delivery gates](DELIVERY_GATES.md) | [#31](https://github.com/TokitoAI/tokito-physical-runtime/issues/31) | Gate 7 |
 | Future Companion consumption | [Architecture: integration policy](ARCHITECTURE.md#integration-policy) and [ADR 0001](decisions/0001-separate-physical-runtime.md) | [#32](https://github.com/TokitoAI/tokito-physical-runtime/issues/32) | Blocked until Gate 6 |
-| Tokito + DS-ViRe assembly-context boundary and FRDM reference validation | [Architecture: integration policy](ARCHITECTURE.md#integration-policy), [runtime contract](RUNTIME_CONTRACT.md#assembly-context-bundle), and [FRDM validation](FRDM_MCXN236_VALIDATION.md) | [#42](https://github.com/TokitoAI/tokito-physical-runtime/issues/42) | Gates 2, 3, and 5 |
+| Tokito + DS-ViRe assembly-context boundary and FRDM reference validation | [Architecture: integration policy](ARCHITECTURE.md#integration-policy), [runtime contract](RUNTIME_CONTRACT.md#assembly-context-bundle), and [FRDM validation](FRDM_MCXN236_VALIDATION.md) | [#44](https://github.com/TokitoAI/tokito-physical-runtime/issues/44), [#45](https://github.com/TokitoAI/tokito-physical-runtime/issues/45) | Gates 2, 3, and 5 |
+| PR-only delivery and branch protection | [CI/CD policy](CI_CD.md) and [AGENTS.md](../AGENTS.md#main-branch-policy) | [#33](https://github.com/TokitoAI/tokito-physical-runtime/issues/33) | Required before protected release merge |
+
+## Evidence contracts
+
+Group 3 issues #25-#32 and the standalone/FRDM wave use the machine-readable
+schemas in [Evidence manifests](EVIDENCE_MANIFESTS.md). These contracts let CI
+and release tooling verify corpus governance, model-bundle provenance,
+target-device evaluation, calibration, Android artifact conformance, security
+review, assembly-context imports, FRDM validation, and Gate 6/7 release
+evidence without hardcoding an iQOO device profile or board-specific runtime
+branch before the hardware and reference package are measured.
 
 ## Claim policy
 

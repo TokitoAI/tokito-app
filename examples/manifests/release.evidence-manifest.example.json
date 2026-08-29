@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "release_id": "tokito-example-release",
+  "gate": "Gate 6",
+  "android_artifact_manifest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "evaluation_runs": [
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "security_review": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "scenario_results": ["not-yet-run"],
+  "limitations": ["No Companion integration before Gate 6 evidence is accepted."],
+  "companion_integration": {
+    "status": "blocked",
+    "blocking_gate": "Gate 6"
+  }
+}

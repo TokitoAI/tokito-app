@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/evaluation.run-manifest.schema.json",
+  "title": "Tokito Evaluation Run Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "inputs",
+    "device",
+    "runtime",
+    "metrics",
+    "scenarios",
+    "output"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "inputs": {
+      "type": "object",
+      "required": ["dataset_revision", "split_revision", "model_bundle_digest", "preprocessing_digest"],
+      "properties": {
+        "dataset_revision": { "type": "string", "minLength": 1 },
+        "split_revision": { "type": "string", "minLength": 1 },
+        "model_bundle_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "preprocessing_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "device": {
+      "type": "object",
+      "required": ["profile_id", "manufacturer_model", "soc", "android_build", "abi"],
+      "properties": {
+        "profile_id": { "type": "string", "minLength": 1 },
+        "manufacturer_model": { "type": "string", "minLength": 1 },
+        "soc": { "type": "string", "minLength": 1 },
+        "android_build": { "type": "string", "minLength": 1 },
+        "abi": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["revision", "backend", "precision", "threads"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 1 },
+        "backend": { "type": "string", "minLength": 1 },
+        "precision": { "type": "string", "minLength": 1 },
+        "threads": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "metrics": { "type": "object", "required": ["quality", "latency", "resources", "thermal"], "properties": { "quality": { "type": "object" }, "latency": { "type": "object" }, "resources": { "type": "object" }, "thermal": { "type": "object" } } },
+    "scenarios": { "type": "array", "items": { "type": "string" } },
+    "output": { "type": "object", "required": ["machine_manifest_digest", "human_report_digest"], "properties": { "machine_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, "human_report_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } }
+  }
+}

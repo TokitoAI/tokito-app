@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/corpus.dataset-card.schema.json",
+  "title": "Tokito Corpus Dataset Card",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "dataset_revision",
+    "purpose",
+    "sources",
+    "annotation_schema",
+    "retention",
+    "exclusions",
+    "hashes"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_revision": { "type": "string", "minLength": 1 },
+    "purpose": { "type": "string", "minLength": 1 },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["source_id", "origin", "license", "consent_basis", "intended_use"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "origin": { "type": "string", "minLength": 1 },
+          "license": { "type": "string", "minLength": 1 },
+          "consent_basis": { "type": "string", "minLength": 1 },
+          "intended_use": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "annotation_schema": {
+      "type": "object",
+      "required": ["revision", "labels", "geometry", "uncertainty", "unobservable_regions"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 1 },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "geometry": { "type": "array", "items": { "type": "string" } },
+        "uncertainty": { "type": "string", "minLength": 1 },
+        "unobservable_regions": { "type": "string", "minLength": 1 }
+      }
+    },
+    "retention": { "type": "string", "minLength": 1 },
+    "exclusions": { "type": "array", "items": { "type": "string" } },
+    "hashes": {
+      "type": "object",
+      "required": ["manifest_digest"],
+      "properties": {
+        "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

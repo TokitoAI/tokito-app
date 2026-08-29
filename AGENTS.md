@@ -41,6 +41,15 @@ repository and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
 - Merge only with required evidence green; close and mark **Done** afterward.
 - The board is the roadmap. Do not create a competing roadmap file.
 
+## Main branch policy
+
+`main` is PR-only by project policy. Require pull requests before merge, require
+conversation resolution, preserve linear history, block force-push, block branch
+deletion, and bind required checks once CI workflows exist. GitHub branch
+protection for this private repository is tracked by issue #33 because the
+current organization plan does not yet support the needed repository rules.
+Do not make the repository public solely to work around that limitation.
+
 ## Non-negotiable rules
 
 - **No stubs presented as capability.** Unimplemented tools are absent from the
@@ -90,6 +99,8 @@ Read, in full:
 - Do not commit local datasets, captures, model weights, generated reports, APKs,
   AARs, or device logs.
 - Preserve evidence manifests and benchmark summaries; do not hand-edit results.
+- Keep `.github/workflows/ci.yml` and `tools/validate_governance.py` green for
+  documentation, schema, and evidence-contract changes.
 
 ## Memory index
 

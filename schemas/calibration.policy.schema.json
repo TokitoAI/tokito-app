@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/calibration.policy.schema.json",
+  "title": "Tokito Calibration and Abstention Policy",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "policy_id",
+    "policy_revision",
+    "capability",
+    "fit",
+    "evaluation",
+    "thresholds",
+    "abstention_cases"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "policy_id": { "type": "string", "minLength": 1 },
+    "policy_revision": { "type": "string", "minLength": 1 },
+    "capability": { "type": "string", "minLength": 1 },
+    "fit": { "type": "object", "required": ["split", "method"], "properties": { "split": { "const": "calibration" }, "method": { "type": "string", "minLength": 1 } } },
+    "evaluation": {
+      "type": "object",
+      "required": ["held_out_split", "expected_calibration_error", "coverage_curve_digest", "risk_coverage_curve_digest"],
+      "properties": {
+        "held_out_split": { "const": "test" },
+        "expected_calibration_error": { "type": "number", "minimum": 0 },
+        "coverage_curve_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "risk_coverage_curve_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "thresholds": { "type": "object" },
+    "abstention_cases": { "type": "array", "items": { "type": "string" } }
+  }
+}

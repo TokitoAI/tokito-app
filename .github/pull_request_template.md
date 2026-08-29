@@ -12,6 +12,11 @@
 
 <!-- Tests, corpus revision, device profile, metrics, traces, or screenshots. -->
 
+## CI
+
+- [ ] Repository governance checks pass
+- [ ] New or changed evidence manifests validate against `schemas/`
+
 ## Contract and documentation
 
 - [ ] Technical Bible/ADR updated if behavior or boundaries changed

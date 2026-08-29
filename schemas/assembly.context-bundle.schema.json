@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/assembly.context-bundle.schema.json",
+  "title": "Tokito Assembly Context Bundle",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "bundle_revision",
+    "design",
+    "board",
+    "references",
+    "evidence",
+    "provenance",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "bundle_id": { "type": "string", "minLength": 1 },
+    "bundle_revision": { "type": "string", "minLength": 1 },
+    "design": {
+      "type": "object",
+      "required": ["project_id", "source", "content_digest"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "content_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "board": {
+      "type": "object",
+      "required": ["revision", "coordinate_system", "units", "outline", "landmarks"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 1 },
+        "coordinate_system": { "type": "string", "minLength": 1 },
+        "units": { "type": "string", "minLength": 1 },
+        "outline": { "type": "array", "items": { "type": "object" } },
+        "landmarks": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["refdes", "footprint", "centroid", "rotation_degrees", "side", "evidence_refs"],
+        "properties": {
+          "refdes": { "type": "string", "minLength": 1 },
+          "footprint": { "type": "string", "minLength": 1 },
+          "centroid": { "type": "object" },
+          "rotation_degrees": { "type": "number" },
+          "side": { "type": "string", "minLength": 1 },
+          "pin_one_or_polarity": { "type": "string" },
+          "permitted_alternates": { "type": "array", "items": { "type": "string" } },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["evidence_id", "source_digest", "locator", "extractor_revision", "review_state"],
+        "properties": {
+          "evidence_id": { "type": "string", "minLength": 1 },
+          "source_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "locator": { "type": "string", "minLength": 1 },
+          "extractor_revision": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "number", "minimum": 0 },
+          "review_state": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "provenance": { "type": "object" },
+    "integrity": {
+      "type": "object",
+      "required": ["bundle_digest", "signature"],
+      "properties": {
+        "bundle_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "signature": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
