@@ -37,7 +37,9 @@ dependencies {
     api(project(":measurement-runtime"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.moonshine.voice)
+    implementation(libs.moonshine.voice) {
+        exclude(group = "androidx.work", module = "work-runtime")
+    }
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
