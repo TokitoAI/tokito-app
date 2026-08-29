@@ -25,6 +25,20 @@ Inputs are untrusted:
 - Session stop releases camera/audio resources and clears ephemeral buffers.
 - Permission loss produces a typed state transition and cannot be auto-granted.
 
+The reusable Android runtime library declares no camera, microphone, network,
+background-service, wake-lock, or boot permissions and exports no Android
+component. Its build checks the merged library manifest so a transitive
+dependency cannot silently change that boundary. The standalone host owns the
+minimum foreground camera/microphone declarations required by its visible UI.
+
+Sensor use passes through a session-scoped lease controller. Admission requires
+the host's current platform permission result, foreground state, and active
+session state. Every grant/release publishes the complete active-sensor set for
+visible UI state. Permission loss, backgrounding, suspension, or session stop
+revokes active leases; closing a stale lease cannot affect a newer grant. The
+host must revalidate platform state during active capture rather than treating
+admission as a permanent grant.
+
 ## Data minimization
 
 By default, retain structured observations, provenance, calibration/transform
@@ -36,9 +50,20 @@ Logs redact transcripts, design identities, filesystem paths, and raw payloads.
 Telemetry uses bounded counters/timings and is disabled or local unless a future
 privacy-reviewed integration states otherwise.
 
+The Android runtime's diagnostic value accepts only an enumerated error code and
+nonnegative named counters. It has no message, transcript, frame, token,
+identifier, or path field. A future richer logger requires a separate security
+review and cannot replace this safe default type in existing call paths.
+
 Observation envelopes declare whether evidence is available, redacted, or
 unavailable. Redaction and retention decisions are explicit and do not turn an
 empty evidence list into a claim that evidence was retained.
+
+Evidence retention is typed independently from inference status. Ephemeral and
+session evidence is deleted at session end; persisted evidence requires a
+declared expiry strictly later than capture and is deleted when that expiry is
+reached. Retention policy validation never receives model success or confidence,
+so inference cannot silently extend storage lifetime.
 
 ## Model supply chain
 

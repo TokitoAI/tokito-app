@@ -1,7 +1,6 @@
 package ai.tokito.physical.runtime
 
 import android.os.Build
-import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -15,10 +14,9 @@ import org.junit.runner.RunWith
 /**
  * Executes the same lifecycle/capability behavior as [PhysicalRuntimeTest], but
  * on-device via ART/instrumentation instead of the host JVM. This is the
- * closest available conformance check to "runs on the target hardware and
- * produces the expected result": there is no standalone app yet (#37), so
- * there is no launchable UI to observe, but this proves the library's actual
- * bytecode executes correctly on the real iQOO device it targets.
+ * device-level conformance check for the reusable library. Standalone UI,
+ * camera, model, audio, and end-to-end product evidence are separate gates;
+ * this proves only that the library's packaged bytecode executes on Android.
  */
 @RunWith(AndroidJUnit4::class)
 class PhysicalRuntimeInstrumentedTest {
@@ -26,13 +24,8 @@ class PhysicalRuntimeInstrumentedTest {
 
     @Test
     fun runs_on_the_declared_target_device() {
-        // The device identity is logged as evidence of where this ran; the
-        // library itself makes no hardcoded assumption about which device
-        // that is, only that it satisfies the declared minSdk.
-        Log.i(
-            "PhysicalRuntimeInstrumentedTest",
-            "device=${Build.MANUFACTURER}/${Build.MODEL} sdk=${Build.VERSION.SDK_INT}",
-        )
+        // Device identity belongs in the sanitized external evidence profile,
+        // not Logcat. This test verifies only the packaged API requirement.
         assertTrue(Build.VERSION.SDK_INT >= 26, "declared minSdk 26 must hold on the connected device")
     }
 

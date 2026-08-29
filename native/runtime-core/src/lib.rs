@@ -5,11 +5,16 @@
 //! inference backend, threshold, queue size, or thermal cutoff.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuntimeError {
     InvalidArgument,
     InvalidTransition,
@@ -199,7 +204,7 @@ impl Session {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolId(pub String);
 
 #[derive(Debug, Clone)]
@@ -241,21 +246,37 @@ impl ToolCall {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionScope {
+    Ephemeral,
+    Session,
+    Persisted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionPolicy {
+    pub scope: RetentionScope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceReference {
     pub digest: String,
     pub kind: String,
-    pub retention: String,
+    pub retention: RetentionPolicy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceAvailability {
     Available,
     Redacted,
     Unavailable,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Provenance {
     pub runtime_revision: String,
     pub model_bundle_digest: String,
@@ -269,13 +290,32 @@ pub struct Provenance {
 /// completion/redaction state, while evidence availability describes only
 /// its attached evidence items. An observation can be `Completed` with no
 /// available evidence, or `Redacted` as a whole.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ObservationStatus {
     Completed,
     Redacted,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignBinding {
+    Unbound,
+    Registered,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignIdentity {
+    pub binding: DesignBinding,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_designator: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
     pub schema_version: String,
     pub observation_id: String,
@@ -285,40 +325,92 @@ pub struct Observation {
     /// The capability/tool this observation resulted from. Validated against
     /// the originating call's tool identity, never taken on trust alone.
     pub kind: String,
+    pub source: String,
+    pub captured_monotonic_ms: u64,
+    pub captured_wall_time_unix_ms: u64,
+    pub design_identity: DesignIdentity,
     pub status: ObservationStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinate_frame_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub registration_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
     pub evidence_availability: EvidenceAvailability,
     pub evidence: Vec<EvidenceReference>,
     pub provenance: Provenance,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl Observation {
+    pub fn to_json(&self, max_bytes: usize) -> Result<Vec<u8>, RuntimeError> {
+        if max_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        validate_observation_intrinsic(self)?;
+        let bytes =
+            serde_json::to_vec(self).map_err(|_| RuntimeError::InternalInvariantViolation)?;
+        if bytes.len() > max_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        Ok(bytes)
+    }
+
+    pub fn from_json(bytes: &[u8], max_bytes: usize) -> Result<Self, RuntimeError> {
+        if max_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        if bytes.len() > max_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let observation: Self =
+            serde_json::from_slice(bytes).map_err(|_| RuntimeError::InvalidConfiguration)?;
+        validate_observation_intrinsic(&observation)?;
+        Ok(observation)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Abstention {
     pub reason: RuntimeError,
     pub recoverable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TerminalOutcome {
-    Observation(Observation),
+    Observation(Box<Observation>),
     Abstained(Abstention),
     Cancelled,
     Error(RuntimeError),
 }
 
-#[derive(Debug, Default)]
+const CALL_LEDGER_SNAPSHOT_VERSION: u16 = 1;
+
+#[derive(Debug)]
 pub struct CallLedger {
+    capacity: usize,
     admitted: HashMap<String, CallIdentity>,
     terminal: HashMap<String, TerminalOutcome>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CallIdentity {
+    schema_version: String,
     session_id: String,
     context_revision: String,
     tool: ToolId,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CallLedgerSnapshot {
+    version: u16,
+    entries: Vec<CallLedgerSnapshotEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CallLedgerSnapshotEntry {
+    tool_call_id: String,
+    identity: CallIdentity,
+    terminal: Option<TerminalOutcome>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,8 +421,20 @@ pub enum CallAdmission {
 }
 
 impl CallLedger {
+    pub fn new(capacity: usize) -> Result<Self, RuntimeError> {
+        if capacity == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        Ok(Self {
+            capacity,
+            admitted: HashMap::new(),
+            terminal: HashMap::new(),
+        })
+    }
+
     pub fn admit(&mut self, call: &ToolCall) -> Result<CallAdmission, RuntimeError> {
         let identity = CallIdentity {
+            schema_version: call.schema_version.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
             tool: call.tool.clone(),
@@ -345,6 +449,9 @@ impl CallLedger {
                 .cloned()
                 .map(CallAdmission::Completed)
                 .unwrap_or(CallAdmission::Pending));
+        }
+        if self.admitted.len() >= self.capacity {
+            return Err(RuntimeError::ResourceExhausted);
         }
         self.admitted.insert(call.tool_call_id.clone(), identity);
         Ok(CallAdmission::Accepted)
@@ -361,51 +468,247 @@ impl CallLedger {
         let Some(identity) = self.admitted.get(&call.tool_call_id) else {
             return Err(RuntimeError::InvalidConfiguration);
         };
-        if identity.session_id != call.session_id
+        if identity.schema_version != call.schema_version
+            || identity.session_id != call.session_id
             || identity.context_revision != call.context_revision
             || identity.tool != call.tool
         {
             return Err(RuntimeError::ContextRevisionMismatch);
         }
-        if let TerminalOutcome::Observation(observation) = &outcome {
-            if observation.schema_version != call.schema_version
-                || observation.tool_call_id != call.tool_call_id
-                || observation.session_id != call.session_id
-                || observation.context_revision != call.context_revision
-                || observation.observation_id.trim().is_empty()
-                || observation.kind != call.tool.0
-                || (observation.status == ObservationStatus::Redacted)
-                    != (observation.evidence_availability == EvidenceAvailability::Redacted)
-                || observation
-                    .confidence
-                    .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-                || observation.coordinate_frame_id.is_some()
-                    != observation.registration_revision.is_some()
-                || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
-                || (observation.evidence_availability == EvidenceAvailability::Available
-                    && observation.evidence.is_empty())
-                || (observation.evidence_availability != EvidenceAvailability::Available
-                    && !observation.evidence.is_empty())
-                || observation.evidence.iter().any(|evidence| {
-                    !is_canonical_sha256(&evidence.digest)
-                        || evidence.kind.trim().is_empty()
-                        || evidence.retention.trim().is_empty()
-                })
-                || observation.provenance.runtime_revision.trim().is_empty()
-                || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
-                || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
-                || observation.provenance.backend.trim().is_empty()
-                || observation.provenance.device_profile.trim().is_empty()
-            {
-                return Err(RuntimeError::InvalidConfiguration);
-            }
-        }
+        validate_terminal_outcome(
+            &CallIdentity {
+                schema_version: call.schema_version.clone(),
+                session_id: call.session_id.clone(),
+                context_revision: call.context_revision.clone(),
+                tool: call.tool.clone(),
+            },
+            &call.tool_call_id,
+            &outcome,
+        )?;
         self.terminal.insert(call.tool_call_id.clone(), outcome);
         Ok(())
     }
 
+    /// Produces a versioned, deterministic snapshot suitable for an
+    /// app-private atomic persistence layer. Entries are sorted by call ID so
+    /// identical ledger state always yields identical bytes.
+    pub fn snapshot_json(&self, max_snapshot_bytes: usize) -> Result<Vec<u8>, RuntimeError> {
+        if max_snapshot_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        let mut call_ids: Vec<_> = self.admitted.keys().collect();
+        call_ids.sort();
+        let entries = call_ids
+            .into_iter()
+            .map(|tool_call_id| CallLedgerSnapshotEntry {
+                tool_call_id: tool_call_id.clone(),
+                identity: self.admitted[tool_call_id].clone(),
+                terminal: self.terminal.get(tool_call_id).cloned(),
+            })
+            .collect();
+        let snapshot = serde_json::to_vec(&CallLedgerSnapshot {
+            version: CALL_LEDGER_SNAPSHOT_VERSION,
+            entries,
+        })
+        .map_err(|_| RuntimeError::InternalInvariantViolation)?;
+        if snapshot.len() > max_snapshot_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        Ok(snapshot)
+    }
+
+    /// Restores only validated idempotency state. Unknown versions, duplicate
+    /// IDs, malformed identities, and terminal outcomes that do not match the
+    /// admitted call fail closed before any state is returned.
+    pub fn restore_json(
+        snapshot: &[u8],
+        max_snapshot_bytes: usize,
+        capacity: usize,
+    ) -> Result<Self, RuntimeError> {
+        if max_snapshot_bytes == 0 || capacity == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        if snapshot.len() > max_snapshot_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let snapshot: CallLedgerSnapshot =
+            serde_json::from_slice(snapshot).map_err(|_| RuntimeError::InvalidConfiguration)?;
+        if snapshot.version != CALL_LEDGER_SNAPSHOT_VERSION {
+            return Err(RuntimeError::IncompatibleSchema);
+        }
+        if snapshot.entries.len() > capacity {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let mut ledger = Self::new(capacity)?;
+        for entry in snapshot.entries {
+            if entry.tool_call_id.trim().is_empty()
+                || entry.identity.schema_version.trim().is_empty()
+                || entry.identity.session_id.trim().is_empty()
+                || entry.identity.context_revision.trim().is_empty()
+                || entry.identity.tool.0.trim().is_empty()
+                || ledger.admitted.contains_key(&entry.tool_call_id)
+            {
+                return Err(RuntimeError::InvalidConfiguration);
+            }
+            if let Some(outcome) = &entry.terminal {
+                validate_terminal_outcome(&entry.identity, &entry.tool_call_id, outcome)?;
+            }
+            ledger
+                .admitted
+                .insert(entry.tool_call_id.clone(), entry.identity);
+            if let Some(outcome) = entry.terminal {
+                ledger.terminal.insert(entry.tool_call_id, outcome);
+            }
+        }
+        Ok(ledger)
+    }
+
     pub fn terminal(&self, tool_call_id: &str) -> Option<&TerminalOutcome> {
         self.terminal.get(tool_call_id)
+    }
+}
+
+fn validate_terminal_outcome(
+    identity: &CallIdentity,
+    tool_call_id: &str,
+    outcome: &TerminalOutcome,
+) -> Result<(), RuntimeError> {
+    if let TerminalOutcome::Observation(observation) = outcome {
+        validate_observation_intrinsic(observation)?;
+        if observation.schema_version != identity.schema_version
+            || observation.tool_call_id != tool_call_id
+            || observation.session_id != identity.session_id
+            || observation.context_revision != identity.context_revision
+            || observation.kind != identity.tool.0
+        {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+    }
+    Ok(())
+}
+
+fn validate_observation_intrinsic(observation: &Observation) -> Result<(), RuntimeError> {
+    let design_identity_invalid = match observation.design_identity.binding {
+        DesignBinding::Unbound => {
+            observation.design_identity.project_id.is_some()
+                || observation.design_identity.board_id.is_some()
+                || observation.design_identity.reference_designator.is_some()
+        }
+        DesignBinding::Registered => {
+            observation
+                .design_identity
+                .project_id
+                .as_deref()
+                .map_or(true, |value| value.trim().is_empty())
+                || observation
+                    .design_identity
+                    .board_id
+                    .as_deref()
+                    .map_or(true, |value| value.trim().is_empty())
+                || observation
+                    .design_identity
+                    .reference_designator
+                    .as_deref()
+                    .is_some_and(|value| value.trim().is_empty())
+        }
+    };
+    let retention_invalid = observation.evidence.iter().any(|evidence| {
+        let invalid_expiry = match evidence.retention.scope {
+            RetentionScope::Ephemeral | RetentionScope::Session => {
+                evidence.retention.expires_at_unix_ms.is_some()
+            }
+            RetentionScope::Persisted => evidence
+                .retention
+                .expires_at_unix_ms
+                .map_or(true, |expiry| {
+                    expiry <= observation.captured_wall_time_unix_ms
+                }),
+        };
+        !is_canonical_sha256(&evidence.digest) || evidence.kind.trim().is_empty() || invalid_expiry
+    });
+
+    if observation.schema_version.trim().is_empty()
+        || observation.observation_id.trim().is_empty()
+        || observation.tool_call_id.trim().is_empty()
+        || observation.session_id.trim().is_empty()
+        || observation.context_revision.trim().is_empty()
+        || observation.kind.trim().is_empty()
+        || observation.source.trim().is_empty()
+        || design_identity_invalid
+        || (observation.status == ObservationStatus::Redacted)
+            != (observation.evidence_availability == EvidenceAvailability::Redacted)
+        || observation
+            .confidence
+            .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        || observation.coordinate_frame_id.is_some() != observation.registration_revision.is_some()
+        || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
+        || (observation.evidence_availability == EvidenceAvailability::Available
+            && observation.evidence.is_empty())
+        || (observation.evidence_availability != EvidenceAvailability::Available
+            && !observation.evidence.is_empty())
+        || retention_invalid
+        || observation.provenance.runtime_revision.trim().is_empty()
+        || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
+        || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
+        || observation.provenance.backend.trim().is_empty()
+        || observation.provenance.device_profile.trim().is_empty()
+    {
+        return Err(RuntimeError::InvalidConfiguration);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionStage {
+    Camera,
+    Audio,
+    Preprocessing,
+    Inference,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CancellationSignal(Arc<AtomicBool>);
+
+impl CancellationSignal {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionGuard {
+    deadline: Instant,
+    cancellation: CancellationSignal,
+}
+
+impl ExecutionGuard {
+    pub fn new(deadline: Instant, cancellation: CancellationSignal) -> Self {
+        Self {
+            deadline,
+            cancellation,
+        }
+    }
+
+    /// The same guard is passed through every execution stage. Stage identity
+    /// is explicit for instrumentation while cancellation and deadline
+    /// semantics remain identical across camera, audio, preprocessing, and
+    /// inference implementations.
+    pub fn enter(
+        &self,
+        stage: ExecutionStage,
+        now: Instant,
+    ) -> Result<ExecutionStage, RuntimeError> {
+        if self.cancellation.is_cancelled() {
+            return Err(RuntimeError::Cancelled);
+        }
+        if now >= self.deadline {
+            return Err(RuntimeError::DeadlineExceeded);
+        }
+        Ok(stage)
     }
 }
 
@@ -1669,6 +1972,15 @@ mod tests {
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
             kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Registered,
+                project_id: Some("project".into()),
+                board_id: Some("board".into()),
+                reference_designator: Some("U1".into()),
+            },
             status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: Some(4),
@@ -1678,7 +1990,10 @@ mod tests {
                 digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .into(),
                 kind: "frame".into(),
-                retention: "session".into(),
+                retention: RetentionPolicy {
+                    scope: RetentionScope::Session,
+                    expires_at_unix_ms: None,
+                },
             }],
             provenance: Provenance {
                 runtime_revision: "runtime-revision".into(),
@@ -1690,14 +2005,17 @@ mod tests {
                 device_profile: "profile-revision".into(),
             },
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(observation.clone())),
+            ledger.finish(
+                &call,
+                TerminalOutcome::Observation(Box::new(observation.clone()))
+            ),
             Ok(())
         );
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(observation)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(observation))),
             Err(RuntimeError::DuplicateTerminalOutcome)
         );
         assert!(matches!(
@@ -1723,6 +2041,15 @@ mod tests {
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
             kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Unbound,
+                project_id: None,
+                board_id: None,
+                reference_designator: None,
+            },
             status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: None,
@@ -1739,10 +2066,10 @@ mod tests {
                 device_profile: "profile-revision".into(),
             },
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(invalid)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(invalid))),
             Err(RuntimeError::InvalidConfiguration)
         );
     }
@@ -1755,6 +2082,15 @@ mod tests {
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
             kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Unbound,
+                project_id: None,
+                board_id: None,
+                reference_designator: None,
+            },
             status: ObservationStatus::Completed,
             coordinate_frame_id: None,
             registration_revision: None,
@@ -1785,10 +2121,10 @@ mod tests {
         };
         let mut spoofed = base_observation(&call);
         spoofed.kind = "locate".into();
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(spoofed)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(spoofed))),
             Err(RuntimeError::InvalidConfiguration)
         );
     }
@@ -1805,10 +2141,10 @@ mod tests {
         };
         let mut mismatched = base_observation(&call);
         mismatched.schema_version = "contract.v2".into();
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(mismatched)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(mismatched))),
             Err(RuntimeError::InvalidConfiguration)
         );
     }
@@ -1828,10 +2164,10 @@ mod tests {
         let mut inconsistent = base_observation(&call);
         inconsistent.status = ObservationStatus::Completed;
         inconsistent.evidence_availability = EvidenceAvailability::Redacted;
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(inconsistent)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(inconsistent))),
             Err(RuntimeError::InvalidConfiguration)
         );
 
@@ -1839,12 +2175,111 @@ mod tests {
         let mut consistent = base_observation(&call);
         consistent.status = ObservationStatus::Redacted;
         consistent.evidence_availability = EvidenceAvailability::Redacted;
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(consistent)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(consistent))),
             Ok(())
         );
+    }
+
+    #[test]
+    fn observation_json_is_bounded_deterministic_and_forward_compatible() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-json".into(),
+            session_id: "session-json".into(),
+            context_revision: "context-json".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let observation = base_observation(&call);
+        let encoded = observation.to_json(16_384).unwrap();
+        assert_eq!(encoded, observation.to_json(16_384).unwrap());
+        assert_eq!(
+            Observation::from_json(&encoded, 16_384),
+            Ok(observation.clone())
+        );
+
+        let mut forward: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        forward
+            .as_object_mut()
+            .unwrap()
+            .insert("future_optional_field".into(), serde_json::json!(true));
+        let forward = serde_json::to_vec(&forward).unwrap();
+        assert_eq!(Observation::from_json(&forward, 16_384), Ok(observation));
+        assert_eq!(
+            Observation::from_json(&encoded, 1),
+            Err(RuntimeError::ResourceExhausted)
+        );
+    }
+
+    #[test]
+    fn design_binding_cannot_claim_partial_or_hidden_identity() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-design".into(),
+            session_id: "session-design".into(),
+            context_revision: "context-design".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut observation = base_observation(&call);
+        observation.design_identity.project_id = Some("hidden-project".into());
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        observation.design_identity = DesignIdentity {
+            binding: DesignBinding::Registered,
+            project_id: Some("project".into()),
+            board_id: None,
+            reference_designator: None,
+        };
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        observation.design_identity.board_id = Some("board".into());
+        assert!(observation.to_json(16_384).is_ok());
+    }
+
+    #[test]
+    fn evidence_retention_is_explicit_and_independent_from_success() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-retention".into(),
+            session_id: "session-retention".into(),
+            context_revision: "context-retention".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut observation = base_observation(&call);
+        observation.evidence_availability = EvidenceAvailability::Available;
+        observation.evidence.push(EvidenceReference {
+            digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+            kind: "roi".into(),
+            retention: RetentionPolicy {
+                scope: RetentionScope::Ephemeral,
+                expires_at_unix_ms: None,
+            },
+        });
+        assert!(observation.to_json(16_384).is_ok());
+
+        observation.evidence[0].retention = RetentionPolicy {
+            scope: RetentionScope::Persisted,
+            expires_at_unix_ms: None,
+        };
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+        observation.evidence[0].retention.expires_at_unix_ms =
+            Some(observation.captured_wall_time_unix_ms + 1);
+        assert!(observation.to_json(16_384).is_ok());
     }
 
     #[test]
@@ -1857,7 +2292,7 @@ mod tests {
             tool: ToolId("inspect".into()),
             deadline: Instant::now() + Duration::from_secs(1),
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Pending));
 
@@ -1883,7 +2318,7 @@ mod tests {
             tool: ToolId("inspect".into()),
             deadline: Instant::now() + Duration::from_secs(5),
         };
-        let ledger = Arc::new(Mutex::new(CallLedger::default()));
+        let ledger = Arc::new(Mutex::new(CallLedger::new(8).unwrap()));
         let handles: Vec<_> = (0..8)
             .map(|_| {
                 let ledger = Arc::clone(&ledger);
@@ -1905,6 +2340,120 @@ mod tests {
             )),
             "every other caller must observe Pending, never a distinct execution: {outcomes:?}"
         );
+    }
+
+    #[test]
+    fn reconnect_and_process_restart_preserve_idempotency_state() {
+        let now = Instant::now();
+        let completed = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "completed-call".into(),
+            session_id: "session".into(),
+            context_revision: "context".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        let mut pending = completed.clone();
+        pending.tool_call_id = "pending-call".into();
+
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&pending), Ok(CallAdmission::Accepted));
+        assert_eq!(ledger.admit(&completed), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(
+                &completed,
+                TerminalOutcome::Error(RuntimeError::BackendFailure)
+            ),
+            Ok(())
+        );
+
+        let snapshot = ledger.snapshot_json(16_384).unwrap();
+        assert_eq!(snapshot, ledger.snapshot_json(16_384).unwrap());
+        let mut restored = CallLedger::restore_json(&snapshot, 16_384, 8).unwrap();
+        assert_eq!(restored.admit(&pending), Ok(CallAdmission::Pending));
+        assert_eq!(
+            restored.admit(&completed),
+            Ok(CallAdmission::Completed(TerminalOutcome::Error(
+                RuntimeError::BackendFailure
+            )))
+        );
+
+        let mut conflicting = completed;
+        conflicting.session_id = "other-session".into();
+        assert_eq!(
+            restored.admit(&conflicting),
+            Err(RuntimeError::ContextRevisionMismatch)
+        );
+    }
+
+    #[test]
+    fn malformed_or_unknown_ledger_snapshots_fail_closed() {
+        assert_eq!(
+            CallLedger::restore_json(br#"{"version":2,"entries":[]}"#, 16_384, 8).unwrap_err(),
+            RuntimeError::IncompatibleSchema
+        );
+        assert_eq!(
+            CallLedger::restore_json(br#"{"version":1,"entries":[{"tool_call_id":"","identity":{"schema_version":"contract.v1","session_id":"session","context_revision":"context","tool":"inspect"},"terminal":null}]}"#, 16_384, 8).unwrap_err(),
+            RuntimeError::InvalidConfiguration
+        );
+        assert_eq!(
+            CallLedger::restore_json(b"not-json", 16_384, 8).unwrap_err(),
+            RuntimeError::InvalidConfiguration
+        );
+    }
+
+    #[test]
+    fn ledger_capacity_and_snapshot_size_are_caller_bounded() {
+        let now = Instant::now();
+        let mut first = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "first".into(),
+            session_id: "session".into(),
+            context_revision: "context".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        let mut ledger = CallLedger::new(1).unwrap();
+        assert_eq!(ledger.admit(&first), Ok(CallAdmission::Accepted));
+        first.tool_call_id = "second".into();
+        assert_eq!(ledger.admit(&first), Err(RuntimeError::ResourceExhausted));
+        assert_eq!(
+            ledger.snapshot_json(1),
+            Err(RuntimeError::ResourceExhausted)
+        );
+        assert!(matches!(
+            CallLedger::restore_json(br#"{"version":1,"entries":[]}"#, 1, 1),
+            Err(RuntimeError::ResourceExhausted)
+        ));
+    }
+
+    #[test]
+    fn cancellation_and_deadline_gate_every_execution_stage() {
+        let now = Instant::now();
+        let stages = [
+            ExecutionStage::Camera,
+            ExecutionStage::Audio,
+            ExecutionStage::Preprocessing,
+            ExecutionStage::Inference,
+        ];
+        let cancellation = CancellationSignal::default();
+        let active = ExecutionGuard::new(now + Duration::from_secs(1), cancellation.clone());
+        for stage in stages {
+            assert_eq!(active.enter(stage, now), Ok(stage));
+        }
+
+        cancellation.cancel();
+        for stage in stages {
+            assert_eq!(active.enter(stage, now), Err(RuntimeError::Cancelled));
+        }
+
+        let expired = ExecutionGuard::new(now, CancellationSignal::default());
+        for stage in stages {
+            assert_eq!(
+                expired.enter(stage, now),
+                Err(RuntimeError::DeadlineExceeded)
+            );
+        }
     }
 
     #[test]
@@ -2068,7 +2617,12 @@ mod tests {
         let preference = vec!["candidate".into()];
         let accepted = backend_candidate(false);
         assert_eq!(
-            select_measured_backend(&preference, &[accepted.clone()], "profile", "abi"),
+            select_measured_backend(
+                &preference,
+                std::slice::from_ref(&accepted),
+                "profile",
+                "abi"
+            ),
             Ok(BackendSelection {
                 candidate_id: accepted.candidate_id,
                 backend: accepted.backend,
