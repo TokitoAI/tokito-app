@@ -60,6 +60,10 @@ class TokitoVoiceRuntime internal constructor(
     override val events: SharedFlow<VoiceEvent> = _events.asSharedFlow()
 
     override suspend fun initialize() = lifecycleMutex.withLock {
+        if (mode == Mode.READY && backend != null) {
+            _state.value = VoiceRuntimeState.Ready(capabilities())
+            return@withLock
+        }
         check(mode == Mode.UNINITIALIZED) { "voice runtime is already initialized" }
         try {
             val prepared = backendFactory.prepare(config.allowModelDownload) { fraction, artifact ->
@@ -248,7 +252,18 @@ class TokitoVoiceRuntime internal constructor(
     }
 
     private fun handleRecognitionFailure(error: Throwable) {
-        fail(VoiceFailure(VoiceErrorCode.RECOGNITION_FAILURE, error.message ?: "recognition failed", true, error))
+        scope.launch {
+            lifecycleMutex.withLock {
+                if (mode == Mode.CLOSED) return@withLock
+                if (mode == Mode.LISTENING) {
+                    audioInput.stop()
+                    runCatching { requireBackend().recognizer.stop() }
+                    focusGate.abandon()
+                    mode = Mode.READY
+                }
+                fail(VoiceFailure(VoiceErrorCode.RECOGNITION_FAILURE, error.message ?: "recognition failed", true, error))
+            }
+        }
     }
 
     private val recognizerListener = object : StreamingRecognizer.Listener {

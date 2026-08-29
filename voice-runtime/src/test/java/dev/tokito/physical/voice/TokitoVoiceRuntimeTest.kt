@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -78,6 +79,27 @@ class TokitoVoiceRuntimeTest {
         fixture.runtime.close()
     }
 
+    @Test
+    fun recognitionFailureStopsCaptureAndCanRecoverWithoutReloadingModels() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startListening()
+
+        fixture.recognizer.fail(IllegalStateException("decoder failed"))
+        val failed = withTimeout(2_000) {
+            fixture.runtime.state.filterIsInstance<VoiceRuntimeState.Failed>().first()
+        }
+        assertEquals(VoiceErrorCode.RECOGNITION_FAILURE, failed.error.code)
+        assertEquals(1, fixture.audio.stopCount)
+        assertFalse(fixture.recognizer.started)
+
+        fixture.runtime.initialize()
+        assertTrue(fixture.runtime.state.value is VoiceRuntimeState.Ready)
+        fixture.runtime.startListening()
+        assertTrue(fixture.recognizer.started)
+        fixture.runtime.close()
+    }
+
     private class Fixture(blockSpeech: Boolean = false) {
         val recognizer = FakeRecognizer()
         val synthesizer = FakeSynthesizer(blockSpeech)
@@ -128,6 +150,8 @@ class TokitoVoiceRuntimeTest {
             listenerRef?.onTranscript(TranscriptSegment(text, final, 1))
         }
 
+        fun fail(error: Throwable) = listenerRef?.onFailure(error)
+
         override fun close() = Unit
     }
 
@@ -156,11 +180,15 @@ class TokitoVoiceRuntimeTest {
         override val sampleRate = 16_000
         override val supportsEchoCancellation = true
         private var consumer: ((FloatArray) -> Unit)? = null
+        var stopCount = 0
         override fun start(consumer: (FloatArray) -> Unit, onFailure: (Throwable) -> Unit) {
             this.consumer = consumer
         }
         fun emit(samples: FloatArray) = consumer?.invoke(samples)
-        override fun stop() = Unit
+        override fun stop() {
+            stopCount++
+            consumer = null
+        }
         override fun close() = Unit
     }
 
