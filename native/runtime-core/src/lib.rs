@@ -32,6 +32,7 @@ pub enum RuntimeError {
     IncompatibleSchema,
     DuplicateReference,
     ConflictingDesignTruth,
+    SessionExpired,
 }
 
 impl RuntimeError {
@@ -59,6 +60,7 @@ impl RuntimeError {
             Self::ModelUnavailable => "install a verified compatible local model bundle",
             Self::DeadlineExceeded | Self::Cancelled => "submit a new request if work is still needed",
             Self::BackendFailure => "record backend evidence and use an accepted fallback only",
+            Self::SessionExpired => "open a new session; an expired session cannot be extended or reused",
             _ => "correct the request or report the runtime failure without exposing sensitive diagnostics",
         }
     }
@@ -90,18 +92,37 @@ pub enum LifecycleSignal {
 
 #[derive(Debug, Clone)]
 pub struct Session {
+    owner_id: String,
+    expires_at: Option<Instant>,
     state: SessionState,
     execution_return_state: Option<SessionState>,
     generation: u64,
 }
 
 impl Session {
-    pub fn new() -> Self {
-        Self {
+    /// `owner_id` must be non-blank: session ownership is explicit, not
+    /// inferred. `expires_at` is `None` for a session with no fixed expiry;
+    /// callers that require bounded lifetime supply an explicit deadline
+    /// rather than relying on an implicit default.
+    pub fn new(
+        owner_id: impl Into<String>,
+        expires_at: Option<Instant>,
+    ) -> Result<Self, RuntimeError> {
+        let owner_id = owner_id.into();
+        if owner_id.trim().is_empty() {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        Ok(Self {
+            owner_id,
+            expires_at,
             state: SessionState::Created,
             execution_return_state: None,
             generation: 0,
-        }
+        })
+    }
+
+    pub fn owner_id(&self) -> &str {
+        &self.owner_id
     }
 
     pub fn state(&self) -> SessionState {
@@ -110,6 +131,24 @@ impl Session {
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Explicit ownership and expiry gate. A caller must pass this before
+    /// `transition` or tool-call admission is authorized on this session:
+    /// a mismatched owner is a permission failure, and an elapsed deadline
+    /// is a distinct, non-retryable expiry rather than a generic lifecycle
+    /// failure. Expiry is caller-timed (`now` is explicit, never sampled
+    /// internally) so authorization stays deterministic and testable.
+    pub fn authorize(&self, caller_id: &str, now: Instant) -> Result<(), RuntimeError> {
+        if caller_id != self.owner_id {
+            return Err(RuntimeError::PermissionDenied);
+        }
+        if let Some(expires_at) = self.expires_at {
+            if now >= expires_at {
+                return Err(RuntimeError::SessionExpired);
+            }
+        }
+        Ok(())
     }
 
     pub fn transition(&mut self, signal: LifecycleSignal) -> Result<SessionState, RuntimeError> {
@@ -157,12 +196,6 @@ impl Session {
         }
         self.state = next;
         Ok(next)
-    }
-}
-
-impl Default for Session {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1087,6 +1120,8 @@ impl ThermalPolicy {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
     use std::time::Duration;
 
     fn request(key: &str, priority: WorkPriority, deadline: Instant) -> WorkRequest {
@@ -1204,8 +1239,38 @@ mod tests {
     }
 
     #[test]
+    fn session_ownership_is_explicit_and_rejects_other_callers() {
+        let session = Session::new("owner-a", None).unwrap();
+        assert_eq!(session.authorize("owner-a", Instant::now()), Ok(()));
+        assert_eq!(
+            session.authorize("owner-b", Instant::now()),
+            Err(RuntimeError::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn session_expiry_is_explicit_and_caller_timed() {
+        let now = Instant::now();
+        let session = Session::new("owner", Some(now + Duration::from_secs(60))).unwrap();
+        assert_eq!(session.authorize("owner", now), Ok(()));
+        assert_eq!(
+            session.authorize("owner", now + Duration::from_secs(60)),
+            Err(RuntimeError::SessionExpired)
+        );
+        assert!(!RuntimeError::SessionExpired.retryable());
+    }
+
+    #[test]
+    fn a_blank_owner_id_is_rejected_at_construction() {
+        assert_eq!(
+            Session::new("   ", None).err(),
+            Some(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
     fn suspend_invalidates_work_and_resume_requires_calibration() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1222,7 +1287,7 @@ mod tests {
 
     #[test]
     fn execution_returns_to_the_prior_degraded_state() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1238,7 +1303,7 @@ mod tests {
 
     #[test]
     fn active_work_can_stop_without_a_terminal_observation() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1435,6 +1500,44 @@ mod tests {
         assert_eq!(
             ledger.admit(&conflicting_retry),
             Err(RuntimeError::ContextRevisionMismatch)
+        );
+    }
+
+    #[test]
+    fn concurrent_duplicate_admission_never_races_into_a_second_execution() {
+        // Simulates concurrent retries/reconnects racing the same idempotency
+        // key: only one admission may win Accepted, and every other caller
+        // observes Pending or the eventual single terminal outcome, never a
+        // second independent execution.
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-race".into(),
+            session_id: "session-race".into(),
+            context_revision: "context-race".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(5),
+        };
+        let ledger = Arc::new(Mutex::new(CallLedger::default()));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let ledger = Arc::clone(&ledger);
+                let call = call.clone();
+                thread::spawn(move || ledger.lock().unwrap().admit(&call))
+            })
+            .collect();
+        let outcomes: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let accepted = outcomes
+            .iter()
+            .filter(|outcome| **outcome == Ok(CallAdmission::Accepted))
+            .count();
+        assert_eq!(accepted, 1, "exactly one caller must win admission");
+        assert!(
+            outcomes.iter().all(|outcome| matches!(
+                outcome,
+                Ok(CallAdmission::Accepted | CallAdmission::Pending)
+            )),
+            "every other caller must observe Pending, never a distinct execution: {outcomes:?}"
         );
     }
 
