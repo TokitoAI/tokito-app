@@ -216,10 +216,46 @@ pub enum TerminalOutcome {
 
 #[derive(Debug, Default)]
 pub struct CallLedger {
+    admitted: HashMap<String, CallIdentity>,
     terminal: HashMap<String, TerminalOutcome>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CallIdentity {
+    session_id: String,
+    context_revision: String,
+    tool: ToolId,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CallAdmission {
+    Accepted,
+    Pending,
+    Completed(TerminalOutcome),
+}
+
 impl CallLedger {
+    pub fn admit(&mut self, call: &ToolCall) -> Result<CallAdmission, RuntimeError> {
+        let identity = CallIdentity {
+            session_id: call.session_id.clone(),
+            context_revision: call.context_revision.clone(),
+            tool: call.tool.clone(),
+        };
+        if let Some(existing) = self.admitted.get(&call.tool_call_id) {
+            if existing != &identity {
+                return Err(RuntimeError::ContextRevisionMismatch);
+            }
+            return Ok(self
+                .terminal
+                .get(&call.tool_call_id)
+                .cloned()
+                .map(CallAdmission::Completed)
+                .unwrap_or(CallAdmission::Pending));
+        }
+        self.admitted.insert(call.tool_call_id.clone(), identity);
+        Ok(CallAdmission::Accepted)
+    }
+
     pub fn finish(
         &mut self,
         call: &ToolCall,
@@ -227,6 +263,15 @@ impl CallLedger {
     ) -> Result<(), RuntimeError> {
         if self.terminal.contains_key(&call.tool_call_id) {
             return Err(RuntimeError::DuplicateTerminalOutcome);
+        }
+        let Some(identity) = self.admitted.get(&call.tool_call_id) else {
+            return Err(RuntimeError::InvalidConfiguration);
+        };
+        if identity.session_id != call.session_id
+            || identity.context_revision != call.context_revision
+            || identity.tool != call.tool
+        {
+            return Err(RuntimeError::ContextRevisionMismatch);
         }
         if let TerminalOutcome::Observation(observation) = &outcome {
             if observation.tool_call_id != call.tool_call_id
@@ -1129,6 +1174,7 @@ mod tests {
             },
         };
         let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
             ledger.finish(&call, TerminalOutcome::Observation(observation.clone())),
             Ok(())
@@ -1137,6 +1183,10 @@ mod tests {
             ledger.finish(&call, TerminalOutcome::Observation(observation)),
             Err(RuntimeError::DuplicateTerminalOutcome)
         );
+        assert!(matches!(
+            ledger.admit(&call),
+            Ok(CallAdmission::Completed(TerminalOutcome::Observation(_)))
+        ));
     }
 
     #[test]
@@ -1166,9 +1216,33 @@ mod tests {
                 device_profile: "profile-revision".into(),
             },
         };
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            CallLedger::default().finish(&call, TerminalOutcome::Observation(invalid)),
+            ledger.finish(&call, TerminalOutcome::Observation(invalid)),
             Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn duplicate_pending_call_does_not_create_a_second_execution() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-3".into(),
+            session_id: "session-3".into(),
+            context_revision: "context-3".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Pending));
+
+        let mut conflicting_retry = call.clone();
+        conflicting_retry.session_id = "other-session".into();
+        assert_eq!(
+            ledger.admit(&conflicting_retry),
+            Err(RuntimeError::ContextRevisionMismatch)
         );
     }
 

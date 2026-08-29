@@ -207,3 +207,7 @@ stack traces, raw transcripts, and model internals are not exposed by default.
 - Capability discovery precedes tool use.
 - A context revision mismatch is a conflict, not an implicit upgrade.
 - Tool-call IDs make retries idempotent within the documented retention window.
+  The same ID may return a pending or completed outcome only when session,
+  context revision, and tool identity match the admitted call. A different
+  identity using the same ID is rejected and never observes another session's
+  result.

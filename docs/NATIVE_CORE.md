@@ -10,7 +10,7 @@ The core owns only deterministic mechanisms required by the delivery gates:
 
 - lifecycle transitions that force recalibration after suspend/resume;
 - capability gating that fails closed for unadvertised tools;
-- versioned tool-call validation and exactly-one terminal outcome ledgers;
+- versioned tool-call admission, idempotent retry handling, and exactly-one terminal outcome ledgers;
 - structured observations with linked context, registration, evidence, and provenance;
 - immutable assembly-context validation, digest verification, and atomic quota-bound activation;
 - model-manifest admission with digest, signature, ABI, runtime-revision, and quota checks;
