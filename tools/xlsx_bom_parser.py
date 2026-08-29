@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Parse a generic Excel (.xlsx) bill-of-materials export.
+
+Deliberately generic: column meaning is discovered from whichever row
+contains a "Reference" header cell, not from hardcoded column letters, so
+this works for any BOM export using this common row-per-line-item plus
+wrapped-reference-continuation-rows shape (the same NXP-style shape
+tools/build_frdm_reference_package.py's plain-text BOM parser already
+handles, but this variant carries richer columns -- Description, MFG,
+MFG_PN, VALUE -- that the plain-text export drops).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import zipfile
+from pathlib import Path
+from typing import Any
+from xml.etree import ElementTree as ET
+
+NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+
+def column_letters(cell_ref: str) -> str:
+    return "".join(ch for ch in cell_ref if ch.isalpha())
+
+
+def load_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    try:
+        data = archive.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ET.fromstring(data)
+    strings = []
+    for si in root.findall("m:si", NS):
+        text = "".join(node.text or "" for node in si.findall(".//m:t", NS))
+        strings.append(text)
+    return strings
+
+
+def load_rows(archive: zipfile.ZipFile, shared_strings: list[str], sheet_path: str = "xl/worksheets/sheet1.xml") -> list[dict[str, str]]:
+    root = ET.fromstring(archive.read(sheet_path))
+    rows = []
+    for row in root.findall(".//m:sheetData/m:row", NS):
+        cells: dict[str, str] = {}
+        for cell in row.findall("m:c", NS):
+            cell_ref = cell.get("r", "")
+            column = column_letters(cell_ref)
+            value_node = cell.find("m:v", NS)
+            if value_node is None:
+                continue
+            if cell.get("t") == "s":
+                text = shared_strings[int(value_node.text)]
+            else:
+                text = value_node.text or ""
+            cells[column] = text
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def find_header_row(rows: list[dict[str, str]]) -> tuple[int, dict[str, str]] | None:
+    for index, row in enumerate(rows):
+        if "Reference" in row.values():
+            return index, {column: name for column, name in row.items()}
+    return None
+
+
+def parse_bom_records(path: Path, sheet_path: str = "xl/worksheets/sheet1.xml") -> list[dict[str, Any]]:
+    with zipfile.ZipFile(path) as archive:
+        shared_strings = load_shared_strings(archive)
+        rows = load_rows(archive, shared_strings, sheet_path)
+
+    header = find_header_row(rows)
+    if header is None:
+        raise ValueError(f"no header row containing 'Reference' found in {path}")
+    header_index, column_names = header
+
+    records: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    item_column = next((column for column, name in column_names.items() if name == "Item"), None)
+    reference_column = next((column for column, name in column_names.items() if name == "Reference"), None)
+    if reference_column is None:
+        raise ValueError("BOM header has no 'Reference' column")
+
+    for row in rows[header_index + 1 :]:
+        is_new_item = item_column is not None and item_column in row
+        if is_new_item:
+            current = {name: row.get(column, "") for column, name in column_names.items()}
+            current["Reference"] = row.get(reference_column, "")
+            records.append(current)
+        elif current is not None and reference_column in row:
+            current["Reference"] = current["Reference"] + row[reference_column]
+
+    return records
+
+
+def expand_by_reference_designator(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_reference: dict[str, dict[str, Any]] = {}
+    for record in records:
+        refs = [ref.strip() for ref in record.get("Reference", "").split(",") if ref.strip()]
+        for ref in refs:
+            by_reference[ref] = record
+    return by_reference
+
+
+CHIP_PACKAGE_PATTERN = re.compile(r"(?<!\d)(01005|0201|0402|0603|0805|1206|1210|1806|1812|2010|2512)(?!\d)")
+SOT23_PATTERN = re.compile(r"\bSOT[- ]?23(-([3568]))?\b", re.IGNORECASE)
+SOD523_PATTERN = re.compile(r"\bSOD[- ]?523\b", re.IGNORECASE)
+
+
+def extract_chip_package_code(description: str) -> str | None:
+    """Extracts a standard imperial chip-passive package code (e.g. 0603)
+    from a free-text BOM description, if present. Allows a preceding
+    letter with no boundary (e.g. "RC0402") but rejects a match embedded
+    in a longer digit run, so it never guesses when no recognized code
+    appears."""
+    match = CHIP_PACKAGE_PATTERN.search(description)
+    return match.group(1) if match else None
+
+
+def extract_sot23_variant(description: str) -> str | None:
+    """Extracts an explicit SOT-23 family pin-count suffix (5/6/8) if
+    present in the description; returns "" (bare SOT-23, no suffix) when
+    "SOT-23"/"SOT23" appears with no explicit pin count. Never guesses a
+    pin count that isn't in the text."""
+    match = SOT23_PATTERN.search(description)
+    if not match:
+        return None
+    return match.group(2) or ""
+
+
+def has_sod523_package(description: str) -> bool:
+    return SOD523_PATTERN.search(description) is not None
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Parse an xlsx BOM export into per-reference-designator records.")
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--output-json", type=Path)
+    args = parser.parse_args(argv)
+
+    records = parse_bom_records(args.input)
+    by_reference = expand_by_reference_designator(records)
+
+    summary = {
+        "line_item_count": len(records),
+        "reference_designator_count": len(by_reference),
+        "columns_found": sorted({name for record in records for name in record}),
+        "descriptions_with_recognized_chip_package": sum(
+            1 for record in by_reference.values() if extract_chip_package_code(record.get("Description", ""))
+        ),
+    }
+
+    if args.output_json:
+        args.output_json.write_text(json.dumps({"summary": summary, "by_reference": by_reference}, indent=2, sort_keys=True), encoding="utf-8")
+
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
