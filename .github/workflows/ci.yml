@@ -24,3 +24,6 @@ jobs:
           GITHUB_REF: ${{ github.ref }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: python3 tools/validate_governance.py
+
+      - name: Test governance validator
+        run: python3 -m unittest discover -s tools -p 'test_*.py'

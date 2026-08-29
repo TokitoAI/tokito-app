@@ -15,6 +15,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
 EXAMPLE_DIR = ROOT / "examples" / "manifests"
+WORKFLOW_DIR = ROOT / ".github" / "workflows"
+
+REQUIRED_VPS_RUNNER_LABELS = {
+    "self-hosted",
+    "linux",
+    "x64",
+    "tokito-vps",
+    "private-build",
+}
+GITHUB_HOSTED_RUNNER = re.compile(
+    r"\b(?:ubuntu|windows|macos)(?:-[a-z0-9.]+)*-latest\b",
+    re.IGNORECASE,
+)
+RUNS_ON_DECLARATION = re.compile(r"^\s*runs-on:\s*([^#\r\n]+)", re.MULTILINE)
 
 TRACKED_FORBIDDEN_SUFFIXES = {
     ".apk",
@@ -145,6 +159,34 @@ def validate_tracked_artifacts(files: list[str]) -> None:
                 fail(f"{file_name}: local generated data must not be tracked")
 
 
+def validate_workflow_runner_spec(path: Path, spec: str) -> None:
+    normalized = spec.lower()
+    hosted = GITHUB_HOSTED_RUNNER.search(normalized)
+    if hosted:
+        fail(f"{path}: GitHub-hosted runner {hosted.group(0)!r} is forbidden")
+    labels = set(re.findall(r"[a-z0-9._-]+", normalized))
+    missing = sorted(
+        label for label in REQUIRED_VPS_RUNNER_LABELS if label not in labels
+    )
+    if missing:
+        fail(f"{path}: runs-on is missing Tokito VPS labels: {', '.join(missing)}")
+
+
+def validate_workflow_runners() -> None:
+    workflows = sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(
+        WORKFLOW_DIR.glob("*.yaml")
+    )
+    if not workflows:
+        fail("no GitHub Actions workflows found")
+    for path in workflows:
+        text = path.read_text(encoding="utf-8")
+        declarations = RUNS_ON_DECLARATION.findall(text)
+        if not declarations:
+            fail(f"{path}: workflow has no runs-on declaration")
+        for spec in declarations:
+            validate_workflow_runner_spec(path.relative_to(ROOT), spec)
+
+
 def require_text(path: str, needles: list[str]) -> None:
     text = (ROOT / path).read_text(encoding="utf-8")
     normalized = text.lower()
@@ -162,11 +204,26 @@ def validate_docs() -> None:
     )
     require_text(
         "docs/CI_CD.md",
-        ["pull requests", "Direct pushes to `main`", "#33", "#37", "#45", "CI"],
+        [
+            "pull requests",
+            "Direct pushes to `main`",
+            "playground-linux-x64",
+            "ubuntu-latest",
+            "#33",
+            "#37",
+            "#45",
+            "CI",
+        ],
     )
     require_text(
         "AGENTS.md",
-        ["Require pull requests before merge", "Block force-push", "required checks"],
+        [
+            "Require pull requests before merge",
+            "Block force-push",
+            "playground-linux-x64",
+            "must merge the PR",
+            "required checks",
+        ],
     )
     require_text(
         ".github/pull_request_template.md",
@@ -224,6 +281,7 @@ def main() -> int:
         validate_schema_document(SCHEMA_DIR / name, schema)
     validate_examples(schemas)
     validate_tracked_artifacts(tracked_files())
+    validate_workflow_runners()
     validate_docs()
     validate_ci_event()
     print(f"Validated {len(schemas)} schemas and Group 3 governance checks.")
