@@ -46,10 +46,14 @@ flowchart LR
 
 ## Current status
 
-Documentation and architecture baseline only. There is intentionally no model,
-runtime, Android app/library, Python package, or placeholder implementation yet.
-Implementation begins from tracked issues on the
-[Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
+Implementation is active and tracked on the
+[Tokito project board](https://github.com/orgs/TokitoAI/projects/1). The
+repository now contains the versioned runtime contract, a fail-closed native
+runtime foundation, Android lifecycle/capability APIs, reference perception
+work, and a reusable Android AR presentation module with a standalone device
+conformance app. Model selection and production claims remain gated on the
+documented physical-device evidence; the conformance app's manual registration
+does not pretend to be automatic vision.
 
 ## Documentation
 
@@ -61,9 +65,10 @@ Implementation begins from tracked issues on the
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
+- [AR runtime](docs/AR_RUNTIME.md) - coordinate, scene, lifecycle, and conformance contract
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
-## Planned implementation shape
+## Implementation shape
 
 Python is reserved for dataset preparation, training, export, evaluation, and a
 reference harness. The shipping phone hot path will be an Android-native
