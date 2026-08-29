@@ -963,6 +963,66 @@ impl ModelRegistry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendEvidence {
+    pub device_profile: String,
+    pub abi: String,
+    pub conformance_digest: String,
+    pub lifecycle_digest: String,
+    pub thermal_digest: String,
+    pub silent_fallback_detected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendCandidate {
+    pub candidate_id: String,
+    pub backend: String,
+    pub evidence: BackendEvidence,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendSelection {
+    pub candidate_id: String,
+    pub backend: String,
+    pub evidence: BackendEvidence,
+}
+
+pub fn select_measured_backend(
+    preference_order: &[String],
+    candidates: &[BackendCandidate],
+    device_profile: &str,
+    abi: &str,
+) -> Result<BackendSelection, RuntimeError> {
+    if preference_order.is_empty() || device_profile.trim().is_empty() || abi.trim().is_empty() {
+        return Err(RuntimeError::InvalidConfiguration);
+    }
+    for preferred_id in preference_order {
+        let Some(candidate) = candidates
+            .iter()
+            .find(|candidate| &candidate.candidate_id == preferred_id)
+        else {
+            continue;
+        };
+        if candidate.candidate_id.trim().is_empty()
+            || candidate.backend.trim().is_empty()
+            || candidate.evidence.device_profile != device_profile
+            || candidate.evidence.abi != abi
+            || candidate.evidence.silent_fallback_detected
+            || !is_canonical_sha256(&candidate.evidence.conformance_digest)
+            || !is_canonical_sha256(&candidate.evidence.lifecycle_digest)
+            || !is_canonical_sha256(&candidate.evidence.thermal_digest)
+        {
+            continue;
+        }
+        return Ok(BackendSelection {
+            candidate_id: candidate.candidate_id.clone(),
+            backend: candidate.backend.clone(),
+            evidence: candidate.evidence.clone(),
+        });
+    }
+    Err(RuntimeError::ModelUnavailable)
+}
+
 fn is_canonical_sha256(value: &str) -> bool {
     let Some(hex) = value.strip_prefix("sha256:") else {
         return false;
@@ -1114,6 +1174,24 @@ mod tests {
             minimum_runtime_revision: "runtime-revision".into(),
             supported_abis: vec!["declared-abi".into()],
             signature_id: "verified-signature".into(),
+        }
+    }
+
+    fn backend_candidate(fallback_detected: bool) -> BackendCandidate {
+        BackendCandidate {
+            candidate_id: "candidate".into(),
+            backend: "declared-backend".into(),
+            evidence: BackendEvidence {
+                device_profile: "profile".into(),
+                abi: "abi".into(),
+                conformance_digest:
+                    "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into(),
+                lifecycle_digest:
+                    "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into(),
+                thermal_digest:
+                    "sha256:1111111111111111111111111111111111111111111111111111111111111111".into(),
+                silent_fallback_detected: fallback_detected,
+            },
         }
     }
 
@@ -1446,6 +1524,24 @@ mod tests {
                 &mut quota,
             ),
             Err(RuntimeError::UnsupportedCapability)
+        );
+    }
+
+    #[test]
+    fn backend_selection_requires_complete_measured_evidence() {
+        let preference = vec!["candidate".into()];
+        let accepted = backend_candidate(false);
+        assert_eq!(
+            select_measured_backend(&preference, &[accepted.clone()], "profile", "abi"),
+            Ok(BackendSelection {
+                candidate_id: accepted.candidate_id,
+                backend: accepted.backend,
+                evidence: accepted.evidence,
+            })
+        );
+        assert_eq!(
+            select_measured_backend(&preference, &[backend_candidate(true)], "profile", "abi"),
+            Err(RuntimeError::ModelUnavailable)
         );
     }
 

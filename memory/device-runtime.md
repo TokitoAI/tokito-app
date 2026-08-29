@@ -15,6 +15,12 @@ NNAPI or a vendor accelerator is absent. Operator support, native backend
 choice, thread policy, latency, memory, fallback, and thermal behavior remain
 unmeasured until issue #9's conformance benchmark.
 
+The runtime selection mechanism is deliberately fail-closed: it accepts only a
+caller-ordered backend candidate whose recorded conformance, lifecycle, and
+thermal evidence digests match the active device-profile and ABI and report no
+silent fallback. This mechanism does not constitute measured evidence or select
+a backend for the captured device.
+
 **How to apply:** use the versioned profile capture procedure for each firmware
 revision. Do not hardcode device, vendor/NPU, camera, ABI, or backend
 assumptions into the runtime; unsupported paths must fail closed.
