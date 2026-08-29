@@ -11,7 +11,7 @@ verifiable by CI and later release tooling.
 | Issue | Evidence contract |
 |---|---|
 | [#25](https://github.com/TokitoAI/tokito-physical-runtime/issues/25) | `schemas/security.review-manifest.schema.json` and `schemas/model.bundle-manifest.schema.json` |
-| [#26](https://github.com/TokitoAI/tokito-physical-runtime/issues/26) | `schemas/corpus.dataset-card.schema.json` and `schemas/corpus.split-manifest.schema.json` |
+| [#26](https://github.com/TokitoAI/tokito-physical-runtime/issues/26) | Dataset card, inventory, annotation, split, and change-set schemas plus `tools/corpus_governance.py` |
 | [#27](https://github.com/TokitoAI/tokito-physical-runtime/issues/27) | `schemas/model.bundle-manifest.schema.json` |
 | [#28](https://github.com/TokitoAI/tokito-physical-runtime/issues/28) | `schemas/evaluation.run-manifest.schema.json` |
 | [#29](https://github.com/TokitoAI/tokito-physical-runtime/issues/29) | `schemas/calibration.policy.schema.json` |
@@ -37,5 +37,7 @@ verifiable by CI and later release tooling.
 - Model and Android binaries are release artifacts, not Git-tracked files.
 - Evaluation reports are generated from immutable manifests; hand-edited metric
   values are invalid.
+- Evaluation inputs bind dataset-card, inventory, annotation, and split
+  manifest digests; matching revision names alone are insufficient.
 - Board-specific values belong in imported bundles and fixtures, not runtime
   branches or hardcoded preview coordinates.

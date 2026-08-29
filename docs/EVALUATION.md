@@ -23,6 +23,12 @@ Every corpus item records:
 - synthetic/real classification;
 - exclusion reason, if excluded before the evaluation freeze.
 
+The executable contract and contributor workflow are defined in
+[CORPUS_GOVERNANCE.md](CORPUS_GOVERNANCE.md). CI exercises deterministic
+freezing, cross-manifest hashing, board/session and lineage separation, exact
+and fingerprint-based near-duplicate checks, asset verification, and revision
+propagation. A revision name without matching manifest digests is not evidence.
+
 ## Dataset policy
 
 - Training, validation, calibration, and test sets are disjoint by board/session.
@@ -130,9 +136,10 @@ At minimum:
 ## Report format
 
 Every automated run writes an immutable machine-readable manifest and a derived
-human summary. The manifest contains command/config, revisions, digests, sample
-IDs, raw predictions, timing traces, environment, and exclusions. Human reports
-are generated from the manifest; hand-edited metric values are invalid.
+human summary. The manifest contains command/config, revisions,
+dataset/inventory/annotation/split digests, sample IDs, raw predictions, timing
+traces, environment, and exclusions. Human reports are generated from the
+manifest; hand-edited metric values are invalid.
 
 ## Baselines and regression policy
 
