@@ -1106,6 +1106,68 @@ fn outline_is_degenerate(outline: &[Point]) -> bool {
     !twice_signed_area.is_finite() || twice_signed_area == 0.0
 }
 
+/// One declared entry from an archive input (model bundle, assembly-context
+/// bundle, or any other packaged artifact). Format-agnostic: the caller's
+/// unpacking layer supplies these from whatever container format it reads,
+/// without this validator branching on which one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArchiveEntry {
+    pub path: String,
+    pub is_symlink: bool,
+    pub compressed_bytes: u64,
+    pub uncompressed_bytes: u64,
+}
+
+/// Rejects the archive-input classes `SECURITY_AND_PRIVACY.md` requires be
+/// rejected: absolute paths, traversal, symlinks, duplicate entries, and
+/// decompression bombs (both per-entry ratio and total expanded size).
+/// Entries are validated before any byte is written to disk; this function
+/// performs no I/O itself.
+pub fn validate_archive_entries(
+    entries: &[ArchiveEntry],
+    max_total_uncompressed_bytes: u64,
+    max_compression_ratio: u64,
+) -> Result<(), RuntimeError> {
+    if max_total_uncompressed_bytes == 0 || max_compression_ratio == 0 {
+        return Err(RuntimeError::InvalidConfiguration);
+    }
+    let mut seen_paths = HashSet::new();
+    let mut total_uncompressed: u64 = 0;
+    for entry in entries {
+        let starts_with_drive_letter = entry.path.len() >= 2
+            && entry.path.as_bytes()[0].is_ascii_alphabetic()
+            && entry.path.as_bytes()[1] == b':';
+        if entry.path.trim().is_empty()
+            || entry.path.starts_with('/')
+            || entry.path.starts_with('\\')
+            || starts_with_drive_letter
+            || entry.path.split(['/', '\\']).any(|segment| segment == "..")
+            || entry.is_symlink
+        {
+            return Err(RuntimeError::InvalidArgument);
+        }
+        if !seen_paths.insert(entry.path.clone()) {
+            return Err(RuntimeError::DuplicateReference);
+        }
+        if entry.uncompressed_bytes > 0 {
+            if entry.compressed_bytes == 0 {
+                // Infinite expansion ratio: an unambiguous bomb signature.
+                return Err(RuntimeError::ResourceExhausted);
+            }
+            if entry.uncompressed_bytes / entry.compressed_bytes > max_compression_ratio {
+                return Err(RuntimeError::ResourceExhausted);
+            }
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(entry.uncompressed_bytes)
+            .ok_or(RuntimeError::ResourceExhausted)?;
+        if total_uncompressed > max_total_uncompressed_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThermalState {
     Nominal,
@@ -1938,6 +2000,94 @@ mod tests {
         assert!(
             reserved <= 1_024,
             "quota must never overcommit its declared capacity"
+        );
+    }
+
+    fn plain_entry(path: &str) -> ArchiveEntry {
+        ArchiveEntry {
+            path: path.into(),
+            is_symlink: false,
+            compressed_bytes: 100,
+            uncompressed_bytes: 100,
+        }
+    }
+
+    #[test]
+    fn ordinary_archive_entries_are_accepted() {
+        let entries = [
+            plain_entry("model/weights.bin"),
+            plain_entry("model/manifest.json"),
+        ];
+        assert_eq!(validate_archive_entries(&entries, 1_000_000, 100), Ok(()));
+    }
+
+    #[test]
+    fn absolute_and_drive_letter_paths_are_rejected() {
+        assert_eq!(
+            validate_archive_entries(&[plain_entry("/etc/passwd")], 1_000_000, 100),
+            Err(RuntimeError::InvalidArgument)
+        );
+        assert_eq!(
+            validate_archive_entries(&[plain_entry("C:\\Windows\\System32")], 1_000_000, 100),
+            Err(RuntimeError::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn path_traversal_is_rejected() {
+        assert_eq!(
+            validate_archive_entries(&[plain_entry("model/../../etc/passwd")], 1_000_000, 100),
+            Err(RuntimeError::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn symlink_entries_are_rejected() {
+        let mut entry = plain_entry("model/link");
+        entry.is_symlink = true;
+        assert_eq!(
+            validate_archive_entries(&[entry], 1_000_000, 100),
+            Err(RuntimeError::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn duplicate_entries_are_rejected() {
+        let entries = [
+            plain_entry("model/weights.bin"),
+            plain_entry("model/weights.bin"),
+        ];
+        assert_eq!(
+            validate_archive_entries(&entries, 1_000_000, 100),
+            Err(RuntimeError::DuplicateReference)
+        );
+    }
+
+    #[test]
+    fn a_single_entry_decompression_bomb_is_rejected() {
+        let bomb = ArchiveEntry {
+            path: "model/weights.bin".into(),
+            is_symlink: false,
+            compressed_bytes: 10,
+            uncompressed_bytes: 10_000_000,
+        };
+        assert_eq!(
+            validate_archive_entries(&[bomb], u64::MAX, 100),
+            Err(RuntimeError::ResourceExhausted)
+        );
+    }
+
+    #[test]
+    fn total_expansion_over_the_declared_limit_is_rejected_even_without_any_single_bomb() {
+        let entries = [
+            plain_entry("model/part-1.bin"),
+            plain_entry("model/part-2.bin"),
+        ];
+        // Each entry individually is a normal 1:1 ratio, but the declared
+        // total budget only allows 150 bytes across the whole archive.
+        assert_eq!(
+            validate_archive_entries(&entries, 150, 100),
+            Err(RuntimeError::ResourceExhausted)
         );
     }
 }
