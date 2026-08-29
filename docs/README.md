@@ -20,6 +20,7 @@ The documentation is split by authority and purpose:
 | [DEVICE_PROFILE_I2501.md](DEVICE_PROFILE_I2501.md) | Sanitized evidence for the declared target device profile |
 | [NATIVE_CORE.md](NATIVE_CORE.md) | Native fail-closed lifecycle, registration, scheduling, and thermal core |
 | [ASSEMBLY_CONTEXT.md](ASSEMBLY_CONTEXT.md) | Immutable optional board-context import and verification boundary |
+| [`../reference/boards/`](../reference/boards/) | Reviewed board landmark and electrical pin-reference manifests |
 | [BACKEND_BENCHMARKS.md](BACKEND_BENCHMARKS.md) | Evidence requirements for measured native backend selection |
 | [ANDROID_RUNTIME_API.md](ANDROID_RUNTIME_API.md) | Reusable Android lifecycle and capability discovery boundary |
 | [decisions/](decisions/) | Architecture Decision Records |
