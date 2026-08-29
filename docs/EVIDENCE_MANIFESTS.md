@@ -25,6 +25,7 @@ verifiable by CI and later release tooling.
 | [#40](https://github.com/TokitoAI/tokito-physical-runtime/issues/40) | `schemas/evaluation.run-manifest.schema.json` and `schemas/release.evidence-manifest.schema.json` |
 | [#44](https://github.com/TokitoAI/tokito-physical-runtime/issues/44) | `schemas/assembly.context-bundle.schema.json` |
 | [#45](https://github.com/TokitoAI/tokito-physical-runtime/issues/45) | `schemas/frdm.validation-manifest.schema.json` |
+| [#56](https://github.com/TokitoAI/tokito-physical-runtime/issues/56) | `schemas/reference.source-package-manifest.schema.json` |
 
 ## Contract rules
 
@@ -39,3 +40,6 @@ verifiable by CI and later release tooling.
   values are invalid.
 - Board-specific values belong in imported bundles and fixtures, not runtime
   branches or hardcoded preview coordinates.
+- Downloaded board photos, documents, and archives are source-package artifacts
+  and not physical iQOO capture evidence unless captured by the declared device
+  under the FRDM validation protocol.

@@ -13,6 +13,7 @@ The documentation is split by authority and purpose:
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Trust boundary and data-handling policy |
 | [DELIVERY_GATES.md](DELIVERY_GATES.md) | Evidence-gated implementation sequence |
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
+| [REFERENCE_SOURCE_PACKAGES.md](REFERENCE_SOURCE_PACKAGES.md) | Source-package manifest and downloader rules for reference boards |
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
 | [decisions/](decisions/) | Architecture Decision Records |
 | [proposals/](proposals/) | Source proposals; informative, not normative |
