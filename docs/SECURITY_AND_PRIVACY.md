@@ -36,6 +36,10 @@ Logs redact transcripts, design identities, filesystem paths, and raw payloads.
 Telemetry uses bounded counters/timings and is disabled or local unless a future
 privacy-reviewed integration states otherwise.
 
+Observation envelopes declare whether evidence is available, redacted, or
+unavailable. Redaction and retention decisions are explicit and do not turn an
+empty evidence list into a claim that evidence was retained.
+
 ## Model supply chain
 
 Every model bundle is content-addressed and signed. The runtime verifies:

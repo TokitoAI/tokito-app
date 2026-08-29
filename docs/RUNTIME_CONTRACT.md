@@ -203,6 +203,11 @@ Stable families:
 Every error includes retryability and safe recovery guidance. Internal paths,
 stack traces, raw transcripts, and model internals are not exposed by default.
 
+Evidence availability is explicit. An observation declares `available`,
+`redacted`, or `unavailable`; only `available` may carry evidence references.
+Redacted or unavailable evidence is not silently represented as a successful
+empty list.
+
 ## Compatibility
 
 - Major schema/tool version changes are incompatible and rejected.

@@ -215,6 +215,13 @@ pub struct EvidenceReference {
     pub retention: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceAvailability {
+    Available,
+    Redacted,
+    Unavailable,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Provenance {
     pub runtime_revision: String,
@@ -233,6 +240,7 @@ pub struct Observation {
     pub coordinate_frame_id: Option<u64>,
     pub registration_revision: Option<u64>,
     pub confidence: Option<f64>,
+    pub evidence_availability: EvidenceAvailability,
     pub evidence: Vec<EvidenceReference>,
     pub provenance: Provenance,
 }
@@ -321,18 +329,18 @@ impl CallLedger {
                 || observation.coordinate_frame_id.is_some()
                     != observation.registration_revision.is_some()
                 || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
+                || (observation.evidence_availability == EvidenceAvailability::Available
+                    && observation.evidence.is_empty())
+                || (observation.evidence_availability != EvidenceAvailability::Available
+                    && !observation.evidence.is_empty())
                 || observation.evidence.iter().any(|evidence| {
-                    evidence.digest.trim().is_empty()
+                    !is_canonical_sha256(&evidence.digest)
                         || evidence.kind.trim().is_empty()
                         || evidence.retention.trim().is_empty()
                 })
                 || observation.provenance.runtime_revision.trim().is_empty()
-                || observation.provenance.model_bundle_digest.trim().is_empty()
-                || observation
-                    .provenance
-                    .preprocessing_digest
-                    .trim()
-                    .is_empty()
+                || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
+                || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
                 || observation.provenance.backend.trim().is_empty()
                 || observation.provenance.device_profile.trim().is_empty()
             {
@@ -1285,15 +1293,19 @@ mod tests {
             coordinate_frame_id: Some(10),
             registration_revision: Some(4),
             confidence: Some(0.9),
+            evidence_availability: EvidenceAvailability::Available,
             evidence: vec![EvidenceReference {
-                digest: "sha256:example".into(),
+                digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .into(),
                 kind: "frame".into(),
                 retention: "session".into(),
             }],
             provenance: Provenance {
                 runtime_revision: "runtime-revision".into(),
-                model_bundle_digest: "sha256:model".into(),
-                preprocessing_digest: "sha256:preprocess".into(),
+                model_bundle_digest:
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                preprocessing_digest:
+                    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
                 backend: "selected-by-policy".into(),
                 device_profile: "profile-revision".into(),
             },
@@ -1332,11 +1344,14 @@ mod tests {
             coordinate_frame_id: Some(10),
             registration_revision: None,
             confidence: Some(0.9),
+            evidence_availability: EvidenceAvailability::Unavailable,
             evidence: Vec::new(),
             provenance: Provenance {
                 runtime_revision: "runtime-revision".into(),
-                model_bundle_digest: "sha256:model".into(),
-                preprocessing_digest: "sha256:preprocess".into(),
+                model_bundle_digest:
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                preprocessing_digest:
+                    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
                 backend: "selected-by-policy".into(),
                 device_profile: "profile-revision".into(),
             },

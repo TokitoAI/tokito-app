@@ -76,7 +76,7 @@
     "observation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "observation_id", "tool_call_id", "session_id", "context_revision", "kind", "status", "evidence", "provenance"],
+      "required": ["schema_version", "observation_id", "tool_call_id", "session_id", "context_revision", "kind", "status", "evidence_availability", "evidence", "provenance"],
       "properties": {
         "schema_version": { "$ref": "#/$defs/nonEmpty" },
         "observation_id": { "$ref": "#/$defs/nonEmpty" },
@@ -86,9 +86,17 @@
         "kind": { "$ref": "#/$defs/nonEmpty" },
         "status": { "enum": ["completed", "abstained", "redacted"] },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence_availability": { "enum": ["available", "redacted", "unavailable"] },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
         "provenance": { "$ref": "#/$defs/provenance" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "evidence_availability": { "const": "available" } } },
+          "then": { "properties": { "evidence": { "minItems": 1 } } },
+          "else": { "properties": { "evidence": { "maxItems": 0 } } }
+        }
+      ]
     },
     "terminalOutcome": {
       "oneOf": [
