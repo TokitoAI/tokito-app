@@ -1,0 +1,45 @@
+{
+  "schema_version": { "major": 1, "minor": 1 },
+  "board": {
+    "board_id": "board",
+    "revision": "rev-a",
+    "coordinate_frame_id": "board-plane",
+    "units": "mm",
+    "handedness": "right",
+    "outline": [
+      { "x": 0.0, "y": 0.0 },
+      { "x": 10.0, "y": 0.0 },
+      { "x": 10.0, "y": 10.0 }
+    ],
+    "future_board_field": "a minor revision might add this"
+  },
+  "components": [
+    {
+      "reference_designator": "R1",
+      "footprint": "0402",
+      "centroid": { "x": 5.0, "y": 5.0 },
+      "rotation_degrees": 0.0,
+      "side": "top",
+      "polarity_or_pin_one": null,
+      "alternates": [],
+      "placement_source_id": "cad-export",
+      "future_component_field": 42
+    }
+  ],
+  "landmarks": [],
+  "sources": [
+    {
+      "source_id": "cad-export",
+      "role": "authored_placement",
+      "license": "proprietary",
+      "digest": "sha256:9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0"
+    }
+  ],
+  "integrity": {
+    "payload_sha256": "sha256:64daa44ad493ff28a96effab6e77f1732a3d97d83241581b37dbd70a7a4900fe",
+    "signature_id": "verified-signature"
+  },
+  "future_top_level_field": {
+    "anything": ["a minor revision might add this too"]
+  }
+}

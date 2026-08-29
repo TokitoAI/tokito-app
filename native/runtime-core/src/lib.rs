@@ -933,6 +933,184 @@ impl AssemblyContextStore {
     }
 }
 
+/// Generic, declared-format import for an assembly-context bundle. This is
+/// one supported source format among potentially several; it maps fields
+/// 1:1 into the canonical [`AssemblyContext`] and never branches on a board
+/// name. Unrecognized JSON fields are ignored by default (no
+/// `deny_unknown_fields`), so a minor schema revision can add optional data
+/// without breaking this importer - forward compatibility comes from the
+/// parser's default behavior, not a special case here.
+///
+/// Deliberately does not perform integrity/signature verification: that is
+/// [`AssemblyContext::verify_integrity`]'s job, and requires the caller's
+/// platform verifier. This function only turns bytes in a declared format
+/// into the canonical type, deterministically rejecting malformed JSON and
+/// missing required fields as it does.
+pub fn import_assembly_context_from_json(json: &[u8]) -> Result<AssemblyContext, RuntimeError> {
+    let parsed: json_import::AssemblyContext =
+        serde_json::from_slice(json).map_err(|_| RuntimeError::InvalidConfiguration)?;
+    Ok(parsed.into())
+}
+
+/// Declared-format DTOs kept separate from the canonical types above: the
+/// wire shape and internal representation are allowed to diverge (e.g. the
+/// canonical `EvidenceRole` has no serde derive), and this module is the
+/// only place that needs to know the JSON format's field names.
+mod json_import {
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct SchemaVersion {
+        major: u16,
+        minor: u16,
+    }
+
+    #[derive(Deserialize)]
+    pub struct Point {
+        x: f64,
+        y: f64,
+    }
+
+    #[derive(Deserialize)]
+    pub struct BoardIdentity {
+        board_id: String,
+        revision: String,
+        coordinate_frame_id: String,
+        units: String,
+        handedness: String,
+        outline: Vec<Point>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum EvidenceRole {
+        AuthoredPlacement,
+        Datasheet,
+        Supporting,
+    }
+
+    #[derive(Deserialize)]
+    pub struct SourceEvidence {
+        source_id: String,
+        role: EvidenceRole,
+        license: String,
+        digest: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct ComponentPlacement {
+        reference_designator: String,
+        footprint: String,
+        centroid: Point,
+        rotation_degrees: f64,
+        side: String,
+        #[serde(default)]
+        polarity_or_pin_one: Option<String>,
+        #[serde(default)]
+        alternates: Vec<String>,
+        placement_source_id: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct Landmark {
+        landmark_id: String,
+        position: Point,
+    }
+
+    #[derive(Deserialize)]
+    pub struct BundleIntegrity {
+        payload_sha256: String,
+        signature_id: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct AssemblyContext {
+        schema_version: SchemaVersion,
+        board: BoardIdentity,
+        #[serde(default)]
+        components: Vec<ComponentPlacement>,
+        #[serde(default)]
+        landmarks: Vec<Landmark>,
+        #[serde(default)]
+        sources: Vec<SourceEvidence>,
+        integrity: BundleIntegrity,
+    }
+
+    impl From<Point> for super::Point {
+        fn from(value: Point) -> Self {
+            Self {
+                x: value.x,
+                y: value.y,
+            }
+        }
+    }
+
+    impl From<EvidenceRole> for super::EvidenceRole {
+        fn from(value: EvidenceRole) -> Self {
+            match value {
+                EvidenceRole::AuthoredPlacement => Self::AuthoredPlacement,
+                EvidenceRole::Datasheet => Self::Datasheet,
+                EvidenceRole::Supporting => Self::Supporting,
+            }
+        }
+    }
+
+    impl From<AssemblyContext> for super::AssemblyContext {
+        fn from(value: AssemblyContext) -> Self {
+            Self {
+                schema_version: super::SchemaVersion {
+                    major: value.schema_version.major,
+                    minor: value.schema_version.minor,
+                },
+                board: super::BoardIdentity {
+                    board_id: value.board.board_id,
+                    revision: value.board.revision,
+                    coordinate_frame_id: value.board.coordinate_frame_id,
+                    units: value.board.units,
+                    handedness: value.board.handedness,
+                    outline: value.board.outline.into_iter().map(Into::into).collect(),
+                },
+                components: value
+                    .components
+                    .into_iter()
+                    .map(|component| super::ComponentPlacement {
+                        reference_designator: component.reference_designator,
+                        footprint: component.footprint,
+                        centroid: component.centroid.into(),
+                        rotation_degrees: component.rotation_degrees,
+                        side: component.side,
+                        polarity_or_pin_one: component.polarity_or_pin_one,
+                        alternates: component.alternates,
+                        placement_source_id: component.placement_source_id,
+                    })
+                    .collect(),
+                landmarks: value
+                    .landmarks
+                    .into_iter()
+                    .map(|landmark| super::Landmark {
+                        landmark_id: landmark.landmark_id,
+                        position: landmark.position.into(),
+                    })
+                    .collect(),
+                sources: value
+                    .sources
+                    .into_iter()
+                    .map(|source| super::SourceEvidence {
+                        source_id: source.source_id,
+                        role: source.role.into(),
+                        license: source.license,
+                        digest: source.digest,
+                    })
+                    .collect(),
+                integrity: super::BundleIntegrity {
+                    payload_sha256: value.integrity.payload_sha256,
+                    signature_id: value.integrity.signature_id,
+                },
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelManifest {
     pub schema_version: SchemaVersion,
@@ -2089,5 +2267,65 @@ mod tests {
             validate_archive_entries(&entries, 150, 100),
             Err(RuntimeError::ResourceExhausted)
         );
+    }
+
+    // #44 golden fixtures: contracts/fixtures/assembly-context/. Each proves
+    // a distinct acceptance bullet - valid, partial, conflicting, malicious,
+    // and forward-compatible input all pass through the *same* importer
+    // with no board-name branch, and the deterministic outcome comes from
+    // JSON deserialization (missing/malformed fields) or the existing
+    // AssemblyContext::validate() (semantic conflicts), never a bespoke
+    // per-fixture code path.
+
+    #[test]
+    fn golden_fixture_valid_imports_and_validates() {
+        let json = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        let context = import_assembly_context_from_json(json.as_bytes()).unwrap();
+        assert_eq!(context.validate(1), Ok(()));
+    }
+
+    #[test]
+    fn golden_fixture_partial_is_rejected_at_deserialization() {
+        // Missing board.units: a required field absent from declared input
+        // must fail deterministically, not default to an assumed unit.
+        let json = include_str!("../../../contracts/fixtures/assembly-context/partial.json");
+        assert_eq!(
+            import_assembly_context_from_json(json.as_bytes()).err(),
+            Some(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn golden_fixture_conflicting_imports_but_fails_validation() {
+        // Duplicate reference designators: valid JSON shape, invalid design
+        // content. Parses fine; validate() is what must catch it.
+        let json = include_str!("../../../contracts/fixtures/assembly-context/conflicting.json");
+        let context = import_assembly_context_from_json(json.as_bytes()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::DuplicateReference));
+    }
+
+    #[test]
+    fn golden_fixture_malicious_datasheet_cannot_supply_placement_truth() {
+        // The exact attack ASSEMBLY_CONTEXT.md forbids: a component whose
+        // placement_source_id resolves to Datasheet-role evidence rather
+        // than AuthoredPlacement.
+        let json = include_str!("../../../contracts/fixtures/assembly-context/malicious.json");
+        let context = import_assembly_context_from_json(json.as_bytes()).unwrap();
+        assert_eq!(
+            context.validate(1),
+            Err(RuntimeError::ConflictingDesignTruth)
+        );
+    }
+
+    #[test]
+    fn golden_fixture_forward_compatible_ignores_unknown_fields() {
+        // A minor version (1.1) plus unknown fields at the top level, inside
+        // board, and inside a component - all must be preserved-or-ignored
+        // per the declared forward-compatibility policy, not rejected.
+        let json =
+            include_str!("../../../contracts/fixtures/assembly-context/forward-compatible.json");
+        let context = import_assembly_context_from_json(json.as_bytes()).unwrap();
+        assert_eq!(context.schema_version.minor, 1);
+        assert_eq!(context.validate(1), Ok(()));
     }
 }
