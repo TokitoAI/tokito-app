@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig(allowModelDownload = true))
+        voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         dialogue = TokitoDialogueRuntime(this)
         measurementSession = MeasurementVoiceSession(voice)
         bindActions()
