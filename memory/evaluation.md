@@ -14,6 +14,12 @@
 - Local generative models are evaluated for schema validity, unsupported
   claims, memory/context growth, cancellation, latency, throughput, and thermal
   degradation in addition to task quality.
+- Corpus revisions are frozen by `tools/corpus_governance.py`. Dataset,
+  inventory, annotation, and split manifests cross-bind by canonical SHA-256;
+  evaluation inputs must carry all four digests. The auditor rejects
+  cross-split physical boards, sessions, declared leakage groups, lineage,
+  exact media digests, and bounded-distance fingerprints. Removal propagates
+  to descendants, annotations, and split membership.
 
 **How to apply:** no capability is production-supported until its held-out task
 metrics and target-device performance/thermal gates pass.

@@ -10,3 +10,8 @@ examples, and repository artifact hygiene with `tools/validate_governance.py`.
 `reference.source-package-manifest.schema.json` records official board source
 artifacts before they become validation or training inputs. It keeps downloaded
 internet material separate from physical capture evidence.
+
+Corpus manifests are additionally governed by `tools/corpus_governance.py`.
+See `docs/CORPUS_GOVERNANCE.md` for canonical hashing, cross-manifest binding,
+leakage auditing, asset verification, and correction/removal propagation.
+Example corpus digests are zero-valued draft sentinels, not frozen evidence.
