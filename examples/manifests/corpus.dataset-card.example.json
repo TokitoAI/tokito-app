@@ -1,27 +1,46 @@
 {
   "schema_version": "1.0",
   "dataset_id": "tokito-example-corpus",
-  "dataset_revision": "not-yet-frozen",
-  "purpose": "Schema-valid template for future board/session corpus evidence.",
+  "dataset_revision": "example-r1",
+  "created_at": "2026-08-29T00:00:00Z",
+  "purpose": "Schema-valid template for governed board/session corpus evidence.",
+  "visibility": "synthetic",
   "sources": [
     {
       "source_id": "example-source",
-      "origin": "not-yet-collected",
-      "license": "not-yet-approved",
-      "consent_basis": "not-yet-recorded",
-      "intended_use": "model-selection-and-evaluation"
+      "origin": "https://example.invalid/tokito-fixture",
+      "retrieved_at": "2026-08-29T00:00:00Z",
+      "license": {
+        "name": "Fixture-only example",
+        "identifier": "LicenseRef-Tokito-Fixture",
+        "uri": "https://example.invalid/license",
+        "redistributable": true,
+        "review_status": "approved"
+      },
+      "consent": { "required": false, "basis": "synthetic fixture", "scope": "repository tests" },
+      "intended_uses": ["governance-validation"],
+      "restrictions": ["not release evidence"]
     }
   ],
-  "annotation_schema": {
-    "revision": "not-yet-frozen",
-    "labels": ["component_identity", "package", "led_state"],
-    "geometry": ["box", "polygon", "board_transform"],
-    "uncertainty": "required for ambiguous labels and low-quality evidence",
-    "unobservable_regions": "explicit region masks are required"
+  "annotation_contract": {
+    "revision": "annotation-v1",
+    "identity_fields": ["class_id", "status"],
+    "geometry_types": ["bbox", "polygon"],
+    "state_fields": ["presence", "orientation"],
+    "uncertainty": "Every record carries confidence, ambiguity, and reasons.",
+    "unobservable_regions": "Occluded regions are explicit normalized geometry."
   },
-  "retention": "raw media remains local unless explicit consent is recorded",
-  "exclusions": ["unsupported classes remain visible in open-set analysis"],
+  "retention": {
+    "raw_media": "Fixture URIs only; no raw media is committed.",
+    "derived_artifacts": "Retain while the example schema is supported.",
+    "removal_sla_days": 7
+  },
+  "exclusions": [{ "rule_id": "fixture-only", "reason": "Cannot substantiate product metrics." }],
+  "change_history": [],
   "hashes": {
+    "inventory_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "annotation_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "split_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     "manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   }
 }
