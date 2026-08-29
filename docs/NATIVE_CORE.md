@@ -13,6 +13,7 @@ The core owns only deterministic mechanisms required by the delivery gates:
 - versioned tool-call validation and exactly-one terminal outcome ledgers;
 - structured observations with linked context, registration, evidence, and provenance;
 - immutable assembly-context validation, digest verification, and atomic quota-bound activation;
+- model-manifest admission with digest, signature, ABI, runtime-revision, and quota checks;
 - caller-configured registration confidence and homography validation;
 - bounded, deadline-aware, cancellable ROI work scheduling; and
 - latest-frame handoff and caller-configured storage quotas; and

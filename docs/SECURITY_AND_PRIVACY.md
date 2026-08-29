@@ -52,6 +52,12 @@ Activation is atomic and rollback uses a previously verified bundle. Archives
 reject absolute paths, traversal, symlinks, duplicate entries, and expansion
 bombs.
 
+The native admission boundary verifies a canonical SHA-256 artifact digest,
+delegates signature trust to the platform's configured verifier, and requires
+the declared schema major, runtime revision, and ABI to match the active
+runtime. Validation completes before a quota-aware atomic activation replaces a
+previously active manifest.
+
 ## Tool safety
 
 Tool calls are descriptive and observational. The baseline runtime does not

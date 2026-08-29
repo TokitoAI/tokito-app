@@ -790,6 +790,97 @@ impl AssemblyContextStore {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelManifest {
+    pub schema_version: SchemaVersion,
+    pub model_id: String,
+    pub model_revision: String,
+    pub artifact_sha256: String,
+    pub preprocessing_sha256: String,
+    pub license: String,
+    pub minimum_runtime_revision: String,
+    pub supported_abis: Vec<String>,
+    pub signature_id: String,
+}
+
+impl ModelManifest {
+    pub fn validate(
+        &self,
+        supported_major: u16,
+        runtime_revision: &str,
+        abi: &str,
+    ) -> Result<(), RuntimeError> {
+        if self.schema_version.major != supported_major {
+            return Err(RuntimeError::IncompatibleSchema);
+        }
+        if self.model_id.trim().is_empty()
+            || self.model_revision.trim().is_empty()
+            || self.license.trim().is_empty()
+            || self.minimum_runtime_revision.trim().is_empty()
+            || self.signature_id.trim().is_empty()
+            || !is_canonical_sha256(&self.artifact_sha256)
+            || !is_canonical_sha256(&self.preprocessing_sha256)
+            || self.supported_abis.is_empty()
+            || self
+                .supported_abis
+                .iter()
+                .any(|value| value.trim().is_empty())
+        {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        if self.minimum_runtime_revision != runtime_revision
+            || !self.supported_abis.iter().any(|value| value == abi)
+        {
+            return Err(RuntimeError::UnsupportedCapability);
+        }
+        Ok(())
+    }
+
+    pub fn verify_artifact(
+        &self,
+        artifact: &[u8],
+        verifier: &impl SignatureVerifier,
+    ) -> Result<(), RuntimeError> {
+        let actual = format!("sha256:{:x}", Sha256::digest(artifact));
+        if actual != self.artifact_sha256 || !verifier.verify(artifact, &self.signature_id) {
+            return Err(RuntimeError::IntegrityFailure);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ModelRegistry {
+    active: Option<ModelManifest>,
+    active_bytes: u64,
+}
+
+impl ModelRegistry {
+    pub fn activate_atomically(
+        &mut self,
+        candidate: ModelManifest,
+        artifact: &[u8],
+        supported_major: u16,
+        runtime_revision: &str,
+        abi: &str,
+        verifier: &impl SignatureVerifier,
+        quota: &mut StorageQuota,
+    ) -> Result<(), RuntimeError> {
+        candidate.validate(supported_major, runtime_revision, abi)?;
+        candidate.verify_artifact(artifact, verifier)?;
+        let candidate_bytes =
+            u64::try_from(artifact.len()).map_err(|_| RuntimeError::ResourceExhausted)?;
+        quota.replace(self.active_bytes, candidate_bytes)?;
+        self.active = Some(candidate);
+        self.active_bytes = candidate_bytes;
+        Ok(())
+    }
+
+    pub fn active(&self) -> Option<&ModelManifest> {
+        self.active.as_ref()
+    }
+}
+
 fn is_canonical_sha256(value: &str) -> bool {
     let Some(hex) = value.strip_prefix("sha256:") else {
         return false;
@@ -926,6 +1017,21 @@ mod tests {
                 payload_sha256: format!("sha256:{:x}", Sha256::digest(payload)),
                 signature_id: "verified-signature".into(),
             },
+        }
+    }
+
+    fn model_manifest(artifact: &[u8]) -> ModelManifest {
+        ModelManifest {
+            schema_version: SchemaVersion { major: 1, minor: 0 },
+            model_id: "model".into(),
+            model_revision: "revision".into(),
+            artifact_sha256: format!("sha256:{:x}", Sha256::digest(artifact)),
+            preprocessing_sha256:
+                "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd".into(),
+            license: "declared-license".into(),
+            minimum_runtime_revision: "runtime-revision".into(),
+            supported_abis: vec!["declared-abi".into()],
+            signature_id: "verified-signature".into(),
         }
     }
 
@@ -1187,6 +1293,39 @@ mod tests {
             Point { x: 2.0, y: 2.0 },
         ];
         assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+    }
+
+    #[test]
+    fn model_activation_requires_integrity_and_declared_compatibility() {
+        let artifact = b"model artifact";
+        let manifest = model_manifest(artifact);
+        let mut registry = ModelRegistry::default();
+        let mut quota = StorageQuota::new(128).unwrap();
+        assert_eq!(
+            registry.activate_atomically(
+                manifest.clone(),
+                artifact,
+                1,
+                "runtime-revision",
+                "declared-abi",
+                &AcceptingVerifier,
+                &mut quota,
+            ),
+            Ok(())
+        );
+        assert_eq!(registry.active(), Some(&manifest));
+        assert_eq!(
+            registry.activate_atomically(
+                manifest,
+                artifact,
+                1,
+                "runtime-revision",
+                "different-abi",
+                &AcceptingVerifier,
+                &mut quota,
+            ),
+            Err(RuntimeError::UnsupportedCapability)
+        );
     }
 
     #[test]
