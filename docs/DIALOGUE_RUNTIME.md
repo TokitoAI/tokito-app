@@ -17,10 +17,10 @@ cloud fallback.
 - Expected SHA-256:
   `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031`.
 
-The model is not stored in Git. Explicit provisioning downloads into an
-app-private partial file, resumes with HTTP Range where supported, verifies the
-pinned size and digest, and atomically activates the completed file. After
-that one-time installation, inference is offline.
+The model is not stored in Git. Release admission places a manifest and model
+artifact in app-private storage before runtime initialization. The runtime reads
+the manifest, verifies its declared size and SHA-256, and fails closed when the
+bundle is missing or invalid. Inference is offline and has no download path.
 
 ## Contract and safety boundary
 
@@ -42,8 +42,8 @@ and recently duplicated proposal IDs. A proposal is data, not execution. The
 host remains responsible for authorization and the physical tool layer remains
 responsible for measurements and observations.
 
-The validation application intentionally declares no tools. It can provision
-the model, send typed or recognized English text to the local LLM, display a
+The validation application intentionally declares no tools. It can load an
+admitted model, send typed or recognized English text to the local LLM, display a
 response or clarification, and pass that text to the local TTS runtime. It
 cannot pretend that unfinished physical tools exist.
 

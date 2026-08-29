@@ -53,7 +53,7 @@ English speech synthesis, typed partial/final transcript events, audio focus,
 cancellation, and barge-in. Final transcripts can enter locale-explicit
 electrical measurement parsing with bounded spoken/touch confirmation before a
 reading becomes evidence. The dialogue slice uses pinned llama.cpp and the
-official pinned Qwen3-0.6B Q8_0 GGUF, with resumable verified provisioning,
+official Qwen3-0.6B Q8_0 GGUF admitted through a verified local manifest,
 bounded local generation, exact typed outcomes, and deterministic tool-policy
 validation. The validation app executes its declared `request_measurement`
 capability through the deterministic session and responds through local TTS.
@@ -98,8 +98,8 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
-Provisioning models is an explicit user action in the test application; after
-provisioning, recognition, dialogue, and synthesis execute locally.
+The test application initializes only admitted, verified local model bundles;
+recognition, dialogue, and synthesis never fetch models at runtime.
 
 ## Implementation shape
 

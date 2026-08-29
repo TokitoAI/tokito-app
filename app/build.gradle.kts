@@ -54,3 +54,30 @@ dependencies {
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.espresso.core)
 }
+
+val verifyDebugManifestPolicy by tasks.registering {
+    val manifestTask = tasks.named("processDebugMainManifest")
+    dependsOn(manifestTask)
+    inputs.files(manifestTask.map { it.outputs.files })
+    doLast {
+        val manifests = manifestTask.get().outputs.files.asFileTree
+            .matching { include("**/AndroidManifest.xml") }
+            .files
+        check(manifests.isNotEmpty()) { "merged debug manifest was not produced" }
+        val merged = manifests.joinToString("\n") { it.readText() }
+        val forbidden = listOf(
+            "android.permission.INTERNET",
+            "android.permission.ACCESS_NETWORK_STATE",
+            "android.permission.WAKE_LOCK",
+            "android.permission.RECEIVE_BOOT_COMPLETED",
+            "android.permission.FOREGROUND_SERVICE",
+        )
+        check(forbidden.none(merged::contains)) {
+            "debug manifest contains a forbidden downloader permission"
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(verifyDebugManifestPolicy)
+}
