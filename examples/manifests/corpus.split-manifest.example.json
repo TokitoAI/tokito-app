@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "tokito-example-corpus",
+  "dataset_revision": "example-r1",
+  "split_revision": "split-v1",
+  "split_unit": "physical_board_and_session",
+  "splits": {
+    "train": ["board-a-session-1-frame-1"],
+    "validation": ["board-b-session-1-frame-1"],
+    "calibration": ["board-c-session-1-frame-1"],
+    "test": ["board-d-session-1-frame-1"]
+  },
+  "leakage_audit": {
+    "algorithm_version": "tokito-corpus-audit/1",
+    "max_hamming_distance": 6,
+    "board_disjoint": true,
+    "session_disjoint": true,
+    "leakage_group_disjoint": true,
+    "lineage_disjoint": true,
+    "exact_duplicate_groups": [],
+    "exact_cross_split_collisions": [],
+    "near_duplicate_pairs": [],
+    "near_duplicate_cross_split_pairs": []
+  },
+  "integrity": {
+    "inventory_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "annotation_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "frozen_at": "2026-08-29T00:00:00Z"
+  }
+}

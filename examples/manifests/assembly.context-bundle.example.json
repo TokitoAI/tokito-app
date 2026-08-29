@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "bundle_id": "tokito-example-assembly-context",
+  "bundle_revision": "not-yet-imported",
+  "design": {
+    "project_id": "not-yet-bound",
+    "source": "not-yet-imported",
+    "content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "board": {
+    "revision": "not-yet-recorded",
+    "coordinate_system": "not-yet-declared",
+    "units": "mm",
+    "outline": [],
+    "landmarks": []
+  },
+  "references": [
+    {
+      "refdes": "D1",
+      "footprint": "not-yet-imported",
+      "centroid": {},
+      "rotation_degrees": 0,
+      "side": "top",
+      "pin_one_or_polarity": "not-yet-reviewed",
+      "permitted_alternates": [],
+      "evidence_refs": ["evidence-001"]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "evidence-001",
+      "source_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "locator": "not-yet-located",
+      "extractor_revision": "not-yet-run",
+      "confidence": 0,
+      "review_state": "not-yet-reviewed"
+    }
+  ],
+  "provenance": {},
+  "integrity": {
+    "bundle_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "not-yet-signed"
+  }
+}

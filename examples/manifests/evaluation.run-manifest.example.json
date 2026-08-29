@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "run_id": "tokito-example-evaluation",
+  "created_at": "not-yet-run",
+  "inputs": {
+    "dataset_revision": "not-yet-frozen",
+    "dataset_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "inventory_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "annotation_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "split_revision": "not-yet-frozen",
+    "split_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "model_bundle_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "preprocessing_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "device": {
+    "profile_id": "not-yet-measured",
+    "manufacturer_model": "not-yet-measured",
+    "soc": "not-yet-measured",
+    "android_build": "not-yet-measured",
+    "abi": "not-yet-measured"
+  },
+  "runtime": {
+    "revision": "not-yet-built",
+    "backend": "not-yet-selected",
+    "precision": "not-yet-selected",
+    "threads": 1
+  },
+  "metrics": {
+    "quality": {},
+    "latency": {},
+    "resources": {},
+    "thermal": {}
+  },
+  "scenarios": ["offline", "camera-audio-concurrent", "twenty-minute-thermal"],
+  "output": {
+    "machine_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "human_report_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

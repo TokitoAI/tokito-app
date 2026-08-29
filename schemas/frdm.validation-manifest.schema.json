@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/frdm.validation-manifest.schema.json",
+  "title": "Tokito FRDM-MCXN236 Validation Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "validation_id",
+    "board",
+    "source_artifacts",
+    "capture_plan",
+    "splits",
+    "metrics",
+    "offline_proof",
+    "limitations",
+    "output"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "validation_id": { "type": "string", "minLength": 1 },
+    "board": {
+      "type": "object",
+      "required": ["name", "physical_revision", "context_bundle_digest"],
+      "properties": {
+        "name": { "const": "FRDM-MCXN236" },
+        "physical_revision": { "type": "string", "minLength": 1 },
+        "context_bundle_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "source_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_url", "retrieved_at", "digest", "license"],
+        "properties": {
+          "source_url": { "type": "string", "minLength": 1 },
+          "retrieved_at": { "type": "string", "minLength": 1 },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "license": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "capture_plan": {
+      "type": "object",
+      "required": ["viewpoints", "lighting", "motion", "occlusion"],
+      "properties": {
+        "viewpoints": { "type": "array", "items": { "type": "string" } },
+        "lighting": { "type": "array", "items": { "type": "string" } },
+        "motion": { "type": "array", "items": { "type": "string" } },
+        "occlusion": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "splits": { "type": "object" },
+    "metrics": {
+      "type": "object",
+      "required": ["registration", "localization", "orientation", "latency", "thermal"],
+      "properties": {
+        "registration": { "type": "object" },
+        "localization": { "type": "object" },
+        "orientation": { "type": "object" },
+        "latency": { "type": "object" },
+        "thermal": { "type": "object" }
+      }
+    },
+    "offline_proof": { "type": "string", "minLength": 1 },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "output": {
+      "type": "object",
+      "required": ["manifest_digest", "human_report_digest"],
+      "properties": {
+        "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "human_report_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  }
+}
