@@ -24,6 +24,9 @@ The product owns:
   text-to-speech, all on-device;
 - a standalone camera-first AR interface with registered overlays and local
   conversational state;
+- a digest-verified metric GLB digital twin rendered over a calibrated board
+  pose, with a real calibration object for conformance before project assets
+  are available;
 - typed physical observations with confidence, provenance, and evidence;
 - bench tools such as component location, inspection, LED-state reading,
   measurement requests, assembly verification, and change verification;

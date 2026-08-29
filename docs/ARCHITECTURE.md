@@ -26,7 +26,7 @@ flowchart TB
         Evidence[Observation and evidence store]
         Models[Verified local model registry]
         Device[Device capability and thermal governor]
-        Overlay[Registered AR overlay renderer]
+        Overlay[Registered 2D and metric 3D AR renderer]
     end
 
     Board[Physical board and engineer]
@@ -65,6 +65,13 @@ flowchart TB
     Overlay --> Board
     Audio --> Board
 ```
+
+The 3D renderer consumes a digest-verified GLB whose metric origin and axes are
+bound to the same immutable assembly context used by tools and observations.
+The CAD/Gerber converter is replaceable tooling; it cannot be called from the
+shipping Android hot path. Camera calibration and a fresh board pose compose
+the asset into the camera frame. Invalid assets or registration loss suppress
+3D content instead of retaining the last transform.
 
 ## Deployable artifacts
 
