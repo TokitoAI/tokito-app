@@ -66,9 +66,9 @@ flowchart TB
     Audio --> Board
 ```
 
-## Planned deployable artifacts
+## Deployable artifacts
 
-The repository will eventually produce:
+The repository is organized to produce:
 
 1. a standalone camera-first Android AR application;
 2. an Android AAR exposing reusable Kotlin APIs and lifecycle integration;
@@ -79,8 +79,10 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-No artifact exists at bootstrap. File names and package coordinates become
-normative only through the runtime-foundation epic and an accepted ADR.
+The reusable lifecycle foundation currently lives in `android/runtime`; the
+registered presentation API lives in `android/ar-runtime`; and
+`android/ar-demo` is a standalone manual-registration conformance host. The
+demo is test tooling, not a substitute for automatic board discovery.
 
 ## Runtime layers
 
@@ -129,6 +131,13 @@ Renders board acquisition, tracking quality, component targets, regions,
 warnings, confidence, and step guidance over the live camera view. Rendering
 consumes the canonical coordinate-frame graph and never invents independent
 pixel transforms. Touch and speech are equal local interaction paths.
+
+The renderer consumes immutable, sequence-ordered scenes through a bounded
+single-slot mailbox. Every primitive carries a coordinate frame, transform
+revision, observation time, expiry, and uncertainty. Scene projection is
+suppressed when any required edge is missing, expired, non-invertible, or from
+a different revision. Lifecycle suspension invalidates both registration and
+pending scenes. See [AR_RUNTIME.md](AR_RUNTIME.md).
 
 ### 8. Evidence layer
 

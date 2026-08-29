@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "tokito-physical-runtime"
 include(":android:runtime")
+include(":android:ar-runtime")
+include(":android:ar-demo")
