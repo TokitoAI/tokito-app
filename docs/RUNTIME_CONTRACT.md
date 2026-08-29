@@ -1,0 +1,167 @@
+# Runtime contract
+
+This document defines the future external contract independently of programming
+language or serialization. Concrete Kotlin/Rust/Python types must be generated
+or tested against one canonical schema once implementation begins.
+
+## Capability handshake
+
+A client opens the runtime and receives:
+
+- runtime and contract versions;
+- device profile ID and Android/ABI details;
+- available camera, audio, accelerator, and sensor capabilities;
+- supported tool versions and package/task families;
+- active model bundle and preprocessing digests;
+- latency/thermal profile and current degradation state;
+- privacy/persistence capabilities.
+
+Unsupported tools are omitted. A registered tool may still return a typed
+runtime condition such as registration lost or permission denied.
+
+## Tool call envelope
+
+```json
+{
+  "schema_version": "1.0",
+  "tool_call_id": "uuid",
+  "session_id": "uuid",
+  "context_revision": "opaque-immutable-revision",
+  "tool": "inspect_component",
+  "tool_version": "1.0",
+  "deadline_monotonic_ms": 123456789,
+  "required_confidence": 0.995,
+  "arguments": {
+    "component_ref": "U7",
+    "expected_package": "LQFP48",
+    "checks": ["presence", "package", "orientation"]
+  }
+}
+```
+
+IDs and revision strings are examples of shape, not hardcoded values.
+
+## Observation envelope
+
+```json
+{
+  "schema_version": "1.0",
+  "observation_id": "uuid",
+  "tool_call_id": "uuid",
+  "session_id": "uuid",
+  "context_revision": "opaque-immutable-revision",
+  "kind": "component_inspection",
+  "source": "camera",
+  "captured_monotonic_ms": 123456000,
+  "confidence": 0.997,
+  "calibration": {
+    "method": "held-out-temperature-scaling",
+    "revision": "digest"
+  },
+  "coordinate_frame": {
+    "frame_id": "registered-board-plane",
+    "transform_revision": "digest",
+    "uncertainty": 0.003
+  },
+  "payload": {
+    "component_ref": "U7",
+    "present": true,
+    "package": "LQFP48",
+    "orientation_degrees": 90
+  },
+  "evidence": [
+    {
+      "kind": "roi_crop",
+      "digest": "sha256",
+      "retention": "session"
+    }
+  ],
+  "provenance": {
+    "runtime_revision": "git-or-release-revision",
+    "model_bundle_digest": "sha256",
+    "preprocessing_digest": "sha256",
+    "backend": "declared-runtime-backend",
+    "device_profile": "profile-id"
+  },
+  "warnings": []
+}
+```
+
+## Terminal outcomes
+
+Exactly one terminal outcome is emitted per accepted call:
+
+| Outcome | Meaning |
+|---|---|
+| `observation` | Completed with typed evidence |
+| `abstained` | Evidence insufficient for the requested threshold |
+| `cancelled` | Caller/session/lifecycle cancellation won the race |
+| `error` | Typed runtime or argument failure |
+
+Late backend callbacks after a terminal outcome are discarded and counted.
+
+## Baseline tools
+
+### `locate_component`
+
+Requires design registration. Returns registered physical geometry and preview
+guidance for a design reference. It must abstain if multiple candidates cannot
+be disambiguated at the requested threshold.
+
+### `inspect_component`
+
+Evaluates only requested checks for a bounded component ROI. Supported package
+families and orientation classes are capability data.
+
+### `read_led_state`
+
+Returns state (`on`, `off`, `blinking`, or abstained), observation window,
+brightness trace summary, and blink frequency/range when supported.
+
+### `request_measurement`
+
+Prompts the engineer, captures local speech, parses a typed value/unit/relation,
+and requires confirmation when ambiguous. It never invents a value.
+
+### `verify_assembly`
+
+Compares a declared bounded board region/list against expected BOM/design
+context. Initial versions report only supported presence/package/orientation
+checks, not universal manufacturing correctness.
+
+### `verify_change`
+
+Watches a bounded region until a declared predicate changes, remains stable for
+a duration, times out, or is cancelled. It does not run indefinitely.
+
+## Error codes
+
+Stable families:
+
+- `invalid_argument`
+- `unsupported_capability`
+- `permission_denied`
+- `session_state_invalid`
+- `lifecycle_unavailable`
+- `registration_lost`
+- `capture_quality_insufficient`
+- `deadline_exceeded`
+- `cancelled`
+- `thermal_limited`
+- `model_unavailable`
+- `model_integrity_failure`
+- `backend_failure`
+- `resource_exhausted`
+- `internal_invariant_violation`
+
+Every error includes retryability and safe recovery guidance. Internal paths,
+stack traces, raw transcripts, and model internals are not exposed by default.
+
+## Compatibility
+
+- Major schema/tool version changes are incompatible and rejected.
+- Minor versions are additive; unknown optional fields are preserved or ignored
+  according to generated conformance tests.
+- Capability discovery precedes tool use.
+- A context revision mismatch is a conflict, not an implicit upgrade.
+- Tool-call IDs make retries idempotent within the documented retention window.

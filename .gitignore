@@ -1,0 +1,41 @@
+# Build and language outputs
+target/
+build/
+dist/
+.gradle/
+.kotlin/
+__pycache__/
+*.py[cod]
+.venv/
+
+# IDE and operating system state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Device and evaluation artifacts
+*.apk
+*.aab
+*.aar
+*.tflite
+*.onnx
+*.pte
+*.pt
+*.safetensors
+*.bin
+captures/
+datasets/local/
+models/local/
+reports/generated/
+device-logs/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+local.properties
+*.keystore
+*.jks
+*.pem
+*.key
