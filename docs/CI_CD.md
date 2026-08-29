@@ -24,7 +24,11 @@ organization plan supports it for this private repository.
 ## Current CI checks
 
 The `CI` workflow runs on pull requests and pushes to `main` using the
-GitHub-hosted Ubuntu runner's system `python3`.
+organization-managed `playground-linux-x64` runner selected by the
+`self-hosted`, `Linux`, `X64`, `tokito-vps`, and `private-build` labels. The
+repository is explicitly authorized in the restricted Tokito VPS runner group;
+the job uses the runner's system `python3` and does not depend on GitHub-hosted
+runner billing capacity.
 
 - Validates every schema under `schemas/` as JSON.
 - Validates every example manifest under `examples/manifests/` against the
