@@ -24,6 +24,7 @@ from xlsx_bom_parser import (
     extract_bare_header_spec,
     extract_chip_package_code,
     extract_sot23_variant,
+    extract_tht_socket_spec,
     has_sod523_package,
     has_sot363_package,
     is_led_description,
@@ -111,6 +112,21 @@ def resolve_sot363_model(library_root: Path) -> tuple[str | None, str]:
     return str(path), "matched real installed KiCad official 3D model file"
 
 
+def resolve_tht_socket_model(rows: int, cols: int, pitch_mm: float, right_angle: bool, library_root: Path) -> tuple[str | None, str]:
+    """Only for a THT female socket connector (THT_SOCKET_PATTERN). This is
+    a generic family match on real pin-count and pitch from the BOM text
+    against KiCad's unshrouded PinSocket models -- a shrouded ("SHRD")
+    housing is approximated by the unshrouded generic body, and callers
+    must record that distinction."""
+    orientation = "Horizontal" if right_angle else "Vertical"
+    pitch_folder = f"Connector_PinSocket_{pitch_mm:.2f}mm.3dshapes"
+    filename = f"PinSocket_{rows}x{cols:02d}_P{pitch_mm:.2f}mm_{orientation}.step"
+    path = library_root / pitch_folder / filename
+    if not path.is_file():
+        return None, f"expected model file does not exist on disk: {path}"
+    return str(path), "matched real installed KiCad official 3D model file (generic pin-count/pitch socket family, unshrouded approximation of the BOM part)"
+
+
 def resolve_bare_header_model(rows: int, cols: int, pitch_mm: float, library_root: Path) -> tuple[str | None, str]:
     """Only for a plain THT pin header (BARE_HEADER_PATTERN already
     excludes shrouded/SMD connectors). This is a generic family match on
@@ -140,6 +156,7 @@ def resolve_all(
         is_sod523 = has_sod523_package(description) if description else False
         is_sot363 = has_sot363_package(description) if description else False
         bare_header_spec = extract_bare_header_spec(description) if description else None
+        tht_socket_spec = extract_tht_socket_spec(description) if description else None
 
         model_path = None
         status = "no_recognized_package_code"
@@ -180,6 +197,13 @@ def resolve_all(
             status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
             evidence = reason
             package_code = f"HDR-{rows}x{cols}-{pitch_mm}mm"
+            model_kind = "generic_family_approximate" if model_path else None
+        elif tht_socket_spec is not None:
+            rows, cols, pitch_mm, right_angle = tht_socket_spec
+            model_path, reason = resolve_tht_socket_model(rows, cols, pitch_mm, right_angle, library_root)
+            status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
+            evidence = reason
+            package_code = f"SKT-{rows}x{cols}-{pitch_mm}mm" + ("-RA" if right_angle else "")
             model_kind = "generic_family_approximate" if model_path else None
 
         results.append(

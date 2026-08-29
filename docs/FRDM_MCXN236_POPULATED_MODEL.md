@@ -27,11 +27,11 @@ attached via the same text-splice method, placement untouched. It is
 recorded in `manual_model_overrides.json` as
 `dimension_accurate_placeholder_not_true_package_shape`: the dimensions
 are real manufacturer data, the shape is deliberately a labeled box, not
-the true molded BGA. GLB grew from 634 nodes/317 meshes to
-**637 nodes/318 meshes**; the isometric re-render was visually inspected
-and shows the box correctly seated on U1's BGA land pattern at the
-board's center, consistent with the MCU's visible position in the real
-iQOO photos.
+the true molded BGA. After the third (socket) pass plus this override,
+the GLB is at **655 nodes / 327 meshes**; the isometric re-render was
+visually inspected and shows the MCU box correctly seated on U1's BGA
+land pattern at the board's center and the tall socket headers standing
+along both board edges, consistent with the real iQOO photos.
 
 Real vendor STEP files for `J10`/`J11` (GCT `USB4085-GF-A`) were located
 at SnapEDA, Ultra Librarian, and GCT's own site via web search, but
@@ -91,12 +91,13 @@ below for what the second pass added):
 
 | Status | Count | Meaning |
 |---|---|---|
-| `matched_official_kicad_model` | 316 | Real package code recognized in the BOM description and the exact KiCad library file exists on disk |
-| `no_recognized_package_code` | 70 | BOM description has no recognized standard package code |
+| `matched_official_kicad_model` | 325 | Real package code recognized in the BOM description and the exact KiCad library file exists on disk |
+| `no_recognized_package_code` | 61 | BOM description has no recognized standard package code |
 | `package_recognized_but_unresolved` | 5 | A package code was recognized (5 solder jumpers, `0402`) but they are correctly not real mountable parts per their own BOM description ("SOLDER BLOB JUMPER ... NO PART TO ORDER") |
 
-80.8% of the 391 real components got a real, verified, non-fabricated
-model.
+83.1% of the 391 real components got a real, verified, non-fabricated
+model from KiCad's library (325), plus the user-approved `U1` placeholder
+box (below) = 326/391 (83.4%) with 3D bodies.
 
 ### Second pass: LED/SOT-89/SOT-363/bare-header families
 
@@ -126,8 +127,37 @@ checked against a real installed file before being accepted:
   as unresolved rather than silently substituting the wrong-pin-count
   model.
 
-The remainder (75 components) are honestly reported as unresolved, not
-guessed -- see the tiered report below.
+### Third pass: THT socket connectors (the board's dominant visual feature)
+
+`"CON NxM SKT [SHRD] [RA] TH <pitch>MIL"` descriptions now resolve to
+KiCad's `Connector_PinSocket_*` family: real pin count and pitch from the
+BOM text, `RA` mapping to the `Horizontal` (right-angle) variant. This
+resolved 9 connectors -- `J1` (2x8), `J2` (2x10), `J3` (2x8), `J4` (2x6),
+`J5`/`J6` (1x8 mikroBUS), `J7` (2x6 right-angle Pmod), `J8` (2x14
+FlexIO/LCD), `J9` (2x16 SmartDMA/Camera) -- the tall black headers that
+dominate the real board photos. Each match was additionally validated
+against the component's **real measured pad extent** from the imported
+board: e.g. `J9`'s real pad span of 39.6mm matches a 16-position
+2.54mm-pitch row, `J2`'s 24.5mm matches 10 positions. All are recorded
+`model_kind: "generic_family_approximate"` -- KiCad's PinSocket bodies
+are unshrouded, so a `SHRD` (shrouded) housing is approximated by the
+unshrouded generic; pin count, pitch, and orientation are exact.
+
+Two more near-misses caught by real data in this pass, both left
+unresolved rather than substituted:
+
+- `U12` (Winbond `W25Q64JVSSIQ`, BOM says "SOIC8"): its real pad extent
+  on the board is **9.3mm wide** -- the wide 208-mil SOIC-8 body, not the
+  standard 3.9mm-body SOIC-8 that KiCad's library has. Attaching KiCad's
+  `SOIC-8_3.9x4.9mm` would visibly under-size the flash chip.
+- `D13` (tri-color RGB LED `MHPA2525RGBDT-S`): real footprint extent
+  2.76 x 1.96mm matches none of KiCad's PLCC4 LED models (closest is a
+  different manufacturer's 3.2 x 2.8mm part).
+
+The remainder (66 components: 28 test points, 12 ICs, 5 solder jumpers,
+4 mounting holes, 4 diodes/LED, 3 switches, 3 crystals, 4 audio/USB
+connectors, 2 transistors, 1 inductor) are honestly reported as
+unresolved, not guessed -- see the tiered report below.
 
 ## Attaching models: text-splice, not pcbnew scripting
 
@@ -168,8 +198,9 @@ python tools/attach_3d_models_text.py \
   pre-existing zero-sized-pad warnings as the original import, no new
   errors), across both resolution passes.
 - GLB grew from 2 nodes / 1 mesh (board-only) -> 592 nodes / 296 meshes
-  (first pass, 295 models) -> **634 nodes / 317 meshes** (second pass,
-  316 models) -- file size 877KB -> 1.84MB -> 2.29MB.
+  (first pass, 295 models) -> 634 nodes / 317 meshes (second pass, 316
+  models) -> **655 nodes / 327 meshes** (third pass: 325 library models +
+  the `U1` placeholder box).
 - Visually rendered (`kicad-cli pcb render`, both top orthographic and
   isometric views) after each pass and actually inspected: correctly
   shaped, properly seated resistor/capacitor/SOT-23 bodies, plus (second

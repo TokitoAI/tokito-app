@@ -179,6 +179,26 @@ def extract_bare_header_spec(description: str) -> tuple[int, int, float] | None:
     return (rows, cols, pitch_mm)
 
 
+THT_SOCKET_PATTERN = re.compile(r"\bCON\s+(\d+)X(\d+)\s+SKT\s+(?:SHRD\s+)?(RA\s+)?TH\s+(\d+)MIL\b", re.IGNORECASE)
+
+
+def extract_tht_socket_spec(description: str) -> tuple[int, int, float, bool] | None:
+    """Extracts (rows, cols, pitch_mm, right_angle) for a through-hole
+    female socket connector ("CON NxM SKT [SHRD] [RA] TH <pitch>MIL ...").
+    Only matches when the pitch is a recognized MIL value. The SHRD
+    (shrouded) marker is accepted but not represented in the returned
+    spec -- callers matching against unshrouded generic socket models
+    must record that approximation explicitly."""
+    match = THT_SOCKET_PATTERN.search(description)
+    if not match:
+        return None
+    rows, cols = int(match.group(1)), int(match.group(2))
+    pitch_mm = MIL_TO_MM.get(match.group(4))
+    if pitch_mm is None:
+        return None
+    return (rows, cols, pitch_mm, match.group(3) is not None)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Parse an xlsx BOM export into per-reference-designator records.")
     parser.add_argument("--input", required=True, type=Path)

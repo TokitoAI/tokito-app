@@ -14,11 +14,13 @@ from component_model_resolver import (
     resolve_led_chip_model,
     resolve_sot23_model,
     resolve_sot363_model,
+    resolve_tht_socket_model,
 )
 from xlsx_bom_parser import (
     extract_bare_header_spec,
     extract_chip_package_code,
     extract_sot23_variant,
+    extract_tht_socket_spec,
     has_sod523_package,
     has_sot363_package,
     is_led_description,
@@ -90,6 +92,60 @@ class ExtractBareHeaderSpecTest(unittest.TestCase):
 
     def test_multi_pin_header_without_recognized_pitch_returns_none(self) -> None:
         self.assertIsNone(extract_bare_header_spec("HDR 2X5 TH -- 167H AU 91L"))
+
+
+class ExtractThtSocketSpecTest(unittest.TestCase):
+    def test_extracts_shrouded_vertical_socket(self) -> None:
+        self.assertEqual(
+            extract_tht_socket_spec("CON 2X8 SKT SHRD TH 100MIL CTR 345H AU 126L"),
+            (2, 8, 2.54, False),
+        )
+
+    def test_extracts_unshrouded_single_row_socket(self) -> None:
+        self.assertEqual(
+            extract_tht_socket_spec("CON 1X8 SKT TH 100MIL SP 344H AU 118L"),
+            (1, 8, 2.54, False),
+        )
+
+    def test_extracts_right_angle_socket(self) -> None:
+        self.assertEqual(
+            extract_tht_socket_spec("CON 2X6 SKT RA TH 100MIL CTR 206H AU 124L"),
+            (2, 6, 2.54, True),
+        )
+
+    def test_usb_connector_does_not_match(self) -> None:
+        self.assertIsNone(extract_tht_socket_spec("CON 2X8 USB2.0_TYPE_C RCPT 0.85MM 144H AU 63L"))
+
+    def test_audio_jack_does_not_match(self) -> None:
+        self.assertIsNone(extract_tht_socket_spec("CON 5 MONO AUDIO JACK 3.5MM SKT TH RA 256H AG 79L"))
+
+
+class ResolveThtSocketModelTest(unittest.TestCase):
+    def test_resolves_vertical_socket_when_file_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "Connector_PinSocket_2.54mm.3dshapes"
+            folder.mkdir()
+            (folder / "PinSocket_2x08_P2.54mm_Vertical.step").write_text("x", encoding="utf-8")
+            model_path, reason = resolve_tht_socket_model(2, 8, 2.54, False, library_root)
+            self.assertIsNotNone(model_path)
+            self.assertIn("unshrouded approximation", reason)
+
+    def test_right_angle_uses_horizontal_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "Connector_PinSocket_2.54mm.3dshapes"
+            folder.mkdir()
+            (folder / "PinSocket_2x06_P2.54mm_Horizontal.step").write_text("x", encoding="utf-8")
+            model_path, _ = resolve_tht_socket_model(2, 6, 2.54, True, library_root)
+            self.assertIsNotNone(model_path)
+            self.assertTrue(model_path.endswith("PinSocket_2x06_P2.54mm_Horizontal.step"))
+
+    def test_missing_file_reported_not_fabricated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_path, reason = resolve_tht_socket_model(2, 16, 2.54, False, Path(directory))
+            self.assertIsNone(model_path)
+            self.assertIn("does not exist", reason)
 
 
 class ResolveLedChipModelTest(unittest.TestCase):
