@@ -82,12 +82,13 @@ The repository will eventually produce:
 The repository now contains an initial Android application, `voice-runtime`,
 `measurement-runtime`, and `dialogue-runtime` implementing local STT/TTS,
 deterministic spoken measurement confirmation, and local text-LLM planning.
-Their package coordinates remain
+Registered presentation lives in `android/ar-runtime`, while `android/ar-demo`
+is its manual-registration conformance host. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
 ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
 app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.
-Vision, physical tool, and AR artifacts remain gated work rather than stubbed
-capabilities.
+Automatic vision and remaining physical-tool artifacts remain gated work
+rather than stubbed capabilities.
 
 ## Runtime layers
 

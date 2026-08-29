@@ -52,3 +52,8 @@ jobs:
             measurement-runtime/build/reports/lint-results-debug.html
             measurement-runtime/build/reports/tests/testDebugUnitTest/
             measurement-runtime/build/test-results/testDebugUnitTest/
+            android/runtime/build/reports/lint-results-debug.html
+            android/runtime/build/reports/tests/testDebugUnitTest/
+            android/ar-runtime/build/reports/lint-results-debug.html
+            android/ar-runtime/build/reports/tests/testDebugUnitTest/
+            android/ar-demo/build/outputs/apk/debug/ar-demo-debug.apk

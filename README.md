@@ -57,8 +57,10 @@ official pinned Qwen3-0.6B Q8_0 GGUF, with resumable verified provisioning,
 bounded local generation, exact typed outcomes, and deterministic tool-policy
 validation. The validation app executes its declared `request_measurement`
 capability through the deterministic session and responds through local TTS.
-Camera, perception, other physical tools, and AR guidance remain tracked work;
-their absence is not hidden behind placeholder capabilities.
+The reusable registered AR presentation module and its standalone
+manual-registration conformance app are also present; automatic camera
+tracking, perception, and other physical tools remain tracked work and are not
+advertised as implemented capabilities.
 
 The voice and dialogue candidates have passed JVM tests and Android arm64
 assembly. Target-device performance, schema reliability, and release-signing
@@ -79,6 +81,7 @@ tooling merged on the runtime-foundation path.
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
 - [Local dialogue runtime](docs/DIALOGUE_RUNTIME.md) - executable LLM and constrained planner slice
 - [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
+- [AR runtime](docs/AR_RUNTIME.md) - coordinate, scene, lifecycle, and conformance contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
