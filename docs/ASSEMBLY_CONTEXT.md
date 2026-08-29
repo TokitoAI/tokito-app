@@ -25,6 +25,33 @@ may provide package, polarity, pin, or licensing facts, but cannot supply or
 overwrite physical coordinates. Camera observations are separate runtime
 observations and cannot mutate imported authored truth.
 
+## Board reference manifests
+
+Reviewed guides and datasheets can describe a board before an authored
+assembly-context bundle is available. That identity and electrical evidence is
+stored in `reference/boards/*.board-reference.json` under
+`schemas/board.reference-manifest.schema.json`. It records named landmarks,
+connector pin tables, signal aliases, functions, and typed electrical roles
+such as ground, power rail, power input, reset, analog, bus, GPIO, and not
+connected.
+
+A `guide_target` is only a percentage point in a cited guide image. It answers
+"which depicted part does this callout name?" It is not a millimetre position,
+camera pose, component centroid, or AR anchor. The manifest therefore remains
+`placement_binding.status: unbound` until an authored-design source supplies a
+coordinate frame. Binding a printed guide or datasheet as authored placement
+is rejected by `tools/board_reference.py`.
+
+Every source carries its media digest, locator, review state, license state,
+and redistribution decision. Pending source media may support locally reviewed
+facts, but it is not redistributed by this repository. Validate the tracked
+FRDM reference with:
+
+```bash
+python tools/board_reference.py validate \
+  --manifest reference/boards/frdm-mcxn236.board-reference.json
+```
+
 ## Import checks
 
 Before activation, the runtime validates:
