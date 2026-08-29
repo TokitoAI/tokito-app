@@ -86,16 +86,10 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun initializeDialogue() {
         binding.initializeDialogueButton.isEnabled = false
-        binding.statusText.text = "Provisioning the pinned local Qwen3 model"
-        val provisioner = DialogueModelProvisioner(java.io.File(filesDir, "models/dialogue"))
+        binding.statusText.text = "Loading verified local dialogue model"
+        val provisioner = DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
         val model = withContext(Dispatchers.IO) {
-            provisioner.provision { progress ->
-                val percent = (progress.downloadedBytes * 100 / progress.totalBytes).toInt()
-                runOnUiThread {
-                    binding.progressBar.visibility = android.view.View.VISIBLE
-                    binding.progressBar.progress = percent
-                }
-            }
+            provisioner.requireInstalled()
         }
         dialogue.initialize(model)
         binding.progressBar.visibility = android.view.View.GONE
