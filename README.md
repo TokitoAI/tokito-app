@@ -60,6 +60,10 @@ The voice candidate has passed JVM tests and Android assembly. Target-device
 performance and release-signing remain acceptance gates and are not claimed as
 complete until measured on the exact iQOO device.
 
+The repository also contains the fail-closed native core, Android lifecycle and
+capability API, device-profile evidence, and executable corpus-governance
+tooling merged on the runtime-foundation path.
+
 ## Documentation
 
 - [Technical Bible](docs/TECHNICAL_BIBLE.md) - normative engineering contract
@@ -70,6 +74,7 @@ complete until measured on the exact iQOO device.
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
 - [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
+- [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
 - [Evidence manifests](docs/EVIDENCE_MANIFESTS.md) - machine-readable model, corpus, evaluation, security, and release records

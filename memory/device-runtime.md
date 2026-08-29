@@ -1,14 +1,29 @@
 # Device runtime facts
 
-The exact target iQOO model, SoC, Android build, accelerator/operator support,
-and camera profile have not yet been recorded from connected hardware.
+The declared target was captured from connected hardware on 2026-08-29. Its
+observed brand/model is iQOO I2501 (product I2501i), with QTI SM8850, Android
+16 / SDK 36, `arm64-v8a`, and 15,594,224 KiB total memory. The Android camera
+service reports five service-visible devices, two normal devices, and two
+API1-visible devices; audio policy reports six inputs and four outputs.
 
-**Why:** A brand name is insufficient for backend selection; iQOO devices span
-different Qualcomm/MediaTek SoCs and Android builds.
+The sanitized profile and raw-probe digests are recorded in
+[`docs/DEVICE_PROFILE_I2501.md`](../docs/DEVICE_PROFILE_I2501.md). Raw ADB
+output and the device selector remain local.
 
-**How to apply:** the first implementation task captures the physical device
-profile and benchmarks candidate native backends. Do not hardcode vendor/NPU
-assumptions before that evidence exists.
+The NNAPI shell probe is unavailable on this build. This does not prove that
+NNAPI or a vendor accelerator is absent. Operator support, native backend
+choice, thread policy, latency, memory, fallback, and thermal behavior remain
+unmeasured until issue #9's conformance benchmark.
+
+The runtime selection mechanism is deliberately fail-closed: it accepts only a
+caller-ordered backend candidate whose recorded conformance, lifecycle, and
+thermal evidence digests match the active device-profile and ABI and report no
+silent fallback. This mechanism does not constitute measured evidence or select
+a backend for the captured device.
+
+**How to apply:** use the versioned profile capture procedure for each firmware
+revision. Do not hardcode device, vendor/NPU, camera, ABI, or backend
+assumptions into the runtime; unsupported paths must fail closed.
 
 Python is approved for training, export, evaluation, and reference conformance,
 not the shipping Android camera/audio hot path (ADR 0003).
