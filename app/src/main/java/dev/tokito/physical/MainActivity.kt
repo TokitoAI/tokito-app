@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         voice = TokitoVoiceRuntime(
             this,
-            VoiceRuntimeConfig(allowModelDownload = true),
+            VoiceRuntimeConfig(),
         )
         measurementSession = MeasurementVoiceSession(voice)
         bindActions()
@@ -93,7 +93,6 @@ class MainActivity : AppCompatActivity() {
     private fun renderState(state: VoiceRuntimeState) {
         binding.statusText.text = when (state) {
             VoiceRuntimeState.Uninitialized -> "Not initialized"
-            is VoiceRuntimeState.Provisioning -> "Provisioning ${state.artifact}"
             is VoiceRuntimeState.Ready -> "Ready · ${state.capabilities.joinToString()}"
             VoiceRuntimeState.Listening -> "Listening locally"
             is VoiceRuntimeState.Speaking -> "Speaking · tap Interrupt or speak to barge in"
@@ -106,10 +105,7 @@ class MainActivity : AppCompatActivity() {
         binding.stopButton.isEnabled = state == VoiceRuntimeState.Listening
         binding.speakButton.isEnabled = ready
         binding.interruptButton.isEnabled = state is VoiceRuntimeState.Speaking
-        binding.progressBar.visibility = if (state is VoiceRuntimeState.Provisioning) android.view.View.VISIBLE else android.view.View.GONE
-        if (state is VoiceRuntimeState.Provisioning) {
-            binding.progressBar.progress = (state.fraction * 100).toInt().coerceIn(0, 100)
-        }
+        binding.progressBar.visibility = android.view.View.GONE
     }
 
     private fun renderEvent(event: VoiceEvent) {

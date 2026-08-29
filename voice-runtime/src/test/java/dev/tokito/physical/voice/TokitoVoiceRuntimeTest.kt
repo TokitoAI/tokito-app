@@ -115,10 +115,7 @@ class TokitoVoiceRuntimeTest {
                 ),
             ),
             backendFactory = object : VoiceBackendFactory {
-                override suspend fun prepare(
-                    allowDownload: Boolean,
-                    onProgress: (Float, String) -> Unit,
-                ) = PreparedBackend(recognizer, synthesizer, "fixture")
+                override suspend fun prepare() = PreparedBackend(recognizer, synthesizer, "fixture")
             },
             audioInput = audio,
             focusGate = FakeFocus(),

@@ -1,8 +1,6 @@
 package dev.tokito.physical.voice.internal
 
-import ai.moonshine.voice.AssetDownloader
 import ai.moonshine.voice.JNI
-import ai.moonshine.voice.ModelSpec
 import ai.moonshine.voice.TextToSpeech
 import ai.moonshine.voice.Transcriber
 import ai.moonshine.voice.TranscriberOption
@@ -27,29 +25,9 @@ internal class MoonshineBackendFactory(
     private val inventory = ModelInventory(modelRoot, MOONSHINE_VERSION)
 
     override suspend fun prepare(
-        allowDownload: Boolean,
-        onProgress: (Float, String) -> Unit,
     ): PreparedBackend = withContext(Dispatchers.IO) {
-        var verification = inventory.verify()
-        if (!verification.valid) {
-            check(allowDownload) { "voice models unavailable: ${verification.reason}" }
-            inventory.clear()
-            val downloader = AssetDownloader()
-            downloader.ensureModelPresent(
-                sttRoot,
-                ModelSpec.stt(config.language, JNI.MOONSHINE_MODEL_ARCH_TINY_STREAMING, true),
-            ) { path, index, count, downloaded, total ->
-                onProgress(progress(index, count, downloaded, total) * 0.5f, "stt/$path")
-            }
-            downloader.ensureModelPresent(
-                ttsRoot,
-                ModelSpec.tts(config.ttsLanguage, config.ttsVoice),
-            ) { path, index, count, downloaded, total ->
-                onProgress(0.5f + progress(index, count, downloaded, total) * 0.5f, "tts/$path")
-            }
-            verification = inventory.record()
-            check(verification.valid) { "provisioned models failed verification: ${verification.reason}" }
-        }
+        val verification = inventory.verify()
+        check(verification.valid) { "verified voice model bundle is unavailable: ${verification.reason}" }
 
         val recognizer = MoonshineRecognizer(sttRoot, config.partialUpdateIntervalSeconds)
         val synthesizer = MoonshineSynthesizer(appContext, ttsRoot, config)
@@ -62,12 +40,6 @@ internal class MoonshineBackendFactory(
             throw error
         }
         PreparedBackend(recognizer, synthesizer, verification.digest)
-    }
-
-    private fun progress(index: Int, count: Int, downloaded: Long, total: Long): Float {
-        if (count <= 0) return 0f
-        val current = if (total > 0) downloaded.toFloat() / total.toFloat() else 0f
-        return ((index - 1).coerceAtLeast(0) + current.coerceIn(0f, 1f)) / count
     }
 
     companion object {

@@ -35,10 +35,7 @@ internal interface AudioFocusGate {
 }
 
 internal interface VoiceBackendFactory {
-    suspend fun prepare(
-        allowDownload: Boolean,
-        onProgress: (Float, String) -> Unit,
-    ): PreparedBackend
+    suspend fun prepare(): PreparedBackend
 }
 
 internal data class PreparedBackend(

@@ -8,7 +8,6 @@ data class VoiceRuntimeConfig(
     val language: String = "en",
     val ttsLanguage: String = "en_us",
     val ttsVoice: String = "piper_en_US-amy-low",
-    val allowModelDownload: Boolean = false,
     val partialUpdateIntervalSeconds: Double = 0.25,
     val bargeIn: BargeInConfig = BargeInConfig(),
 )
@@ -30,7 +29,6 @@ enum class VoiceCapability {
 
 sealed interface VoiceRuntimeState {
     data object Uninitialized : VoiceRuntimeState
-    data class Provisioning(val fraction: Float, val artifact: String) : VoiceRuntimeState
     data class Ready(val capabilities: Set<VoiceCapability>) : VoiceRuntimeState
     data object Listening : VoiceRuntimeState
     data class Speaking(val utteranceId: String) : VoiceRuntimeState
@@ -65,7 +63,6 @@ data class VoiceFailure(
 )
 
 sealed interface VoiceEvent {
-    data class ModelProgress(val fraction: Float, val artifact: String) : VoiceEvent
     data class Transcript(val segment: TranscriptSegment) : VoiceEvent
     data class SpeechStarted(val utteranceId: String, val text: String) : VoiceEvent
     data class SpeechFinished(val utteranceId: String, val interrupted: Boolean) : VoiceEvent

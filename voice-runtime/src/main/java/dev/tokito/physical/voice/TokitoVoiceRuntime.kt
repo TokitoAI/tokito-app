@@ -66,10 +66,7 @@ class TokitoVoiceRuntime internal constructor(
         }
         check(mode == Mode.UNINITIALIZED) { "voice runtime is already initialized" }
         try {
-            val prepared = backendFactory.prepare(config.allowModelDownload) { fraction, artifact ->
-                _state.value = VoiceRuntimeState.Provisioning(fraction, artifact)
-                _events.tryEmit(VoiceEvent.ModelProgress(fraction, artifact))
-            }
+            val prepared = backendFactory.prepare()
             prepared.recognizer.setListener(recognizerListener)
             backend = prepared
             mode = Mode.READY
