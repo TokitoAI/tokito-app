@@ -16,6 +16,7 @@ The documentation is split by authority and purpose:
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
 | [DEVICE_PROFILE_CAPTURE.md](DEVICE_PROFILE_CAPTURE.md) | Reproducible, privacy-safe Android target-device evidence capture |
 | [DEVICE_PROFILE_I2501.md](DEVICE_PROFILE_I2501.md) | Sanitized evidence for the declared target device profile |
+| [NATIVE_CORE.md](NATIVE_CORE.md) | Native fail-closed lifecycle, registration, scheduling, and thermal core |
 | [decisions/](decisions/) | Architecture Decision Records |
 | [proposals/](proposals/) | Source proposals; informative, not normative |
 
