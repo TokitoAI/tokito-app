@@ -1,5 +1,17 @@
 # FRDM-MCXN236 semantic board map
 
+**Superseded by `reference/boards/frdm-mcxn236.board-reference.json`.** A
+teammate merged a schema-validated (`schemas/board.reference-manifest.schema.json`),
+provenance-bound board-reference manifest covering 22 landmarks and all 152
+J1-J9 connector pins with typed electrical roles, built and validated with
+`tools/board_reference.py`. It enforces the identical identity-vs-coordinate
+boundary this file was hand-maintaining (`placement_binding.status: "unbound"`
+-- guide evidence explicitly cannot claim a coordinate frame). That manifest
+is now the authoritative semantic reference; this file is kept only for the
+narrower cross-checks (BOM manufacturer/part-number matches, direct photo
+confirmation) that manifest does not cover, and should not be treated as
+competing with it.
+
 This maps NXP's official Quick Start Guide (`MCXN236QSG.pdf`, in
 `datasets/local/frdm-mcxn236/intake/nxp/`, not committed) region labels to
 real reference designators, cross-checked against `SCH-90828_C.BOM.xlsx` and,

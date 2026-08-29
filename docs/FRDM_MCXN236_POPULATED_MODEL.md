@@ -1,5 +1,20 @@
 # FRDM-MCXN236 populated 3D model (partial)
 
+## Stopping point: 3D asset work is complete at its current scope
+
+316/391 (80.8%) resolved. Re-checked all 29 Tier 1 items (the MCU, other
+major ICs, and connectors) once more against KiCad's installed library:
+every one requires a vendor-specific BGA/QFN/WLCSP/CSP/DFN/HVSON/LGA IC
+package, a vendor-specific connector housing (USB-C receptacle, shrouded
+box header, audio jack), or (`SW1`-`SW3`) a real Wurth Elektronik part with
+no Wurth entries in KiCad's switch library -- none of these newly resolve
+without real vendor CAD sourced per-part. **No further automated time will
+be spent on 3D model coverage without new tooling or vendor files supplied
+by the user.** The current populated GLB is the final output of this
+pipeline; further progress on the physical-vision product happens in
+`tools/component_locator.py` and the real-image localization work, not
+here.
+
 This documents an addition on top of the board-substrate-only 3D pipeline
 already described in `docs/FRDM_CAPTURE_INTAKE.md`. It attaches real,
 disk-verified KiCad 3D models to real footprints, resolved from real BOM
