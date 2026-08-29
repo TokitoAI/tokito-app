@@ -13,7 +13,8 @@ on a board name or assume a particular CAD or datasheet provider.
 ## Canonical content
 
 Each bundle supplies a versioned schema, board identity and revision, outline,
-coordinate-frame identifier, units, handedness, component placements,
+coordinate-frame identifier, millimetre units, declared left- or right-handed
+coordinates, component placements,
 landmarks, source evidence, licensing, and integrity metadata. A component
 placement includes its reference designator, footprint, centroid, rotation,
 side, optional polarity or pin-one rule, alternates, and the source identifier
@@ -37,6 +38,17 @@ Before activation, the runtime validates:
 - a canonical SHA-256 payload digest plus a verifier supplied by the platform
   integration; and
 - the configured local storage quota.
+
+The JSON format uses normalized rotations in the half-open range `[0, 360)`
+and the canonical `top` / `bottom` side values. Every top-level collection is
+required even when empty. Unknown fields are accepted for compatible minor
+schema revisions, but remain covered by integrity verification.
+
+`integrity.payload_sha256` is the digest of the deterministic compact JSON
+encoding of all top-level fields except `integrity`, with object keys sorted
+lexicographically. The platform verifier checks that same byte sequence using
+`integrity.signature_id`. This excludes the self-referential integrity object
+without leaving compatible unknown fields unsigned.
 
 Activation is atomic: a candidate is fully validated and integrity-checked
 before it replaces the active context. A failed import preserves the previous

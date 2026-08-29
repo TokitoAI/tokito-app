@@ -1125,11 +1125,11 @@ pub struct AssemblyContext {
 impl AssemblyContext {
     pub fn validate(&self, supported_major: u16) -> Result<(), RuntimeError> {
         if self.schema_version.major != supported_major
-            || self.board.board_id.trim().is_empty()
-            || self.board.revision.trim().is_empty()
-            || self.board.coordinate_frame_id.trim().is_empty()
-            || self.board.units.trim().is_empty()
-            || self.board.handedness.trim().is_empty()
+            || !is_canonical_text(&self.board.board_id)
+            || !is_canonical_text(&self.board.revision)
+            || !is_canonical_text(&self.board.coordinate_frame_id)
+            || self.board.units != "mm"
+            || !matches!(self.board.handedness.as_str(), "left" | "right")
             || self.board.outline.len() < 3
             || self
                 .board
@@ -1137,7 +1137,7 @@ impl AssemblyContext {
                 .iter()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite())
             || outline_is_degenerate(&self.board.outline)
-            || self.integrity.signature_id.trim().is_empty()
+            || !is_canonical_text(&self.integrity.signature_id)
             || !is_canonical_sha256(&self.integrity.payload_sha256)
         {
             return Err(RuntimeError::InvalidConfiguration);
@@ -1145,8 +1145,8 @@ impl AssemblyContext {
 
         let mut source_ids = HashMap::new();
         for source in &self.sources {
-            if source.source_id.trim().is_empty()
-                || source.license.trim().is_empty()
+            if !is_canonical_text(&source.source_id)
+                || !is_canonical_text(&source.license)
                 || !is_canonical_sha256(&source.digest)
             {
                 return Err(RuntimeError::InvalidConfiguration);
@@ -1159,16 +1159,36 @@ impl AssemblyContext {
             }
         }
 
+        if !source_ids
+            .values()
+            .any(|role| *role == EvidenceRole::AuthoredPlacement)
+        {
+            return Err(RuntimeError::ConflictingDesignTruth);
+        }
+
         let mut references = HashSet::new();
         for component in &self.components {
-            if component.reference_designator.trim().is_empty()
-                || component.footprint.trim().is_empty()
-                || component.side.trim().is_empty()
+            if !is_canonical_text(&component.reference_designator)
+                || !is_canonical_text(&component.footprint)
+                || !matches!(component.side.as_str(), "top" | "bottom")
                 || !component.centroid.x.is_finite()
                 || !component.centroid.y.is_finite()
                 || !component.rotation_degrees.is_finite()
-                || !references.insert(component.reference_designator.as_str())
+                || !(0.0..360.0).contains(&component.rotation_degrees)
+                || component
+                    .polarity_or_pin_one
+                    .as_ref()
+                    .is_some_and(|value| !is_canonical_text(value))
+                || component
+                    .alternates
+                    .iter()
+                    .any(|value| !is_canonical_text(value))
+                || component.alternates.len()
+                    != component.alternates.iter().collect::<HashSet<_>>().len()
             {
+                return Err(RuntimeError::InvalidConfiguration);
+            }
+            if !references.insert(component.reference_designator.to_ascii_uppercase()) {
                 return Err(RuntimeError::DuplicateReference);
             }
             if source_ids.get(component.placement_source_id.as_str())
@@ -1180,7 +1200,7 @@ impl AssemblyContext {
 
         let mut landmark_ids = HashSet::new();
         for landmark in &self.landmarks {
-            if landmark.landmark_id.trim().is_empty()
+            if !is_canonical_text(&landmark.landmark_id)
                 || !landmark.position.x.is_finite()
                 || !landmark.position.y.is_finite()
                 || !landmark_ids.insert(landmark.landmark_id.as_str())
@@ -1234,6 +1254,36 @@ impl AssemblyContextStore {
     pub fn active(&self) -> Option<&AssemblyContext> {
         self.active.as_ref()
     }
+
+    /// Parses, validates, verifies, and atomically activates one JSON bundle.
+    /// The signed payload is the deterministic JSON encoding of every
+    /// top-level field except `integrity`; the raw JSON byte length is charged
+    /// to quota. Unknown compatible fields remain covered by the digest and
+    /// signature even when this runtime does not interpret them.
+    pub fn import_json_atomically(
+        &mut self,
+        json: &[u8],
+        supported_major: u16,
+        verifier: &impl SignatureVerifier,
+        quota: &mut StorageQuota,
+    ) -> Result<(), RuntimeError> {
+        let candidate_bytes =
+            u64::try_from(json.len()).map_err(|_| RuntimeError::ResourceExhausted)?;
+        let maximum_replacement_bytes = self
+            .active_bytes
+            .checked_add(quota.remaining_bytes())
+            .ok_or(RuntimeError::ResourceExhausted)?;
+        if candidate_bytes > maximum_replacement_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let (candidate, signed_payload) = parse_assembly_context_json(json)?;
+        candidate.validate(supported_major)?;
+        candidate.verify_integrity(&signed_payload, verifier)?;
+        quota.replace(self.active_bytes, candidate_bytes)?;
+        self.active = Some(candidate);
+        self.active_bytes = candidate_bytes;
+        Ok(())
+    }
 }
 
 /// Generic, declared-format import for an assembly-context bundle. This is
@@ -1250,9 +1300,23 @@ impl AssemblyContextStore {
 /// into the canonical type, deterministically rejecting malformed JSON and
 /// missing required fields as it does.
 pub fn import_assembly_context_from_json(json: &[u8]) -> Result<AssemblyContext, RuntimeError> {
+    parse_assembly_context_json(json).map(|(context, _)| context)
+}
+
+fn parse_assembly_context_json(json: &[u8]) -> Result<(AssemblyContext, Vec<u8>), RuntimeError> {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(json).map_err(|_| RuntimeError::InvalidConfiguration)?;
+    let signed_document = document
+        .as_object_mut()
+        .ok_or(RuntimeError::InvalidConfiguration)?;
+    if signed_document.remove("integrity").is_none() {
+        return Err(RuntimeError::InvalidConfiguration);
+    }
+    let signed_payload =
+        serde_json::to_vec(&document).map_err(|_| RuntimeError::InvalidConfiguration)?;
     let parsed: json_import::AssemblyContext =
         serde_json::from_slice(json).map_err(|_| RuntimeError::InvalidConfiguration)?;
-    Ok(parsed.into())
+    Ok((parsed.into(), signed_payload))
 }
 
 /// Declared-format DTOs kept separate from the canonical types above: the
@@ -1330,11 +1394,8 @@ mod json_import {
     pub struct AssemblyContext {
         schema_version: SchemaVersion,
         board: BoardIdentity,
-        #[serde(default)]
         components: Vec<ComponentPlacement>,
-        #[serde(default)]
         landmarks: Vec<Landmark>,
-        #[serde(default)]
         sources: Vec<SourceEvidence>,
         integrity: BundleIntegrity,
     }
@@ -1575,6 +1636,12 @@ fn is_canonical_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn is_canonical_text(value: &str) -> bool {
+    !value.is_empty()
+        && value.trim() == value
+        && value.chars().all(|character| !character.is_control())
+}
+
 fn outline_is_degenerate(outline: &[Point]) -> bool {
     let mut twice_signed_area = 0.0;
     for (point, next) in outline
@@ -1714,6 +1781,16 @@ mod tests {
         }
     }
 
+    fn signed_fixture_json(source: &str) -> Vec<u8> {
+        let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+        let mut signed_document = document.clone();
+        signed_document.as_object_mut().unwrap().remove("integrity");
+        let signed_payload = serde_json::to_vec(&signed_document).unwrap();
+        document["integrity"]["payload_sha256"] =
+            serde_json::Value::String(format!("sha256:{:x}", Sha256::digest(&signed_payload)));
+        serde_json::to_vec(&document).unwrap()
+    }
+
     fn assembly_context(payload: &[u8]) -> AssemblyContext {
         AssemblyContext {
             schema_version: SchemaVersion { major: 1, minor: 0 },
@@ -1721,8 +1798,8 @@ mod tests {
                 board_id: "board".into(),
                 revision: "revision".into(),
                 coordinate_frame_id: "board-plane".into(),
-                units: "declared-units".into(),
-                handedness: "declared-handedness".into(),
+                units: "mm".into(),
+                handedness: "right".into(),
                 outline: vec![
                     Point { x: 0.0, y: 0.0 },
                     Point { x: 1.0, y: 0.0 },
@@ -1734,7 +1811,7 @@ mod tests {
                 footprint: "footprint".into(),
                 centroid: Point { x: 0.5, y: 0.5 },
                 rotation_degrees: 0.0,
-                side: "declared-side".into(),
+                side: "top".into(),
                 polarity_or_pin_one: None,
                 alternates: Vec::new(),
                 placement_source_id: "placement".into(),
@@ -2881,5 +2958,125 @@ mod tests {
         let context = import_assembly_context_from_json(json.as_bytes()).unwrap();
         assert_eq!(context.schema_version.minor, 1);
         assert_eq!(context.validate(1), Ok(()));
+    }
+
+    #[test]
+    fn importer_requires_all_canonical_collections() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        for required in ["components", "landmarks", "sources"] {
+            let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+            document.as_object_mut().unwrap().remove(required);
+            let json = serde_json::to_vec(&document).unwrap();
+            assert_eq!(
+                import_assembly_context_from_json(&json).err(),
+                Some(RuntimeError::InvalidConfiguration),
+                "missing {required} must fail instead of becoming an empty collection"
+            );
+        }
+    }
+
+    #[test]
+    fn assembly_context_rejects_undeclared_coordinate_conventions() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        for (field, invalid) in [("units", "inches"), ("handedness", "not_yet_verified")] {
+            let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+            document["board"][field] = serde_json::Value::String(invalid.into());
+            let context =
+                import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+            assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+        }
+    }
+
+    #[test]
+    fn assembly_context_rejects_non_normalized_rotation_and_side() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+        document["components"][0]["rotation_degrees"] = serde_json::json!(360.0);
+        let context =
+            import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+
+        document["components"][0]["rotation_degrees"] = serde_json::json!(0.0);
+        document["components"][0]["side"] = serde_json::json!("front");
+        let context =
+            import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+    }
+
+    #[test]
+    fn reference_designators_are_unique_without_case_aliases() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+        let mut duplicate = document["components"][0].clone();
+        duplicate["reference_designator"] = serde_json::json!("r1");
+        document["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        let context =
+            import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::DuplicateReference));
+    }
+
+    #[test]
+    fn assembly_context_rejects_whitespace_and_control_character_aliases() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        let mut document: serde_json::Value = serde_json::from_str(source).unwrap();
+        document["components"][0]["reference_designator"] = serde_json::json!(" R1 ");
+        let context =
+            import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+
+        document["components"][0]["reference_designator"] = serde_json::json!("R1");
+        document["sources"][0]["source_id"] = serde_json::json!("cad\u{0000}export");
+        let context =
+            import_assembly_context_from_json(&serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
+    }
+
+    #[test]
+    fn json_import_verifies_before_atomic_activation() {
+        let source = include_str!("../../../contracts/fixtures/assembly-context/valid.json");
+        let accepted = signed_fixture_json(source);
+        let mut store = AssemblyContextStore::default();
+        let mut quota = StorageQuota::new((accepted.len() * 2) as u64).unwrap();
+        assert_eq!(
+            store.import_json_atomically(&accepted, 1, &AcceptingVerifier, &mut quota),
+            Ok(())
+        );
+        let active = store.active().unwrap().clone();
+        assert_eq!(active.board.revision, "rev-a");
+        assert_eq!(
+            quota.remaining_bytes(),
+            (accepted.len() * 2 - accepted.len()) as u64
+        );
+
+        let mut rejected: serde_json::Value = serde_json::from_slice(&accepted).unwrap();
+        rejected["board"]["revision"] = serde_json::json!("rev-b");
+        rejected["integrity"]["signature_id"] = serde_json::json!("untrusted-signature");
+        let rejected = signed_fixture_json(&serde_json::to_string(&rejected).unwrap());
+        assert_eq!(
+            store.import_json_atomically(&rejected, 1, &AcceptingVerifier, &mut quota),
+            Err(RuntimeError::IntegrityFailure)
+        );
+        assert_eq!(store.active(), Some(&active));
+    }
+
+    #[test]
+    fn json_import_rejects_over_quota_input_before_parsing() {
+        let mut store = AssemblyContextStore::default();
+        let mut quota = StorageQuota::new(32).unwrap();
+        let oversized_malformed_input = vec![b' '; 33];
+        assert_eq!(
+            store.import_json_atomically(
+                &oversized_malformed_input,
+                1,
+                &AcceptingVerifier,
+                &mut quota,
+            ),
+            Err(RuntimeError::ResourceExhausted)
+        );
+        assert_eq!(store.active(), None);
+        assert_eq!(quota.remaining_bytes(), 32);
     }
 }

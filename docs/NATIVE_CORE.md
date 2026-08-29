@@ -14,7 +14,8 @@ The core owns only deterministic mechanisms required by the delivery gates:
   snapshots, idempotent retry handling, and exactly-one terminal outcomes;
 - bounded deterministic observation serialization with explicit timestamps,
   design binding, retention, registration, evidence, and provenance;
-- immutable assembly-context validation, digest verification, and atomic quota-bound activation;
+- immutable assembly-context JSON parsing, canonical signed-payload verification,
+  and atomic quota-bound activation;
 - model-manifest admission with digest, signature, ABI, runtime-revision, and quota checks;
 - evidence-gated backend selection that rejects missing lifecycle, thermal, conformance, profile/ABI, or fallback evidence;
 - caller-configured registration confidence and homography validation;
