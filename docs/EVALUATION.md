@@ -64,6 +64,25 @@ Every corpus item records:
 - false wake and missed wake rates;
 - clean, recorded bench noise, live bench noise, accent, and distance slices;
 - TTS first-audio latency and barge-in response.
+- English-only model footprint, cold/warm start, real-time factor, and sustained
+  performance relative to declared alternatives.
+
+### Local text and visual reasoning
+
+- constrained tool-selection exact match and invalid-tool rate;
+- argument-schema validity before repair and after deterministic validation;
+- first-token latency, tokens per second, context/RSS growth, and cancellation;
+- hallucinated observation rate, unsupported-claim rate, and abstention;
+- VLM task accuracy on bounded ROI slices versus specialized models;
+- recovery when the LLM or VLM is thermally unavailable or memory-rejected.
+
+### AR presentation
+
+- board acquisition success and time to stable track;
+- motion-to-overlay latency and registered overlay alignment error;
+- track loss, reacquisition, and incorrect-board-lock rates;
+- touch-target and spoken-guidance task completion on phone and tablet layouts;
+- frame pacing and thermal behavior with overlays, speech, and local LLM active.
 
 ## Device benchmark matrix
 
@@ -88,16 +107,19 @@ device before backend selection.
 
 At minimum:
 
-1. offline board registration and requested component location;
-2. component presence/package/orientation inspection;
-3. static and blinking LED observation;
-4. spoken voltage/resistance measurement with unit parsing and confirmation;
-5. TTS guidance interrupted by engineer speech;
-6. camera permission loss and recovery;
-7. app background/resume with registration revalidation;
-8. thermal degradation during a 20-minute mixed camera/voice scenario;
-9. corrupt model bundle rejection and verified rollback;
-10. low-confidence identity abstention rather than a wrong reference.
+1. fresh standalone launch with all networking blocked and no Tokito account;
+2. automatic board discovery, registration, and requested component location;
+3. local LLM conversation that selects a valid physical tool;
+4. bounded local VLM inspection with typed validation and evidence;
+5. component presence/package/orientation inspection;
+6. static and blinking LED observation;
+7. spoken voltage/resistance measurement with unit parsing and confirmation;
+8. TTS guidance interrupted by engineer speech;
+9. camera permission loss and recovery;
+10. app background/resume with registration revalidation;
+11. thermal degradation during a 20-minute mixed AR/LLM/voice scenario;
+12. corrupt model bundle rejection and verified rollback;
+13. low-confidence identity abstention rather than a wrong reference.
 
 ## Report format
 

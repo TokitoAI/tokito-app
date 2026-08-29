@@ -14,8 +14,9 @@ make task accuracy difficult to calibrate.
 Run only lightweight tracking, registration, and change detection continuously.
 Heavy visual or language inference executes only for an explicit bounded event,
 ROI, deadline, and task. Use specialized models and deterministic processing
-where they are sufficient; an optional local VLM is a bounded fallback, not the
-system architecture.
+where they are sufficient. The required local VLM is reserved for bounded
+semantic tasks and fallback candidates; it is not the continuous camera
+architecture and cannot directly publish a physical observation.
 
 ## Consequences
 

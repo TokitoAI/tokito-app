@@ -18,12 +18,17 @@ to finish each implementation stage; they are not a separate roadmap.
 - Android API lifecycle, cancellation, deadline, error, and capability contract.
 - Backend/operator conformance spike with measured choice.
 - Empty capability means unavailable, not stubbed success.
+- Standalone application shell starts with networking disabled and reports
+  locally installed model/capability state honestly.
 
 ## Gate 2 - Continuous camera and registration
 
-- Camera lifecycle and 30 fps bounded tracking pipeline.
+- Camera lifecycle, automatic PCB/work-area discovery, and 30 fps bounded
+  tracking pipeline.
 - Coordinate frame/transform contract implemented and golden-tested.
 - Registration loss/recovery and lifecycle revalidation.
+- AR overlays remain aligned through supported motion, rotation, and lifecycle
+  changes.
 - Device latency, dropped-frame, memory, and 20-minute thermal evidence.
 
 ## Gate 3 - Event-driven vision
@@ -39,6 +44,8 @@ to finish each implementation stage; they are not a separate roadmap.
 - Deterministic numeric/unit parsing with ambiguity confirmation.
 - Clean and bench-noise evaluation slices meeting quality/latency gates.
 - Raw audio remains ephemeral by default.
+- English STT and TTS complete the scenario with networking blocked at the OS
+  and test-network layers.
 
 ## Gate 5 - Physical tool runtime
 
@@ -46,12 +53,16 @@ to finish each implementation stage; they are not a separate roadmap.
 - Idempotency, ordering, cancellation, deadline, and late-result tests.
 - Structured observations with evidence/provenance.
 - End-to-end offline scenarios and failure injection.
+- Local text LLM tool planning and bounded local VLM candidates cannot bypass
+  deterministic validation, confidence, or evidence policy.
 
 ## Gate 6 - Consumer integration readiness
 
-- Stable Android artifact and generated/verified consumer bindings.
+- Standalone camera-first Android AR application passes the offline product
+  scenario without Tokito, Cloud, or Companion.
+- Stable reusable Android artifact and generated/verified consumer bindings.
 - Contract conformance suite usable without Companion source changes.
-- Standalone sample/harness proves lifecycle and performance.
+- Standalone product and conformance harness prove lifecycle and performance.
 - Cross-repository Companion integration is a separately approved issue/PR.
 
 ## Gate 7 - Release readiness

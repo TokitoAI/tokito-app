@@ -5,7 +5,8 @@
 The phone is the default boundary for camera frames, microphone audio, derived
 features, model execution, and session evidence. A reasoning client receives
 typed observations and explicitly selected evidence, not a continuous media
-stream.
+stream. The baseline reasoning client is the local standalone application;
+text LLM, VLM, speech, and vision execution remain inside this boundary.
 
 Inputs are untrusted:
 
@@ -56,8 +57,10 @@ bombs.
 Tool calls are descriptive and observational. The baseline runtime does not
 energize boards or control instruments. Measurement guidance identifies points
 only when registration confidence satisfies the accepted threshold; otherwise
-it abstains. Electrical interpretation belongs to the reasoning client and must
-retain the observation provenance.
+it abstains. Electrical interpretation belongs to the local dialogue/tool
+system or an optional client and must retain the observation provenance.
+Generative output cannot authorize a tool, normalize a measurement, or
+override a safety rule.
 
 ## Native boundary
 
@@ -80,7 +83,8 @@ the active model manifest or return partial success.
 
 ## Future network boundary
 
-This repository does not define a public HTTP service. Any future network or
-cloud inference mode needs an ADR, authenticated/encrypted transport, explicit
-consent, retention policy, abuse controls, and an updated threat model before
-implementation.
+This repository does not define a public HTTP service. Baseline functionality
+must not attempt remote fallback when networking is unavailable. Any future
+network integration or cloud inference mode needs an ADR,
+authenticated/encrypted transport, explicit consent, retention policy, abuse
+controls, and an updated threat model before implementation.

@@ -1,49 +1,53 @@
 # Tokito Physical Runtime
 
-On-device physical intelligence for electronics engineering: camera perception,
-speech, structured observations, and bench tools that let Tokito compare a
-digital design with the board on an engineer's desk.
+An offline, on-device AR assistant for electronics engineering. It detects and
+tracks a board through the phone camera, reasons locally, speaks and listens
+locally, overlays guidance, and produces structured bench observations. Tokito
+integration is optional; the application must remain useful without Tokito,
+Cloud, or Companion.
 
 This repository is deliberately separate from
 [`tokito-companion`](https://github.com/TokitoAI/tokito-companion). Companion is
-the mobile review application. This project is a reusable device runtime that a
-future Companion integration can consume through a stable Android interface.
-No Companion application changes are part of this repository's bootstrap.
+the mobile review application. This project owns its own standalone Android AR
+application and reusable runtime libraries. A future Companion integration may
+consume the stable Android interface, but Companion is not the host or a
+runtime dependency. No Companion changes are part of this phase.
 
 ## Product boundary
 
-The runtime owns:
+The product owns:
 
 - lightweight continuous camera tracking and board registration;
 - event-driven region-of-interest capture and specialized visual inference;
-- wake word, on-device speech-to-text, measurement parsing, and text-to-speech;
+- an entirely local text LLM and bounded local vision-language inference;
+- wake word, English speech-to-text, measurement parsing, and English
+  text-to-speech, all on-device;
+- a standalone camera-first AR interface with registered overlays and local
+  conversational state;
 - typed physical observations with confidence, provenance, and evidence;
 - bench tools such as component location, inspection, LED-state reading,
   measurement requests, assembly verification, and change verification;
 - model packaging, hardware capability detection, thermal scheduling, and
   reproducible on-device evaluation.
 
-It does not own Tokito's design reasoning, schematic editing, cloud services,
-or mobile UI.
+It does not require Tokito's design reasoning or any cloud service. It does not
+edit schematics or turn Companion into a CAD application.
 
 ```mermaid
 flowchart LR
-    Design[Tokito design context] --> Calls[Typed physical tool calls]
-    Calls --> Runtime[Tokito Physical Runtime]
-    Camera[Camera] --> Runtime
-    Voice[Wake word / STT] --> Runtime
-    Runtime --> Obs[Structured observations]
-    Obs --> Agent[Tokito reasoning]
-    Runtime --> Guidance[TTS / visual guidance]
-    Guidance --> Bench[Engineer and physical board]
-    Bench --> Camera
-    Bench --> Voice
+    Bench[Engineer and physical board] --> Sensors[Camera and microphone]
+    Sensors --> App[Standalone Android AR app]
+    App --> LocalAI[Local LLM, VLM, vision, STT and TTS]
+    LocalAI --> Tools[Typed physical tools]
+    Tools --> Overlay[AR overlay and spoken guidance]
+    Overlay --> Bench
+    Tokito[Optional Tokito design context] -.-> App
 ```
 
 ## Current status
 
 Documentation and architecture baseline only. There is intentionally no model,
-runtime, Android library, Python package, or placeholder implementation yet.
+runtime, Android app/library, Python package, or placeholder implementation yet.
 Implementation begins from tracked issues on the
 [Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
 
@@ -63,9 +67,11 @@ Implementation begins from tracked issues on the
 
 Python is reserved for dataset preparation, training, export, evaluation, and a
 reference harness. The shipping phone hot path will be an Android-native
-library with Kotlin orchestration and benchmark-selected native inference
-backends. This avoids embedding a general Python interpreter in the camera and
-audio lifecycle without measured justification.
+application plus reusable libraries with Kotlin orchestration and
+benchmark-selected native inference backends. Model execution, dialogue,
+camera perception, speech, and AR guidance remain local after model
+installation. This avoids embedding a general Python interpreter in the camera
+and audio lifecycle without measured justification.
 
 ## License
 

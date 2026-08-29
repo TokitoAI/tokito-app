@@ -7,15 +7,15 @@ Inspect the Tokito project board before starting work:
 
 ## Product
 
-Tokito Physical Runtime is the on-device perception and speech layer for
-electronics bench work. It turns camera/audio/sensor input into typed,
-evidence-carrying observations and executes bounded physical tool requests.
-Tokito reasoning remains outside this runtime.
+Tokito Physical Runtime is a standalone, offline-first Android AR assistant for
+electronics bench work. It owns local perception, local text reasoning, local
+speech, AR guidance, typed observations, and bounded physical tools. It must
+complete its baseline workflows without Tokito, Cloud, or Companion.
 
 The project is separate from `tokito-companion`. Do not modify Companion while
 working here unless a separately approved cross-repository issue explicitly
 requires it. A future integration consumes a versioned Android interface; it
-does not merge the runtime into the app source tree.
+does not host the standalone product or merge runtime internals into Companion.
 
 ## Authority order
 
@@ -48,6 +48,7 @@ repository and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
 - **No continuous whole-frame VLM.** Continuous work is lightweight;
   heavyweight inference is explicit, event-driven, bounded, and cancellable.
 - **On-device by default.** Raw camera frames and audio do not leave the phone.
+  Core inference, reasoning, speech, and AR operation also remain on-device.
   Any future off-device mode requires a new ADR and explicit user consent.
 - **Abstain over guessing.** Identity-sensitive output must carry confidence and
   evidence; below threshold, return a typed abstention.
@@ -58,7 +59,10 @@ repository and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
 - **Python is tooling, not the shipping hot path.** Training/export/evaluation
   may use Python. Android production code uses a stable native interface unless
   an ADR backed by device measurements changes the decision.
-- **No Companion drift.** This runtime cannot add CAD editing or broaden
+- **Standalone means standalone.** Tokito design context may improve identity
+  mapping, but absence of Tokito cannot disable generic board discovery,
+  inspection, local conversation, or AR guidance.
+- **No Companion drift.** This product cannot add CAD editing or broaden
   Companion's read/review product boundary.
 - **No hardcoded device assumptions.** Hardware features are discovered through
   a capability profile and unsupported paths fail closed.

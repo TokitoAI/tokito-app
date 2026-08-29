@@ -2,22 +2,24 @@
 
 **Status:** Normative architecture and quality contract.
 
-**Scope:** On-device vision, speech, observations, and physical bench tools.
+**Scope:** Standalone on-device AR, local reasoning, vision, speech,
+observations, and physical bench tools.
 
 **Out of scope:** Companion UI changes and product implementation at bootstrap.
 
 ## 1. Mission
 
-The runtime closes the gap between Tokito's expected digital world and the
-physical circuit on the bench. It does not reason about the whole design. It
-executes bounded perception and interaction tasks and returns structured,
-traceable observations to a reasoning client.
+The product is a complete offline physical assistant on the iQOO phone. An
+engineer places a PCB in the camera workspace; the application discovers and
+tracks it, reasons locally, converses locally, executes bounded perception and
+interaction tools, and renders registered AR guidance. Tokito design context
+may enrich the session but cannot be required for baseline operation.
 
 The governing equation is:
 
 ```text
-design context + explicit tool request + bounded sensor evidence
-    -> typed observation or typed abstention
+optional design context + local dialogue/tool request + bounded sensor evidence
+    -> typed observation or typed abstention + local AR/spoken guidance
 ```
 
 Natural-language confidence is never a substitute for a typed result.
@@ -40,15 +42,23 @@ Natural-language confidence is never a substitute for a typed result.
    manifest or return a typed unsupported error.
 10. A release is defined by measured evidence on a declared physical device,
     not by a successful desktop simulation or demo.
+11. Baseline operation requires no network, Tokito installation, Companion,
+    cloud inference, cloud speech, or remote reasoning service.
+12. Local generative-model output cannot bypass typed tools, deterministic
+    measurement parsing, confidence gates, or evidence requirements.
 
 ## 3. Runtime boundary
 
-The runtime accepts session context and physical tool calls. It emits structured
-observations, progress, and guidance events. The reasoning client decides why a
-tool should run and how its result affects a diagnostic hypothesis.
+The standalone application owns a local dialogue and planning loop, AR
+presentation, session context, and physical tool calls. It emits structured
+observations, progress, and guidance events. The local text LLM may select and
+sequence declared tools; deterministic policy validates every invocation and
+result. An optional external client may supply design context but does not own
+the baseline reasoning loop.
 
 The runtime must not:
 
+- require an external reasoning client for baseline use;
 - infer or mutate schematic intent;
 - send unbounded media through Companion or Cloud;
 - silently fall back to a different model/backend;
@@ -56,6 +66,11 @@ The runtime must not:
 - return component identity without board-registration evidence or a declared
   generic-class result;
 - expose implementation exceptions across the public API.
+
+The standalone AR shell presents the live camera preview, board acquisition
+state, registered overlays, tool progress, confidence or abstention, local
+chat, and speech state. Overlays use the same versioned coordinate transforms
+as observations; presentation code cannot maintain a second geometry truth.
 
 ## 4. Session model
 
@@ -68,6 +83,7 @@ A physical session binds:
 - camera calibration and current board registration;
 - active model bundle manifest;
 - bounded observation history and privacy policy.
+- local dialogue history bounded by the active memory budget.
 
 State transitions:
 
@@ -152,8 +168,9 @@ manifest; "all components" is not a valid capability.
 The voice path is wake-word activated and local:
 
 ```text
-audio -> VAD/wake word -> streaming STT -> deterministic intent/measurement parser
-      -> typed voice observation
+audio -> VAD/wake word -> streaming STT -> local dialogue orchestrator
+      -> response / typed tool proposal / deterministic measurement parser
+      -> typed voice observation when a measurement is confirmed
 ```
 
 TTS is generated locally, interruptible, and independent from STT. Barge-in
@@ -172,8 +189,9 @@ A measurement parser must preserve:
 
 It must reject or request confirmation for missing units, ambiguous decimal
 separators, range statements, contradictory tokens, unsupported units, and
-implausible overflow. An LLM/SLM may propose intent candidates, but final numeric
-normalization is deterministic and testable.
+implausible overflow. The local text LLM may propose intent and tool candidates,
+but final numeric normalization and tool authorization are deterministic and
+testable. Network-backed speech or language inference is not a baseline mode.
 
 ## 9. Physical tools
 
@@ -218,10 +236,13 @@ feature/transform metadata, or transcript segment according to privacy policy.
 
 ## 11. Model and backend policy
 
-The system is a composed pipeline, not one general model. Classical CV and
-small learned tracking may own continuous work. Specialized detectors,
-classifiers, OCR/marking recognition, and an optional local VLM handle explicit
-events. Voice uses separate wake-word, STT, parser, and TTS components.
+The system is a composed, entirely local pipeline, not one general model.
+Classical CV and small learned tracking may own continuous work. Specialized
+detectors, classifiers, OCR/marking recognition, and a bounded local VLM handle
+visual events. A local text LLM owns conversational interpretation and tool
+planning behind deterministic policy. Voice uses separate wake-word, English
+STT, parser, and English TTS components. All required weights and tokenizers are
+available on-device after installation or explicit model provisioning.
 
 Backend selection is evidence-driven. Candidate Android paths may include
 vendor NPU, NNAPI, GPU, or CPU runtimes, but no backend is promised until the
@@ -257,8 +278,11 @@ an ADR with recorded device evidence.
 | Wake to partial STT | p95 <= 500 ms |
 | End of speech to final STT | p95 <= 1.2 s |
 | TTS time to first audio | p95 <= 400 ms |
-| Runtime peak RSS | <= 1.5 GiB during baseline session |
-| Model bundle | <= 2.0 GiB installed baseline bundle |
+| Local LLM first token | p95 <= 800 ms for baseline prompt/tool schema |
+| Local LLM generation | sustained >= 8 tokens/s for baseline profile |
+| AR overlay | p95 motion-to-overlay update <= 100 ms while tracking is valid |
+| Runtime peak RSS | <= 3.0 GiB during baseline mixed AR/voice/LLM session |
+| Model bundle | <= 3.0 GiB installed baseline bundle |
 | Sustained operation | 20-minute scenario completes without crash or severe sustained throttling |
 | Offline operation | Baseline session succeeds with network disabled |
 
@@ -325,7 +349,7 @@ A release requires:
    offline reports;
 5. camera/audio privacy review;
 6. failure-injection and model rollback evidence;
-7. end-to-end baseline bench scenarios;
+7. end-to-end standalone AR bench scenarios with all networking disabled;
 8. updated capability and support matrix;
 9. no critical/high unresolved release-blocking issue.
 

@@ -4,44 +4,58 @@
 
 ```mermaid
 flowchart TB
-    subgraph Clients[Reasoning clients - outside this repository]
+    subgraph Optional[Optional external context - never required]
         Desktop[Tokito Desktop]
+        Design[Imported design package]
         FutureCompanion[Future Companion integration]
     end
 
-    subgraph Runtime[Tokito Physical Runtime - this repository]
-        API[Versioned Android API and capability manifest]
-        Session[Session coordinator]
-        Camera[Camera tracking and registration]
+    subgraph Product[Standalone iQOO Android product - this repository]
+        App[Camera-first AR application]
+        API[Versioned local API and capability manifest]
+        Session[Session and dialogue coordinator]
+        LLM[Local text LLM and constrained tool planner]
+        Camera[Board discovery, tracking, and registration]
         ROI[Event-driven ROI scheduler]
-        Vision[Specialized vision backends]
-        Audio[Wake word / STT / parser / TTS]
-        Tools[Physical tool executor]
+        Vision[Local detector, classifiers, OCR, and bounded VLM]
+        Audio[Local wake word, English STT, parser, and English TTS]
+        Tools[Deterministic physical tool executor]
         Evidence[Observation and evidence store]
-        Models[Verified model registry]
+        Models[Verified local model registry]
         Device[Device capability and thermal governor]
+        Overlay[Registered AR overlay renderer]
     end
 
     Board[Physical board and engineer]
 
-    Desktop -->|design context and tool calls| API
+    Desktop -.->|optional context| API
+    Design -.->|optional local import| API
     FutureCompanion -.->|future in-process consumer| API
+    App --> Session
     API --> Session
-    Session --> Tools
+    Session --> LLM
+    LLM -->|schema-constrained proposal| Tools
+    Session -->|policy validation| Tools
     Tools --> ROI
     ROI --> Vision
     Camera --> ROI
-    Audio --> Tools
+    Camera --> Overlay
+    Audio --> Session
     Models --> Vision
     Models --> Audio
+    Models --> LLM
     Device --> Camera
     Device --> ROI
     Device --> Vision
+    Device --> LLM
     Vision --> Evidence
     Audio --> Evidence
-    Evidence --> API
+    Evidence --> Session
+    Session --> Overlay
+    Session --> Audio
     Board --> Camera
     Board --> Audio
+    Overlay --> Board
     Audio --> Board
 ```
 
@@ -49,12 +63,14 @@ flowchart TB
 
 The repository will eventually produce:
 
-1. an Android AAR exposing a Kotlin API and lifecycle integration;
-2. native runtime libraries selected by ABI and inference backend;
-3. signed, digest-addressed model bundles with provenance manifests;
-4. a Python development package for training, export, evaluation, and reference
+1. a standalone camera-first Android AR application;
+2. an Android AAR exposing reusable Kotlin APIs and lifecycle integration;
+3. native runtime libraries selected by ABI and inference backend;
+4. signed, digest-addressed model bundles for text LLM, visual models, English
+   speech, and supporting models, with provenance manifests;
+5. a Python development package for training, export, evaluation, and reference
    conformance only;
-5. reproducible benchmark reports and a machine-readable capability manifest.
+6. reproducible benchmark reports and a machine-readable capability manifest.
 
 No artifact exists at bootstrap. File names and package coordinates become
 normative only through the runtime-foundation epic and an accepted ADR.
@@ -70,8 +86,9 @@ profile and reports degraded modes explicitly.
 ### 2. Continuous perception layer
 
 Owns CameraX lifecycle, exposure/focus stabilization, frame timestamps,
-lightweight feature tracking, board registration, change detection, and
-coordinate transforms. It cannot invoke a heavyweight model on every frame.
+automatic PCB/board discovery, lightweight feature tracking, board
+registration, change detection, and coordinate transforms. It cannot invoke a
+heavyweight model on every frame.
 
 ### 3. Event inference layer
 
@@ -81,17 +98,32 @@ evidence. Backpressure is latest-useful-work, not an unbounded frame queue.
 
 ### 4. Voice layer
 
-Runs wake-word detection, voice activity detection, streaming STT, deterministic
-measurement parsing, and interruptible TTS. Raw audio is ephemeral unless the
-user explicitly enables a diagnostic capture.
+Runs wake-word detection, voice activity detection, streaming English STT,
+deterministic measurement parsing, and interruptible English TTS. Raw audio is
+ephemeral unless the user explicitly enables a diagnostic capture.
 
-### 5. Physical tool layer
+### 5. Local dialogue and reasoning layer
+
+Runs a quantized local text LLM with bounded context and schema-constrained
+tool proposals. It combines local conversation, observation summaries, and
+optional imported design context. Deterministic policy, not the LLM, authorizes
+tools, validates units and arguments, enforces deadlines, and decides whether
+an observation is sufficient. The baseline path has no remote fallback.
+
+### 6. Physical tool layer
 
 Validates tool arguments against session context and declared capabilities,
 coordinates camera/audio operations, enforces deadlines, and returns exactly one
 terminal result: observation, abstention, cancellation, or typed error.
 
-### 6. Evidence layer
+### 7. AR presentation layer
+
+Renders board acquisition, tracking quality, component targets, regions,
+warnings, confidence, and step guidance over the live camera view. Rendering
+consumes the canonical coordinate-frame graph and never invents independent
+pixel transforms. Touch and speech are equal local interaction paths.
+
+### 8. Evidence layer
 
 Maintains bounded session state: observations, coordinate frames, model/runtime
 provenance, and user-confirmed measurements. It stores derived evidence by
@@ -107,6 +139,8 @@ default, not continuous raw media.
   backend unless profiling proves safe concurrency.
 - Audio capture and TTS are independently cancellable; TTS yields immediately
   to barge-in speech.
+- Text LLM generation is cancellable, memory-bounded, and serialized against
+  accelerator workloads according to the active device profile.
 - Tool requests carry deadlines and structured cancellation.
 - Observation delivery is ordered per session and idempotent by observation ID.
 
@@ -119,10 +153,13 @@ revision, timestamp, and uncertainty. A box without a frame ID is invalid.
 
 ## Integration policy
 
-The first integration surface is in-process Android API, not a local HTTP server
-and not Python IPC. Desktop or cloud transport is owned elsewhere. A future
-Companion change consumes this API only after the contract and runtime pass the
-standalone hardware gates.
+The primary integration surface is the standalone Android application using
+the runtime in-process. It requires neither a local HTTP server nor Python IPC.
+An imported Tokito design package or future authenticated transport may add
+design context, but loss or absence of that integration cannot disable generic
+board discovery, local conversation, inspection, or AR guidance. A future
+Companion change consumes the reusable API only after the standalone product
+passes its hardware gates.
 
 See [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) for the external contract and
 [decisions/](decisions/) for rationale.
