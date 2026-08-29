@@ -4,6 +4,10 @@ This document defines the future external contract independently of programming
 language or serialization. Concrete Kotlin/Rust/Python types must be generated
 or tested against one canonical schema once implementation begins.
 
+The canonical schema and neutral conformance fixtures are in
+[`contracts/`](../contracts/). They describe structure only; they do not enable
+an operation or select a model, backend, device profile, or resource limit.
+
 ## Capability handshake
 
 A client opens the runtime and receives:

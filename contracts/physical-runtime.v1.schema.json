@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/contracts/physical-runtime.v1.schema.json",
+  "title": "Tokito Physical Runtime contract v1",
+  "type": "object",
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "version", "model_available", "resource_limits"],
+      "properties": {
+        "operation": { "$ref": "#/$defs/nonEmpty" },
+        "version": { "$ref": "#/$defs/nonEmpty" },
+        "model_available": { "type": "boolean" },
+        "resource_limits": {
+          "type": "object",
+          "additionalProperties": { "type": ["integer", "number", "string", "boolean"] }
+        }
+      }
+    },
+    "capabilityHandshake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "device_profile", "capabilities"],
+      "properties": {
+        "contract_version": { "$ref": "#/$defs/nonEmpty" },
+        "device_profile": { "$ref": "#/$defs/nonEmpty" },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" }
+        }
+      }
+    },
+    "toolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "tool_call_id", "session_id", "context_revision", "tool", "deadline_monotonic_ms"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/nonEmpty" },
+        "tool_call_id": { "$ref": "#/$defs/nonEmpty" },
+        "session_id": { "$ref": "#/$defs/nonEmpty" },
+        "context_revision": { "$ref": "#/$defs/nonEmpty" },
+        "tool": { "$ref": "#/$defs/nonEmpty" },
+        "deadline_monotonic_ms": { "type": "integer", "minimum": 0 },
+        "arguments": { "type": "object" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "digest", "retention"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/nonEmpty" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "retention": { "$ref": "#/$defs/nonEmpty" },
+        "redacted": { "type": "boolean" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime_revision", "model_bundle_digest", "preprocessing_digest", "backend", "device_profile"],
+      "properties": {
+        "runtime_revision": { "$ref": "#/$defs/nonEmpty" },
+        "model_bundle_digest": { "$ref": "#/$defs/digest" },
+        "preprocessing_digest": { "$ref": "#/$defs/digest" },
+        "backend": { "$ref": "#/$defs/nonEmpty" },
+        "device_profile": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "observation_id", "tool_call_id", "session_id", "context_revision", "kind", "status", "evidence", "provenance"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/nonEmpty" },
+        "observation_id": { "$ref": "#/$defs/nonEmpty" },
+        "tool_call_id": { "$ref": "#/$defs/nonEmpty" },
+        "session_id": { "$ref": "#/$defs/nonEmpty" },
+        "context_revision": { "$ref": "#/$defs/nonEmpty" },
+        "kind": { "$ref": "#/$defs/nonEmpty" },
+        "status": { "enum": ["completed", "abstained", "redacted"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "terminalOutcome": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["outcome", "observation"], "properties": { "outcome": { "const": "observation" }, "observation": { "$ref": "#/$defs/observation" } } },
+        { "type": "object", "additionalProperties": false, "required": ["outcome", "reason", "recoverable"], "properties": { "outcome": { "const": "abstained" }, "reason": { "$ref": "#/$defs/nonEmpty" }, "recoverable": { "type": "boolean" } } },
+        { "type": "object", "additionalProperties": false, "required": ["outcome"], "properties": { "outcome": { "const": "cancelled" } } },
+        { "type": "object", "additionalProperties": false, "required": ["outcome", "error", "recoverable"], "properties": { "outcome": { "const": "error" }, "error": { "$ref": "#/$defs/nonEmpty" }, "recoverable": { "type": "boolean" } } }
+      ]
+    }
+  }
+}
