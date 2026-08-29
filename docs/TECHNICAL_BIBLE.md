@@ -1,7 +1,9 @@
 # Tokito Physical Runtime Technical Bible
 
-**Status:** Normative architecture and quality contract.  
-**Scope:** On-device vision, speech, observations, and physical bench tools.  
+**Status:** Normative architecture and quality contract.
+
+**Scope:** On-device vision, speech, observations, and physical bench tools.
+
 **Out of scope:** Companion UI changes and product implementation at bootstrap.
 
 ## 1. Mission
