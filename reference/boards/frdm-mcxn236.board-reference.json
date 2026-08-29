@@ -1,0 +1,2555 @@
+{
+  "board": {
+    "manufacturer": "NXP",
+    "model": "FRDM-MCXN236"
+  },
+  "connectors": [
+    {
+      "connector_id": "J3",
+      "display_name": "Arduino/FRDM/MC expansion header J3",
+      "evidence_refs": [
+        "guide-pinout-overview-01",
+        "guide-pinout-detail-05",
+        "guide-pinout-detail-06"
+      ],
+      "pin_count": 16,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 1,
+          "signal_name": "P4_13"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "not_connected",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 2,
+          "signal_name": "NC"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 3,
+          "signal_name": "P4_21"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 4,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 5,
+          "signal_name": "P3_17"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "reset",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 6,
+          "signal_name": "RESET"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 7,
+          "signal_name": "P3_16"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 8,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 9,
+          "signal_name": "P3_15"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 10,
+          "signal_name": "P5V0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 11,
+          "signal_name": "P3_14"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 12,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 13,
+          "signal_name": "P2_7"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 14,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 15,
+          "signal_name": "P3_12"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_input",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 16,
+          "signal_name": "VIN"
+        }
+      ]
+    },
+    {
+      "connector_id": "J4",
+      "display_name": "Arduino analog/DMIC expansion header J4",
+      "evidence_refs": [
+        "guide-pinout-overview-01",
+        "guide-pinout-detail-05",
+        "guide-pinout-detail-06"
+      ],
+      "pin_count": 12,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "DMIC"
+          ],
+          "number": 1,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [
+            "ARD_A0"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 2,
+          "signal_name": "P4_6"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "DMIC"
+          ],
+          "number": 3,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [
+            "ARD_A1"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 4,
+          "signal_name": "P4_15"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "DMIC"
+          ],
+          "number": 5,
+          "signal_name": "P0_18"
+        },
+        {
+          "aliases": [
+            "ARD_A2"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 6,
+          "signal_name": "P4_16"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "DMIC"
+          ],
+          "number": 7,
+          "signal_name": "P0_16"
+        },
+        {
+          "aliases": [
+            "ARD_A3"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 8,
+          "signal_name": "P4_17"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "DMIC"
+          ],
+          "number": 9,
+          "signal_name": "P0_17"
+        },
+        {
+          "aliases": [
+            "ARD_A4"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 10,
+          "signal_name": "P4_12"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "GPIO"
+          ],
+          "number": 11,
+          "signal_name": "P5_7"
+        },
+        {
+          "aliases": [
+            "ARD_A5"
+          ],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-detail-05"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 12,
+          "signal_name": "P4_13"
+        }
+      ]
+    },
+    {
+      "connector_id": "J2",
+      "display_name": "Arduino digital/MC expansion header J2",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 20,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 1,
+          "signal_name": "P0_29"
+        },
+        {
+          "aliases": [
+            "ARD_D8"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 2,
+          "signal_name": "P0_23"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 3,
+          "signal_name": "P0_28"
+        },
+        {
+          "aliases": [
+            "ARD_D9"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 4,
+          "signal_name": "P3_14"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 5,
+          "signal_name": "P0_27"
+        },
+        {
+          "aliases": [
+            "ARD_D10"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 6,
+          "signal_name": "P1_3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 7,
+          "signal_name": "P0_26"
+        },
+        {
+          "aliases": [
+            "ARD_D11"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 8,
+          "signal_name": "P1_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 9,
+          "signal_name": "P0_22"
+        },
+        {
+          "aliases": [
+            "ARD_D12"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 10,
+          "signal_name": "P1_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO"
+          ],
+          "number": 11,
+          "signal_name": "P0_25"
+        },
+        {
+          "aliases": [
+            "ARD_D13"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 12,
+          "signal_name": "P1_1"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "not_connected",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [],
+          "number": 13,
+          "signal_name": "NC"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 14,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "not_connected",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [],
+          "number": 15,
+          "signal_name": "NC"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 16,
+          "signal_name": "VDDA"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO"
+          ],
+          "number": 17,
+          "signal_name": "P0_24"
+        },
+        {
+          "aliases": [
+            "ARD_D18"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 18,
+          "signal_name": "P1_16"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "analog",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO"
+          ],
+          "number": 19,
+          "signal_name": "ANA_7"
+        },
+        {
+          "aliases": [
+            "ARD_D19"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 20,
+          "signal_name": "P1_17"
+        }
+      ]
+    },
+    {
+      "connector_id": "J1",
+      "display_name": "Arduino digital/SAI expansion header J1",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 16,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 1,
+          "signal_name": "P3_16"
+        },
+        {
+          "aliases": [
+            "ARD_D0"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 2,
+          "signal_name": "P4_3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MC"
+          ],
+          "number": 3,
+          "signal_name": "P2_0"
+        },
+        {
+          "aliases": [
+            "ARD_D1"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 4,
+          "signal_name": "P4_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 5,
+          "signal_name": "P2_8"
+        },
+        {
+          "aliases": [
+            "ARD_D2"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 6,
+          "signal_name": "P2_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 7,
+          "signal_name": "P3_6"
+        },
+        {
+          "aliases": [
+            "ARD_D3"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 8,
+          "signal_name": "P3_12"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 9,
+          "signal_name": "P3_18"
+        },
+        {
+          "aliases": [
+            "ARD_D4"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 10,
+          "signal_name": "P0_21"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 11,
+          "signal_name": "P3_17"
+        },
+        {
+          "aliases": [
+            "ARD_D5"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 12,
+          "signal_name": "P2_7"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 13,
+          "signal_name": "P1_7"
+        },
+        {
+          "aliases": [
+            "ARD_D6"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 14,
+          "signal_name": "P3_17"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SAI"
+          ],
+          "number": 15,
+          "signal_name": "P2_9"
+        },
+        {
+          "aliases": [
+            "ARD_D7"
+          ],
+          "electrical_role": "gpio",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "ARD"
+          ],
+          "number": 16,
+          "signal_name": "P0_22"
+        }
+      ]
+    },
+    {
+      "connector_id": "J7",
+      "display_name": "Pmod/SPI/I2C header J7",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 12,
+      "pins": [
+        {
+          "aliases": [
+            "SPI_CS"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "SPI"
+          ],
+          "number": 1,
+          "signal_name": "P1_17"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 2,
+          "signal_name": "P5_5"
+        },
+        {
+          "aliases": [
+            "SPI_SDO"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "SPI"
+          ],
+          "number": 3,
+          "signal_name": "P1_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 4,
+          "signal_name": "P5_4"
+        },
+        {
+          "aliases": [
+            "SPI_SDI"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "SPI"
+          ],
+          "number": 5,
+          "signal_name": "P1_2"
+        },
+        {
+          "aliases": [
+            "I2C_SCL"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "I2C"
+          ],
+          "number": 6,
+          "signal_name": "P4_1"
+        },
+        {
+          "aliases": [
+            "SPI_SCK"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "SPI"
+          ],
+          "number": 7,
+          "signal_name": "P1_1"
+        },
+        {
+          "aliases": [
+            "I2C_SDA"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD",
+            "I2C"
+          ],
+          "number": 8,
+          "signal_name": "P4_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 9,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 10,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 11,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "PMOD"
+          ],
+          "number": 12,
+          "signal_name": "P3V3"
+        }
+      ]
+    },
+    {
+      "connector_id": "J5",
+      "display_name": "mikroBUS header J5",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 8,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 1,
+          "signal_name": "P4_18"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 2,
+          "signal_name": "P5_6"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 3,
+          "signal_name": "P4_3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 4,
+          "signal_name": "P4_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 5,
+          "signal_name": "P4_1"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 6,
+          "signal_name": "P4_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 7,
+          "signal_name": "P5V0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 8,
+          "signal_name": "GND"
+        }
+      ]
+    },
+    {
+      "connector_id": "J6",
+      "display_name": "mikroBUS header J6",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 8,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 1,
+          "signal_name": "P5_3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 2,
+          "signal_name": "P5_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 3,
+          "signal_name": "P1_16"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 4,
+          "signal_name": "P1_1"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 5,
+          "signal_name": "P1_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 6,
+          "signal_name": "P1_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 7,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "MIKROBUS"
+          ],
+          "number": 8,
+          "signal_name": "GND"
+        }
+      ]
+    },
+    {
+      "connector_id": "J8",
+      "display_name": "FlexIO/LCD header J8",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 28,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 1,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 2,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [
+            "I2C_SCL"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "I2C"
+          ],
+          "number": 3,
+          "signal_name": "P4_1"
+        },
+        {
+          "aliases": [
+            "I2C_SDA"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "I2C"
+          ],
+          "number": 4,
+          "signal_name": "P4_0"
+        },
+        {
+          "aliases": [
+            "LCD_INT"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 5,
+          "signal_name": "P0_23"
+        },
+        {
+          "aliases": [
+            "LCD_BLK"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 6,
+          "signal_name": "P4_6"
+        },
+        {
+          "aliases": [
+            "LCD_RST"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 7,
+          "signal_name": "P4_7"
+        },
+        {
+          "aliases": [
+            "LCD_DC"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 8,
+          "signal_name": "P0_24"
+        },
+        {
+          "aliases": [
+            "LCD_CS"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 9,
+          "signal_name": "P4_14"
+        },
+        {
+          "aliases": [
+            "LCD_WR"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 10,
+          "signal_name": "P4_20"
+        },
+        {
+          "aliases": [
+            "LCD_RD"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 11,
+          "signal_name": "P4_19"
+        },
+        {
+          "aliases": [
+            "LCD_TE"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 12,
+          "signal_name": "P4_23"
+        },
+        {
+          "aliases": [
+            "LCD_D0"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 13,
+          "signal_name": "P0_20"
+        },
+        {
+          "aliases": [
+            "LCD_D1"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 14,
+          "signal_name": "P0_21"
+        },
+        {
+          "aliases": [
+            "LCD_D2"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 15,
+          "signal_name": "P0_14"
+        },
+        {
+          "aliases": [
+            "LCD_D3"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 16,
+          "signal_name": "P0_15"
+        },
+        {
+          "aliases": [
+            "LCD_D4"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 17,
+          "signal_name": "P3_0"
+        },
+        {
+          "aliases": [
+            "LCD_D5"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 18,
+          "signal_name": "P3_1"
+        },
+        {
+          "aliases": [
+            "LCD_D6"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 19,
+          "signal_name": "P3_2"
+        },
+        {
+          "aliases": [
+            "LCD_D7"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 20,
+          "signal_name": "P2_3"
+        },
+        {
+          "aliases": [
+            "LCD_D8"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 21,
+          "signal_name": "P2_4"
+        },
+        {
+          "aliases": [
+            "LCD_D9"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 22,
+          "signal_name": "P2_5"
+        },
+        {
+          "aliases": [
+            "LCD_D10"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 23,
+          "signal_name": "P2_6"
+        },
+        {
+          "aliases": [
+            "LCD_D11"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 24,
+          "signal_name": "P3_7"
+        },
+        {
+          "aliases": [
+            "LCD_D12"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 25,
+          "signal_name": "P3_8"
+        },
+        {
+          "aliases": [
+            "LCD_D13"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 26,
+          "signal_name": "P3_9"
+        },
+        {
+          "aliases": [
+            "LCD_D14"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 27,
+          "signal_name": "P3_10"
+        },
+        {
+          "aliases": [
+            "LCD_D15"
+          ],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "FLEXIO",
+            "LCD"
+          ],
+          "number": 28,
+          "signal_name": "P3_11"
+        }
+      ]
+    },
+    {
+      "connector_id": "J9",
+      "display_name": "SmartDMA/camera/GPIO header J9",
+      "evidence_refs": [
+        "guide-pinout-overview-01"
+      ],
+      "pin_count": 32,
+      "pins": [
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 1,
+          "signal_name": "P1_15"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 2,
+          "signal_name": "P1_14"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 3,
+          "signal_name": "P1_17"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 4,
+          "signal_name": "P1_16"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 5,
+          "signal_name": "P1_19"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 6,
+          "signal_name": "P1_18"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 7,
+          "signal_name": "P1_5"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 8,
+          "signal_name": "P1_4"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 9,
+          "signal_name": "P1_7"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 10,
+          "signal_name": "P1_6"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 11,
+          "signal_name": "P1_9"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 12,
+          "signal_name": "P1_8"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 13,
+          "signal_name": "P1_11"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 14,
+          "signal_name": "P1_10"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 15,
+          "signal_name": "P0_7"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 16,
+          "signal_name": "P2_2"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 17,
+          "signal_name": "P0_4"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 18,
+          "signal_name": "P0_5"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 19,
+          "signal_name": "P4_1"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 20,
+          "signal_name": "P4_0"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "power_rail",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 21,
+          "signal_name": "P3V3"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "ground",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "CAMERA",
+            "SMARTDMA"
+          ],
+          "number": 22,
+          "signal_name": "GND"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 23,
+          "signal_name": "P4_5"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 24,
+          "signal_name": "P2_10"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 25,
+          "signal_name": "P4_4"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 26,
+          "signal_name": "P2_11"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 27,
+          "signal_name": "P1_13"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 28,
+          "signal_name": "P1_12"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "not_connected",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SMARTDMA"
+          ],
+          "number": 29,
+          "signal_name": "NC"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 30,
+          "signal_name": "P2_1"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "not_connected",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "SMARTDMA"
+          ],
+          "number": 31,
+          "signal_name": "NC"
+        },
+        {
+          "aliases": [],
+          "electrical_role": "bus",
+          "evidence_refs": [
+            "guide-pinout-overview-01"
+          ],
+          "functions": [
+            "GPIO",
+            "SMARTDMA"
+          ],
+          "number": 32,
+          "signal_name": "P0_19"
+        }
+      ]
+    }
+  ],
+  "integrity": {
+    "manifest_digest": "sha256:da29eb48da0fdedb7a8054beb2ca18ae4c8a5c419c711cdc5e2ba72c2b0c29da"
+  },
+  "landmarks": [
+    {
+      "category": "port",
+      "display_name": "MCU USB",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 39.7,
+          "y_percent": 19.6
+        }
+      ],
+      "identifiers": {
+        "guide_label": "MCU USB"
+      },
+      "landmark_id": "mcu-usb"
+    },
+    {
+      "category": "port",
+      "display_name": "MCU-Link USB",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 52.7,
+          "y_percent": 19.6
+        }
+      ],
+      "identifiers": {
+        "guide_label": "MCU-Link USB"
+      },
+      "landmark_id": "mcu-link-usb"
+    },
+    {
+      "category": "header",
+      "display_name": "MCU SWD",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 30.3,
+          "y_percent": 25.7
+        }
+      ],
+      "identifiers": {
+        "guide_label": "MCU SWD"
+      },
+      "landmark_id": "mcu-swd"
+    },
+    {
+      "category": "switch",
+      "display_name": "SW1 Reset",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 61.8,
+          "y_percent": 25.7
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "SW1"
+      },
+      "landmark_id": "sw1-reset"
+    },
+    {
+      "category": "debugger",
+      "display_name": "MCU-Link Debugger",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 52.1,
+          "y_percent": 30.6
+        }
+      ],
+      "identifiers": {
+        "guide_label": "MCU-Link Debugger"
+      },
+      "landmark_id": "mcu-link-debugger"
+    },
+    {
+      "category": "header",
+      "display_name": "CAN Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 29.9,
+          "y_percent": 32.4
+        }
+      ],
+      "identifiers": {
+        "guide_label": "CAN Header"
+      },
+      "landmark_id": "can-header"
+    },
+    {
+      "category": "header",
+      "display_name": "J3 Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 27.7,
+          "y_percent": 41.7
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J3"
+      },
+      "landmark_id": "j3-header"
+    },
+    {
+      "category": "header",
+      "display_name": "J4 Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 27.7,
+          "y_percent": 53.9
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J4"
+      },
+      "landmark_id": "j4-header"
+    },
+    {
+      "category": "header",
+      "display_name": "J2 Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 62.8,
+          "y_percent": 39.2
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J2"
+      },
+      "landmark_id": "j2-header"
+    },
+    {
+      "category": "header",
+      "display_name": "J1 Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 62.8,
+          "y_percent": 52.7
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J1"
+      },
+      "landmark_id": "j1-header"
+    },
+    {
+      "category": "transceiver",
+      "display_name": "CAN Transceiver",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 37.4,
+          "y_percent": 58.8
+        }
+      ],
+      "identifiers": {
+        "guide_label": "CAN Transceiver"
+      },
+      "landmark_id": "can-transceiver"
+    },
+    {
+      "category": "processor",
+      "display_name": "MCXN236VDFT",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 47.2,
+          "y_percent": 56.4
+        }
+      ],
+      "identifiers": {
+        "part_number": "MCXN236VDFT"
+      },
+      "landmark_id": "mcxn236vdft"
+    },
+    {
+      "category": "header",
+      "display_name": "Pmod",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 30.3,
+          "y_percent": 67.4
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J7"
+      },
+      "landmark_id": "pmod-header"
+    },
+    {
+      "category": "header",
+      "display_name": "mikroBUS Headers",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 48.8,
+          "y_percent": 69.9
+        }
+      ],
+      "identifiers": {
+        "reference_designators": "J5,J6"
+      },
+      "landmark_id": "mikrobus-headers"
+    },
+    {
+      "category": "sensor",
+      "display_name": "DMIC Sensor",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 31.9,
+          "y_percent": 74.8
+        }
+      ],
+      "identifiers": {
+        "guide_label": "DMIC Sensor"
+      },
+      "landmark_id": "dmic-sensor"
+    },
+    {
+      "category": "sensor",
+      "display_name": "Accelerometer",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 51.4,
+          "y_percent": 73.5
+        }
+      ],
+      "identifiers": {
+        "guide_label": "Accelerometer"
+      },
+      "landmark_id": "accelerometer"
+    },
+    {
+      "category": "led",
+      "display_name": "RGB LED",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 32.6,
+          "y_percent": 78.9
+        }
+      ],
+      "identifiers": {
+        "guide_label": "RGB LED"
+      },
+      "landmark_id": "rgb-led"
+    },
+    {
+      "category": "header",
+      "display_name": "SmartDMA/Camera Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 61.8,
+          "y_percent": 74.8
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J9"
+      },
+      "landmark_id": "smartdma-camera-header"
+    },
+    {
+      "category": "switch",
+      "display_name": "SW3 ISP",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 30.6,
+          "y_percent": 83.8
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "SW3"
+      },
+      "landmark_id": "sw3-isp"
+    },
+    {
+      "category": "switch",
+      "display_name": "SW2 Wakeup",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 61.8,
+          "y_percent": 83.8
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "SW2"
+      },
+      "landmark_id": "sw2-wakeup"
+    },
+    {
+      "category": "header",
+      "display_name": "FlexIO/LCD Header",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 42.3,
+          "y_percent": 86.3
+        }
+      ],
+      "identifiers": {
+        "reference_designator": "J8"
+      },
+      "landmark_id": "flexio-lcd-header"
+    },
+    {
+      "category": "memory",
+      "display_name": "External Flash W25Q64JVSSIQ",
+      "evidence_refs": [
+        "guide-callouts-09"
+      ],
+      "guide_targets": [
+        {
+          "source_id": "guide-callouts-09",
+          "x_percent": 45.6,
+          "y_percent": 77.2
+        }
+      ],
+      "identifiers": {
+        "part_number": "W25Q64JVSSIQ"
+      },
+      "landmark_id": "external-flash"
+    }
+  ],
+  "manifest_id": "nxp-frdm-mcxn236-guide-reference-v1",
+  "placement_binding": {
+    "reason": "The printed quick-start guide provides identity and electrical evidence, not authored board-plane coordinates.",
+    "status": "unbound"
+  },
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "kind": "printed_guide_photo",
+      "license_status": "pending",
+      "locator": "user-supplied image-1.jpg; full quick-start pinout spread",
+      "media_sha256": "sha256:8e744b64d72e467140a132a798a72e797cbf4506568f69e6d8c8ea543a17466c",
+      "redistributable": false,
+      "review": {
+        "reviewed_at": "2026-08-30T00:00:00+05:30",
+        "reviewer": "labeler@tokito.local",
+        "state": "reviewed"
+      },
+      "source_id": "guide-pinout-overview-01"
+    },
+    {
+      "kind": "printed_guide_photo",
+      "license_status": "pending",
+      "locator": "user-supplied image-5.jpg; J3/J4 detail crop",
+      "media_sha256": "sha256:b1aacb9ea04639528a93a131520ced7d8233291e2b2259df1fab7875c9b45ed4",
+      "redistributable": false,
+      "review": {
+        "reviewed_at": "2026-08-30T00:00:00+05:30",
+        "reviewer": "labeler@tokito.local",
+        "state": "reviewed"
+      },
+      "source_id": "guide-pinout-detail-05"
+    },
+    {
+      "kind": "printed_guide_photo",
+      "license_status": "pending",
+      "locator": "user-supplied image-6.jpg; second J3/J4 detail crop",
+      "media_sha256": "sha256:60359e358ea74da309c293f8afc9270ab825cfcd7df362120307a78dc5f00d17",
+      "redistributable": false,
+      "review": {
+        "reviewed_at": "2026-08-30T00:00:00+05:30",
+        "reviewer": "labeler@tokito.local",
+        "state": "reviewed"
+      },
+      "source_id": "guide-pinout-detail-06"
+    },
+    {
+      "kind": "printed_guide_photo",
+      "license_status": "pending",
+      "locator": "user-supplied image-9.jpg; component callout diagram",
+      "media_sha256": "sha256:3bcff54f7f257a0ac5451de0470ae8704befd8370431aa01651fa6e344b28227",
+      "redistributable": false,
+      "review": {
+        "reviewed_at": "2026-08-30T00:00:00+05:30",
+        "reviewer": "labeler@tokito.local",
+        "state": "reviewed"
+      },
+      "source_id": "guide-callouts-09"
+    }
+  ]
+}

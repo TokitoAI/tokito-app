@@ -86,6 +86,23 @@ marked `trainable: false`; changing a CLI flag cannot silently promote it.
 Use `--allow-empty` only when a reviewer has confirmed a true negative image.
 The reviewed labels and review manifest remain under ignored local storage.
 
+### Guide callouts and connector tables
+
+Printed guides are not physical-board detector positives, but their reviewed
+callouts and pin tables are useful identity and electrical evidence. The
+tracked FRDM reference manifest is
+`reference/boards/frdm-mcxn236.board-reference.json`. It transcribes the guide's
+named landmarks and connector tables with per-source evidence references and
+typed roles for GND, power rails, input power, reset, analog, GPIO, buses, and
+NC.
+
+The guide target coordinates are percentages within the photographed guide
+diagram. They support visual review of which callout was transcribed; they do
+not become board-plane coordinates. Real placement remains sourced from the
+authored design/assembly context described below. The raw guide photos remain
+under ignored local storage while their license is pending, and the manifest
+marks them non-redistributable.
+
 Canonical image IDs include board, session, side, viewpoint, lighting, and
 sequence:
 
