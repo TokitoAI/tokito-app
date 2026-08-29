@@ -7,12 +7,31 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from kicad_pcb_placements import extract_placements
+from kicad_pcb_placements import extract_board_outline, extract_footprint_pads, extract_placements, parse_pcb_tree
 
 
 FIXTURE = """
 (kicad_pcb
   (version 20250114)
+  (gr_line
+    (start 0.0 0.0)
+    (end 100.0 0.0)
+    (layer "Edge.Cuts")
+    (uuid "line1")
+  )
+  (gr_arc
+    (start 100.0 0.0)
+    (mid 105.0 5.0)
+    (end 100.0 10.0)
+    (layer "Edge.Cuts")
+    (uuid "arc1")
+  )
+  (gr_line
+    (start 100.0 10.0)
+    (end 0.0 10.0)
+    (layer "F.SilkS")
+    (uuid "line-not-outline")
+  )
   (footprint ""
     (layer "F.Cu")
     (uuid "aaa")
@@ -24,6 +43,18 @@ FIXTURE = """
     (property "Value" "10k"
       (at 0 0 180)
       (layer "F.Fab")
+    )
+    (pad "1" smd rect
+      (at -0.5 0 0)
+      (size 0.5 0.6)
+      (layers "F.Cu")
+      (net 3 "NET1")
+    )
+    (pad "2" smd rect
+      (at 0.5 0 0)
+      (size 0.5 0.6)
+      (layers "F.Cu")
+      (net 4 "NET2")
     )
   )
   (footprint ""
@@ -48,6 +79,12 @@ FIXTURE = """
     (layer "F.Cu")
     (uuid "ccc")
     (at 10.0 20.0 0)
+    (pad "1" thru_hole circle
+      (at 0 0 0)
+      (size 2.0 2.0)
+      (layers "*.Cu")
+      (net 0 "")
+    )
   )
 )
 """
@@ -89,6 +126,42 @@ class KicadPcbPlacementsTest(unittest.TestCase):
             self.assertTrue(third["is_placeholder_reference"])
             self.assertEqual(third["x_mm"], 10.0)
             self.assertEqual(third["y_mm"], 20.0)
+
+    def test_extracts_board_outline_from_edge_cuts_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "board.kicad_pcb"
+            path.write_text(FIXTURE, encoding="utf-8")
+
+            tree = parse_pcb_tree(path)
+            outline = extract_board_outline(tree)
+
+            self.assertEqual(len(outline), 2)
+            self.assertEqual(outline[0]["type"], "gr_line")
+            self.assertEqual(outline[0]["start"], {"x": 0.0, "y": 0.0})
+            self.assertEqual(outline[0]["end"], {"x": 100.0, "y": 0.0})
+            self.assertEqual(outline[1]["type"], "gr_arc")
+            self.assertEqual(outline[1]["mid"], {"x": 105.0, "y": 5.0})
+
+    def test_extracts_pads_per_footprint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "board.kicad_pcb"
+            path.write_text(FIXTURE, encoding="utf-8")
+
+            tree = parse_pcb_tree(path)
+            footprints = [
+                node for node in tree if isinstance(node, list) and node and node[0] == "footprint"
+            ]
+
+            first_pads = extract_footprint_pads(footprints[0])
+            self.assertEqual(len(first_pads), 2)
+            self.assertEqual(first_pads[0]["shape"], "rect")
+            self.assertAlmostEqual(first_pads[0]["size_w_mm"], 0.5)
+
+            third_pads = extract_footprint_pads(footprints[2])
+            self.assertEqual(len(third_pads), 1)
+            self.assertEqual(third_pads[0]["pad_type"], "thru_hole")
+            self.assertEqual(third_pads[0]["shape"], "circle")
+            self.assertAlmostEqual(third_pads[0]["size_w_mm"], 2.0)
 
 
 if __name__ == "__main__":

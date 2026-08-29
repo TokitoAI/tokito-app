@@ -114,6 +114,13 @@ def side_from_layer(layer: str | None) -> str:
     return "unknown"
 
 
+def extract_footprint_uuid(footprint: list[Any]) -> str | None:
+    uuid_node = find_direct(footprint, "uuid")
+    if uuid_node and len(uuid_node) > 1:
+        return uuid_node[1]
+    return None
+
+
 def extract_footprint_placement(footprint: list[Any]) -> dict[str, Any]:
     layer_node = find_direct(footprint, "layer")
     at_node = find_direct(footprint, "at")
@@ -140,6 +147,7 @@ def extract_footprint_placement(footprint: list[Any]) -> dict[str, Any]:
             value = text
 
     return {
+        "footprint_uuid": extract_footprint_uuid(footprint),
         "reference": reference,
         "is_placeholder_reference": reference == "${REFERENCE}" or reference == "",
         "value": value,
@@ -151,9 +159,58 @@ def extract_footprint_placement(footprint: list[Any]) -> dict[str, Any]:
     }
 
 
-def extract_placements(path: Path) -> list[dict[str, Any]]:
+def extract_footprint_pads(footprint: list[Any]) -> list[dict[str, Any]]:
+    pads = []
+    for child in footprint:
+        if not isinstance(child, list) or node_head(child) != "pad":
+            continue
+        pad_number = child[1] if len(child) > 1 else ""
+        pad_type = child[2] if len(child) > 2 else ""
+        pad_shape = child[3] if len(child) > 3 else ""
+        size_node = find_direct(child, "size")
+        width = height = 0.0
+        if size_node and len(size_node) > 2:
+            width = float(size_node[1])
+            height = float(size_node[2])
+        net_node = find_direct(child, "net")
+        net = net_node[2] if net_node and len(net_node) > 2 else None
+        pads.append(
+            {
+                "number": pad_number,
+                "pad_type": pad_type,
+                "shape": pad_shape,
+                "size_w_mm": width,
+                "size_h_mm": height,
+                "net": net,
+            }
+        )
+    return pads
+
+
+def parse_pcb_tree(path: Path) -> Node:
     text = path.read_text(encoding="utf-8")
-    tree = parse(tokenize(text))
+    return parse(tokenize(text))
+
+
+def extract_board_outline(tree: Node) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for head in ("gr_line", "gr_arc", "gr_rect", "gr_circle"):
+        for element in find_all(tree, head):
+            layer_node = find_direct(element, "layer")
+            layer = layer_node[1] if layer_node and len(layer_node) > 1 else None
+            if layer != "Edge.Cuts":
+                continue
+            segment: dict[str, Any] = {"type": head}
+            for point_key in ("start", "end", "mid", "center"):
+                node = find_direct(element, point_key)
+                if node and len(node) >= 3:
+                    segment[point_key] = {"x": float(node[1]), "y": float(node[2])}
+            segments.append(segment)
+    return segments
+
+
+def extract_placements(path: Path) -> list[dict[str, Any]]:
+    tree = parse_pcb_tree(path)
     footprints = find_all(tree, "footprint")
     return [extract_footprint_placement(footprint) for footprint in footprints]
 
