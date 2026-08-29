@@ -2,9 +2,9 @@
 <resources>
     <string name="app_name">Tokito Physical</string>
     <string name="voice_lab_title">Offline voice runtime</string>
-    <string name="voice_lab_subtitle">English STT + TTS on this device. Models are provisioned once, verified locally, then reused offline.</string>
+    <string name="voice_lab_subtitle">English STT + TTS on this device. A verified local model bundle is required.</string>
     <string name="model_notice">Model sources: Moonshine Voice 0.1.5 and Piper en_US-amy-low. See docs/VOICE_RUNTIME.md for provenance and licenses.</string>
-    <string name="initialize">Provision &amp; initialize</string>
+    <string name="initialize">Initialize</string>
     <string name="start_listening">Start listening</string>
     <string name="stop_listening">Stop listening</string>
     <string name="speak">Speak</string>

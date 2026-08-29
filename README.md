@@ -89,8 +89,8 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
-Provisioning models is an explicit user action in the test application; after
-provisioning, recognition and synthesis execute locally.
+The test application initializes only a pre-provisioned, verified local model
+bundle. It never downloads model content at runtime.
 
 ## Implementation shape
 

@@ -47,20 +47,18 @@ flowchart LR
     VAD -->|sustained speech| TTS
 ```
 
-The recognizer and synthesizer never run through a network API. First-use model
-provisioning is an explicit operation. After provisioning, the app records a
-complete SHA-256 inventory and verifies the exact files before loading them.
-Model files remain in app-private storage and are not committed to Git.
+The recognizer and synthesizer never run through a network API. Runtime loading
+accepts only a pre-provisioned model bundle whose complete SHA-256 inventory
+matches the active manifest. Model files remain in app-private storage and are
+not committed to Git.
 
-The development provisioner establishes reproducibility and corruption
-detection, but it is not the final release-signing mechanism. Gate 7 still
-requires a publisher-signed model manifest and immutable release artifact. A
-missing or invalid inventory does not expose STT/TTS capability when downloads
-are disabled.
+Release admission must establish a publisher-signed model manifest and immutable
+release artifact before the runtime can initialize. A missing or invalid
+inventory does not expose STT/TTS capability.
 
 ## State and failure behavior
 
-- `initialize` loads or explicitly provisions verified local models.
+- `initialize` loads verified local models.
 - `startListening` obtains exclusive capture focus and begins one bounded audio
   stream.
 - partial hypotheses and final segments are distinct typed events.
@@ -87,9 +85,9 @@ cleared on confirmation, rejection, invalid input, or cancellation.
   source repository is CC BY-SA 4.0. Release packaging must retain the required
   attribution and license notices.
 
-The application downloads these artifacts only during explicit provisioning;
-they are not stored in this Git repository. A release manifest must pin the
-exact upstream revision, file digests, attribution text, and license for every
+Release tooling provisions these artifacts before runtime initialization; they
+are not stored in this Git repository. A release manifest must pin the exact
+upstream revision, file digests, attribution text, and license for every
 distributed model artifact.
 
 ## Development verification
@@ -99,8 +97,8 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-The test APK is generated under `app/build/outputs/apk/debug/`. Models are
-downloaded only after the user selects **Provision & initialize**. A real-device
-acceptance run additionally records model inventory digest, device profile,
+The test APK is generated under `app/build/outputs/apk/debug/`. The app fails
+closed until a verified local bundle has been admitted. A real-device acceptance
+run additionally records model inventory digest, device profile,
 WER/entity accuracy, first-partial/final latency, TTS first-audio latency,
 barge-in latency, memory, and sustained thermal behavior.
