@@ -25,6 +25,26 @@ The standalone application is itself a client of this contract. Local dialogue
 and AR rendering consume the same typed events exposed to future integrations;
 they do not use privileged model-only shortcuts.
 
+## Assembly context bundle
+
+An optional, immutable bundle binds authored design truth to grounded source
+evidence. Its canonical schema must include:
+
+- schema version, bundle ID, design/project identity, board revision, and
+  content digest;
+- board outline, coordinate system, side, units, and registration landmarks;
+- BOM identity and per-reference footprint, centroid, rotation, side, pin-one
+  or polarity rule, and permitted alternates;
+- evidence records with source-document digest, page/region locator, extractor
+  revision, confidence, and review state;
+- provenance for every generated field and the tools that produced it;
+- licensing/redistribution metadata and signature/integrity information.
+
+Board-specific values are data. Importers may support multiple CAD/vendor
+formats, but runtime control flow cannot branch on a particular board name.
+Missing or conflicting placement/evidence fields produce a typed import error
+or an unsupported capability; they are never filled with model guesses.
+
 ## Tool call envelope
 
 ```json

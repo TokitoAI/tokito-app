@@ -4,9 +4,12 @@
 
 ```mermaid
 flowchart TB
-    subgraph Optional[Optional external context - never required]
-        Desktop[Tokito Desktop]
-        Design[Imported design package]
+    subgraph Authoring[Optional production authoring path - never required at runtime]
+        Desktop[Tokito project]
+        Datasheets[Uploaded datasheets]
+        DSVire[DS-ViRe evidence extraction]
+        Design[PCB, BOM, placement and assembly data]
+        Bundle[Versioned assembly context bundle]
         FutureCompanion[Future Companion integration]
     end
 
@@ -28,8 +31,12 @@ flowchart TB
 
     Board[Physical board and engineer]
 
-    Desktop -.->|optional context| API
-    Design -.->|optional local import| API
+    Desktop --> Design
+    Desktop --> Datasheets
+    Datasheets --> DSVire
+    DSVire -->|part, package, pin and polarity evidence| Bundle
+    Design -->|board geometry, refdes, centroid and rotation| Bundle
+    Bundle -.->|optional verified local import| API
     FutureCompanion -.->|future in-process consumer| API
     App --> Session
     API --> Session
@@ -160,6 +167,14 @@ design context, but loss or absence of that integration cannot disable generic
 board discovery, local conversation, inspection, or AR guidance. A future
 Companion change consumes the reusable API only after the standalone product
 passes its hardware gates.
+
+The integration boundary is a versioned **assembly context bundle**, not a live
+dependency on Tokito or DS-ViRe. Tokito owns design identity, BOM, board
+geometry, reference designators, placements, and rotations. DS-ViRe contributes
+source-grounded datasheet facts such as package constraints, pin-one and
+polarity evidence. The physical runtime owns camera registration, physical
+observations, dialogue, guidance, and abstention. It must never infer a board
+placement from a datasheet or overwrite design truth with a visual guess.
 
 See [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) for the external contract and
 [decisions/](decisions/) for rationale.

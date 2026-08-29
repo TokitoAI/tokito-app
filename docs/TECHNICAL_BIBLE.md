@@ -56,6 +56,13 @@ sequence declared tools; deterministic policy validates every invocation and
 result. An optional external client may supply design context but does not own
 the baseline reasoning loop.
 
+For authored projects, Tokito is authoritative for schematic/PCB identity,
+BOM, reference designators, placement, and rotation. DS-ViRe is authoritative
+only for source-grounded datasheet evidence such as package, pin, polarity, and
+electrical facts. They are joined into an immutable assembly context bundle.
+The runtime is authoritative for live camera registration and physical
+observations. A datasheet is never a source of board placement coordinates.
+
 The runtime must not:
 
 - require an external reasoning client for baseline use;

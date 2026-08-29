@@ -31,6 +31,7 @@ issue links are identifiers for the work required to substantiate each claim.
 | Standalone application and reusable Android runtime boundary | [ADR 0001](decisions/0001-separate-physical-runtime.md), [ADR 0003](decisions/0003-python-off-device.md), [ADR 0004](decisions/0004-standalone-fully-local-ar-product.md), and [architecture](ARCHITECTURE.md) | [#30](https://github.com/TokitoAI/tokito-physical-runtime/issues/30), [#37](https://github.com/TokitoAI/tokito-physical-runtime/issues/37) | Gate 6 |
 | End-to-end hackathon scenarios | [Delivery gates](DELIVERY_GATES.md) | [#31](https://github.com/TokitoAI/tokito-physical-runtime/issues/31) | Gate 7 |
 | Future Companion consumption | [Architecture: integration policy](ARCHITECTURE.md#integration-policy) and [ADR 0001](decisions/0001-separate-physical-runtime.md) | [#32](https://github.com/TokitoAI/tokito-physical-runtime/issues/32) | Blocked until Gate 6 |
+| Tokito + DS-ViRe assembly-context boundary and FRDM reference validation | [Architecture: integration policy](ARCHITECTURE.md#integration-policy), [runtime contract](RUNTIME_CONTRACT.md#assembly-context-bundle), and [FRDM validation](FRDM_MCXN236_VALIDATION.md) | [#42](https://github.com/TokitoAI/tokito-physical-runtime/issues/42) | Gates 2, 3, and 5 |
 
 ## Claim policy
 
