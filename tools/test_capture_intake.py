@@ -127,6 +127,33 @@ class CaptureIntakeTest(unittest.TestCase):
                     class_names=[],
                 )
 
+    def test_rejects_symlinked_file_before_copying(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            outside = root / "outside.jpg"
+            outside.write_bytes(b"not-a-real-jpeg")
+            link = source / "escaped.jpg"
+            try:
+                link.symlink_to(outside)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+
+            with self.assertRaisesRegex(ValueError, "symbolic links are not accepted"):
+                prepare_dataset(
+                    source=source,
+                    output_root=root / "datasets",
+                    board_name="Reference Board",
+                    session_id="session01",
+                    device_profile="iqoo-local-profile",
+                    captured_at="2026-08-29",
+                    viewpoint="mixed-angle",
+                    lighting="indoor-bench",
+                    side="top",
+                    class_names=["Reference_Board_full_board"],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

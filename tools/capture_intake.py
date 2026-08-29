@@ -81,6 +81,25 @@ def stable_slug(value: str) -> str:
     return "".join(normalized).strip("-")
 
 
+def source_files(source: Path, allowed_extensions: set[str]) -> list[Path]:
+    """Return regular files below source, rejecting links before copying data."""
+    if source.is_symlink():
+        raise ValueError(f"source must not be a symbolic link: {source}")
+
+    resolved_source = source.resolve(strict=True)
+    files: list[Path] = []
+    for path in source.rglob("*"):
+        if path.is_symlink():
+            raise ValueError(f"symbolic links are not accepted in source: {path}")
+        if not path.is_file() or path.suffix.lower() not in allowed_extensions:
+            continue
+        resolved_path = path.resolve(strict=True)
+        if not resolved_path.is_relative_to(resolved_source):
+            raise ValueError(f"source file escapes source root: {path}")
+        files.append(path)
+    return sorted(files)
+
+
 def prepare_dataset(
     source: Path,
     output_root: Path,
@@ -161,7 +180,7 @@ def copy_images(
     side_slug: str,
 ) -> list[ImageRecord]:
     records: list[ImageRecord] = []
-    images = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS)
+    images = source_files(source, IMAGE_EXTENSIONS)
     seen_digests: set[str] = set()
     for index, image_path in enumerate(images, start=1):
         digest = sha256_file(image_path)
@@ -193,7 +212,7 @@ def copy_images(
 
 def copy_cad_artifacts(source: Path, artifacts_dir: Path) -> dict[str, Any]:
     allowed_extensions = CAD_EXTENSIONS | GERBER_EXTENSIONS | MODEL_EXTENSIONS
-    files = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in allowed_extensions)
+    files = source_files(source, allowed_extensions)
     records: list[dict[str, Any]] = []
     archive_records: list[dict[str, Any]] = []
     has_gerber = False
