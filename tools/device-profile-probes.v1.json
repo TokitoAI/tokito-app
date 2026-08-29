@@ -1,0 +1,82 @@
+{
+  "schema_version": "tokito.device-profile-probes.v1",
+  "output_schema_version": "tokito.device-profile.v1",
+  "privacy": {
+    "redacted_property_names": [
+      "ro.serialno",
+      "ro.boot.serialno",
+      "ro.boot.hardware.sku",
+      "ro.boot.wifimacaddr"
+    ],
+    "redacted_text_patterns": [
+      "(?im)^.*(?:serial|imei|meid|mac address|bluetooth address).*$(?:\\n|$)"
+    ]
+  },
+  "unknown_capabilities": [
+    "camera capture modes and lens inventory require an Android CameraX capability probe",
+    "audio capabilities require an Android AudioManager capability probe",
+    "vendor accelerator operator coverage requires the #9 conformance benchmark"
+  ],
+  "probes": [
+    {
+      "id": "properties",
+      "argv": ["shell", "getprop"],
+      "format": "android_properties",
+      "required": true
+    },
+    {
+      "id": "memory",
+      "argv": ["shell", "cat", "/proc/meminfo"],
+      "format": "text",
+      "required": true
+    },
+    {
+      "id": "camera_service",
+      "argv": ["shell", "dumpsys", "media.camera"],
+      "format": "text",
+      "required": false
+    },
+    {
+      "id": "audio_policy",
+      "argv": ["shell", "dumpsys", "media.audio_policy"],
+      "format": "text",
+      "required": false
+    },
+    {
+      "id": "thermal_service",
+      "argv": ["shell", "dumpsys", "thermalservice"],
+      "format": "text",
+      "required": false
+    },
+    {
+      "id": "nnapi",
+      "argv": ["shell", "cmd", "neuralnetworks", "list"],
+      "format": "text",
+      "required": false
+    }
+  ],
+  "fields": [
+    {"path": "device.manufacturer", "probe": "properties", "property": "ro.product.manufacturer"},
+    {"path": "device.brand", "probe": "properties", "property": "ro.product.brand"},
+    {"path": "device.model", "probe": "properties", "property": "ro.product.model"},
+    {"path": "device.product_name", "probe": "properties", "property": "ro.product.name"},
+    {"path": "device.product_device", "probe": "properties", "property": "ro.product.device"},
+    {"path": "device.hardware", "probe": "properties", "property": "ro.hardware"},
+    {"path": "device.board", "probe": "properties", "property": "ro.product.board"},
+    {"path": "soc.manufacturer", "probe": "properties", "property": "ro.soc.manufacturer"},
+    {"path": "soc.model", "probe": "properties", "property": "ro.soc.model"},
+    {"path": "soc.platform", "probe": "properties", "property": "ro.board.platform"},
+    {"path": "android.release", "probe": "properties", "property": "ro.build.version.release"},
+    {"path": "android.sdk", "probe": "properties", "property": "ro.build.version.sdk"},
+    {"path": "android.build_fingerprint", "probe": "properties", "property": "ro.build.fingerprint"},
+    {"path": "abi.primary", "probe": "properties", "property": "ro.product.cpu.abi"},
+    {"path": "abi.supported", "probe": "properties", "property": "ro.product.cpu.abilist"},
+    {"path": "memory.total_kib", "probe": "memory", "regex": "^MemTotal:\\s+(\\d+)\\s+kB$"},
+    {"path": "camera.service_device_count", "probe": "camera_service", "regex": "^Number of camera devices: (\\d+)$"},
+    {"path": "camera.normal_device_count", "probe": "camera_service", "regex": "^Number of normal camera devices: (\\d+)$"},
+    {"path": "camera.api1_visible_device_count", "probe": "camera_service", "regex": "^Number of public camera devices visible to API1: (\\d+)$"},
+    {"path": "audio.available_input_device_count", "probe": "audio_policy", "regex": "^\\s*Available input devices \\((\\d+)\\):$"},
+    {"path": "audio.available_output_device_count", "probe": "audio_policy", "regex": "^\\s*Available output devices \\((\\d+)\\):$"},
+    {"path": "thermal.sensor_names", "probe": "thermal_service", "regex": "mName=([^,}]+)", "all_matches": true, "unique": true}
+  ]
+}
