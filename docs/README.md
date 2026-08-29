@@ -16,6 +16,7 @@ The documentation is split by authority and purpose:
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
 | [FRDM_CAPTURE_INTAKE.md](FRDM_CAPTURE_INTAKE.md) | Local iQOO capture intake, YOLO annotation, and AR asset boundary |
+| [YOLO_LOCAL_EXPERIMENTS.md](YOLO_LOCAL_EXPERIMENTS.md) | Provenance-bound local detector smoke training and inference |
 | [DEVICE_PROFILE_CAPTURE.md](DEVICE_PROFILE_CAPTURE.md) | Reproducible, privacy-safe Android target-device evidence capture |
 | [DEVICE_PROFILE_I2501.md](DEVICE_PROFILE_I2501.md) | Sanitized evidence for the declared target device profile |
 | [NATIVE_CORE.md](NATIVE_CORE.md) | Native fail-closed lifecycle, registration, scheduling, and thermal core |
