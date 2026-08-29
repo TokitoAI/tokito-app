@@ -25,3 +25,9 @@ tiny-streaming STT with spelling fusion and `piper_en_US-amy-low` TTS. Android
 capture, focus, AEC/noise suppression, typed transcript events, synthesis
 replacement/queueing, and barge-in live in `voice-runtime`. This is not an
 accepted release backend until the connected iQOO passes issue #8 and Gate 4.
+
+Deterministic electrical measurement parsing lives in `measurement-runtime`.
+`MeasurementVoiceSession` accepts only final STT segments, retains at most one
+unconfirmed draft, speaks prompts through local TTS, and requires confirmation
+before emitting `engineer_voice` evidence. Numeric, locale, unit, and
+relationship normalization must never be delegated to the local LLM.

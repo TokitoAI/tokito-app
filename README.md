@@ -46,10 +46,12 @@ flowchart LR
 
 ## Current status
 
-The repository now includes a standalone Android application and an executable
-offline voice-runtime library. The implemented slice provides microphone
+The repository now includes a standalone Android application plus executable
+offline voice and deterministic measurement runtime libraries. The implemented slice provides microphone
 capture, streaming English speech recognition, local English speech synthesis,
-typed partial/final transcript events, audio focus, cancellation, and barge-in.
+typed partial/final transcript events, audio focus, cancellation, barge-in,
+locale-explicit electrical measurement parsing, and bounded spoken/touch
+confirmation before a reading becomes evidence.
 It uses Moonshine Voice with app-private model storage and a verified SHA-256
 inventory. Camera, perception, local reasoning, and AR guidance remain tracked
 work; their absence is not hidden behind placeholder capabilities.
@@ -66,6 +68,7 @@ complete until measured on the exact iQOO device.
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
+- [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone

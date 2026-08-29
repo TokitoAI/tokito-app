@@ -12,5 +12,10 @@
     <string name="speech_hint">Example: The diode cathode faces the USB connector.</string>
     <string name="status_not_initialized">Not initialized</string>
     <string name="transcript_placeholder">Transcript appears here</string>
+    <string name="measurement_placeholder">Say a reading such as “3.3 volts from TP1 to ground.” The value is not recorded until you confirm it.</string>
+    <string name="begin_measurement">Begin measurement</string>
+    <string name="measurement_armed">Measurement capture armed. State one value and board location.</string>
+    <string name="confirm_measurement">Confirm reading</string>
+    <string name="reject_measurement">Reject</string>
     <string name="speech_example">The diode cathode faces the USB connector.</string>
 </resources>

@@ -7,6 +7,11 @@ local English synthesis, microphone capture, Android audio focus, transcript
 events, synthesis queueing, cancellation, and barge-in. The standalone `app`
 module is a hardware test surface; Companion is not involved.
 
+`MeasurementVoiceSession` is the typed bridge from final STT segments to the
+separate deterministic `measurement-runtime`. It uses local TTS for correction
+and confirmation prompts. It does not use the local LLM to normalize numbers,
+units, decimal separators, or relationships.
+
 The current measured candidate is Moonshine Voice 0.1.5 with:
 
 - the English tiny-streaming STT architecture plus spelling fusion;
@@ -27,12 +32,16 @@ flowchart LR
     Mode{Voice mode}
     STT[Moonshine streaming STT]
     Events[Typed partial and final transcript events]
+    Parser[Deterministic measurement parser]
+    Confirm[Bounded confirmation state]
     TTS[Moonshine Piper TTS]
     Speaker[Android AudioTrack]
     VAD[Adaptive local barge-in detector]
 
     Mic --> AEC --> Mode
     Mode -->|listening| STT --> Events
+    Events -->|final only| Parser --> Confirm
+    Confirm -->|prompt| TTS
     Mode -->|speaking| VAD
     TTS --> Speaker
     VAD -->|sustained speech| TTS
@@ -64,6 +73,8 @@ are disabled.
   cancellation, and state failures have stable error codes.
 
 Raw audio and synthesized samples are not persisted by this implementation.
+Unconfirmed measurement drafts are bounded to one in-memory value and are
+cleared on confirmation, rejection, invalid input, or cancellation.
 
 ## Model provenance and licensing
 

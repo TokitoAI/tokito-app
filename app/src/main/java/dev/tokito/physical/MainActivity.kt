@@ -9,6 +9,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.tokito.physical.databinding.ActivityMainBinding
+import dev.tokito.physical.measurement.MeasurementTurn
+import dev.tokito.physical.measurement.MeasurementValue
+import dev.tokito.physical.voice.MeasurementVoiceSession
 import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.voice.TokitoVoiceRuntime
 import dev.tokito.physical.voice.VoiceEvent
@@ -19,6 +22,7 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var voice: TokitoVoiceRuntime
+    private lateinit var measurementSession: MeasurementVoiceSession
     private val finalTranscript = StringBuilder()
 
     private val microphonePermission = registerForActivityResult(
@@ -36,6 +40,7 @@ class MainActivity : AppCompatActivity() {
             this,
             VoiceRuntimeConfig(allowModelDownload = true),
         )
+        measurementSession = MeasurementVoiceSession(voice)
         bindActions()
         observeRuntime()
     }
@@ -61,6 +66,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.interruptButton.setOnClickListener { launchAction { voice.interruptSpeech() } }
+        binding.beginMeasurementButton.setOnClickListener {
+            launchAction {
+                measurementSession.begin()
+                binding.beginMeasurementButton.isEnabled = false
+                binding.measurementText.setText(R.string.measurement_armed)
+            }
+        }
+        binding.confirmMeasurementButton.setOnClickListener {
+            launchAction { renderMeasurementTurn(measurementSession.confirmPrimary()) }
+        }
+        binding.rejectMeasurementButton.setOnClickListener {
+            launchAction { renderMeasurementTurn(measurementSession.reject()) }
+        }
     }
 
     private fun observeRuntime() {
@@ -100,6 +118,9 @@ class MainActivity : AppCompatActivity() {
                 if (event.segment.isFinal) {
                     finalTranscript.appendLine(event.segment.text)
                     binding.transcriptText.text = finalTranscript.toString()
+                    launchAction {
+                        measurementSession.accept(event.segment)?.let(::renderMeasurementTurn)
+                    }
                 } else {
                     binding.transcriptText.text = finalTranscript.toString() + event.segment.text
                 }
@@ -108,6 +129,52 @@ class MainActivity : AppCompatActivity() {
             is VoiceEvent.Error -> binding.statusText.text = "${event.failure.code}: ${event.failure.message}"
             else -> Unit
         }
+    }
+
+    private fun renderMeasurementTurn(turn: MeasurementTurn) {
+        binding.measurementText.text = when (turn) {
+            is MeasurementTurn.ConfirmationRequired -> {
+                binding.confirmMeasurementButton.isEnabled = true
+                binding.rejectMeasurementButton.isEnabled = true
+                "Awaiting confirmation: ${turn.draft.primary.display()}"
+            }
+            is MeasurementTurn.Confirmed -> {
+                binding.beginMeasurementButton.isEnabled = true
+                binding.confirmMeasurementButton.isEnabled = false
+                binding.rejectMeasurementButton.isEnabled = false
+                "Confirmed: ${turn.measurement.confirmedCandidate.display()}"
+            }
+            is MeasurementTurn.CorrectionRequired -> {
+                binding.confirmMeasurementButton.isEnabled = false
+                binding.rejectMeasurementButton.isEnabled = false
+                "Not recorded: ${turn.incomplete.recoverablePrompt}"
+            }
+            is MeasurementTurn.Rejected -> {
+                binding.beginMeasurementButton.isEnabled = true
+                binding.confirmMeasurementButton.isEnabled = false
+                binding.rejectMeasurementButton.isEnabled = false
+                "Not recorded: ${turn.reason}"
+            }
+        }
+        if (turn is MeasurementTurn.ConfirmationRequired || turn is MeasurementTurn.CorrectionRequired) {
+            binding.beginMeasurementButton.isEnabled = false
+        }
+    }
+
+    private fun dev.tokito.physical.measurement.MeasurementCandidate.display(): String {
+        val renderedValue = when (val parsed = value) {
+            is MeasurementValue.Scalar -> parsed.value.toPlainString()
+            is MeasurementValue.Range -> "${parsed.low.toPlainString()}–${parsed.high.toPlainString()}"
+        }
+        val location = relationship?.let { relation ->
+            when (relation.kind) {
+                dev.tokito.physical.measurement.RelationshipKind.BETWEEN ->
+                    " from ${relation.primary} to ${relation.reference}"
+                dev.tokito.physical.measurement.RelationshipKind.ACROSS -> " across ${relation.primary}"
+                dev.tokito.physical.measurement.RelationshipKind.AT -> " at ${relation.primary}"
+            }
+        }.orEmpty()
+        return "$renderedValue ${unit.symbol}$location"
     }
 
     private fun launchAction(block: suspend () -> Unit) {
