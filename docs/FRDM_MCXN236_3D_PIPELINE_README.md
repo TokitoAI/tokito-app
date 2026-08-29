@@ -117,6 +117,34 @@ detail: `docs/FRDM_MCXN236_POPULATED_MODEL.md` and
 | `kicad-cli pcb export glb/step/vrml` | populated `.kicad_pcb` | the actual 3D/AR assets |
 | `tools/verify_populated_glb.py` (+ `tools/glb_inspect.py`) | resolution JSON + exported GLB | numeric per-component check: predicted body centre vs body centre measured from GLB node bounds (336/336 within tolerance, max 0.05 mm) |
 | `kicad-cli pcb render` | populated `.kicad_pcb` | top/isometric PNG for visual verification |
+| `tools/component_info.py` | reference package + resolution JSON + xlsx BOM + `.kicad_pcb` | `board_component_index.json`: per-component join of placement, BOM facts, GLB node name, per-pad nets and full net connectivity |
+
+## The component information index (product query surface)
+
+`board_component_index.json` is the deterministic layer the user-facing
+features stand on. For every component it joins only facts that exist in
+real artifacts:
+
+- **locate + highlight** ("where is the main chip"): board position,
+  side, rotation, and the GLB node name (equal to the reference
+  designator; null when no model is attached, never a fake claim) for
+  isolating the mesh in the 3D viewer / AR overlay. Querying `U1`
+  returns the NXP `MCXN236VDFT` MCU with its BOM description for the
+  LLM lane to ground its explanation in.
+- **connection guidance** ("where/how do I connect this diode"):
+  `get_component_info()` lists, per pad, the copper net and every other
+  `(reference, pad)` endpoint on that net -- answered from the imported
+  board's own net assignments, not inference. Direction: diode polarity
+  is populated only from the vendor footprint's own pad names (the
+  Allegro import names diode pads literally `A`/`C`; 10 diodes on this
+  board), and stays null otherwise -- semantics are never invented.
+- **search**: substring match over designators/BOM text
+  (`--search diode`). Semantic queries stay in the LLM lane, grounded
+  on this index.
+
+The index deliberately contains **structured facts only** -- prose
+explanations (LLM lane) and on-screen highlighting (AR lane) are the
+consumers, not part of this artifact.
 
 ## Where the outputs live
 
