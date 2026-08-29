@@ -56,3 +56,11 @@ jobs:
             :android:ar-runtime:testDebugUnitTest \
             :android:ar-demo:lintDebug \
             :android:ar-demo:assembleDebug
+
+      - name: Upload AR conformance APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tokito-ar-conformance-debug
+          path: android/ar-demo/build/outputs/apk/debug/ar-demo-debug.apk
+          if-no-files-found: error
+          retention-days: 14
