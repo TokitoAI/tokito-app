@@ -237,10 +237,22 @@
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/calibrateArButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="@string/calibrate_ar"
+                        android:textAllCaps="false"
+                        app:cornerRadius="14dp"
+                        app:strokeColor="@color/tokito_border" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/resetRegistrationButton"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
+                        android:layout_marginStart="8dp"
                         android:layout_weight="1"
                         android:text="@string/reset_ar"
                         android:textAllCaps="false"

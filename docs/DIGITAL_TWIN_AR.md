@@ -49,10 +49,12 @@ calibration suppresses it immediately. Automatic discovery/tracking may update
 the same pose API continuously without changing the renderer or asset format.
 
 The synthetic-pose renderer preview exists only in `android/ar-demo`. The
-shipping `app` never loads `CalibrationBoardAsset`, never exposes a synthetic
-3D action, and never derives metric board dimensions from calibration data.
-Product rendering requires an active assembly-context-bound package; its
-signed X/Z bounds supply the metric corner landmarks used by pose estimation.
+shipping `app` has no synthetic-pose action and never presents calibration
+geometry as a project PCB. Its explicit calibration mode requires the matching
+printable 120 x 80 mm physical target and a measured pose before drawing the
+conformance object. Product PCB rendering still requires an active
+assembly-context-bound package from the asset pipeline. In both modes, signed
+X/Z bounds supply the metric corner landmarks used by pose estimation.
 
 ## Required device evidence
 

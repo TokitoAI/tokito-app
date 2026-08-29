@@ -9,6 +9,7 @@ import java.security.MessageDigest
  * PCB or fallback asset; production sessions must supply their own verified package.
  */
 object CalibrationBoardAsset {
+    const val ASSET_ID = "tokito-metric-calibration-board-v1"
     const val BOARD_WIDTH_METRES = 0.120
     const val BOARD_HEIGHT_METRES = 0.080
 
@@ -18,7 +19,7 @@ object CalibrationBoardAsset {
         return DigitalTwinPackage(
             DigitalTwinManifest(
                 schemaVersion = "1.0",
-                assetId = "tokito-metric-calibration-board-v1",
+                assetId = ASSET_ID,
                 boardIdentity = "Tokito metric calibration board",
                 boardRevision = "1",
                 assemblyContextRevision = contextRevision,

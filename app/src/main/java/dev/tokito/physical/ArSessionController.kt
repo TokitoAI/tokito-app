@@ -5,6 +5,7 @@ import androidx.lifecycle.LifecycleOwner
 import ai.tokito.physical.ar.ArCameraSurface
 import ai.tokito.physical.ar.ArPresenter
 import ai.tokito.physical.ar.ArRuntime
+import ai.tokito.physical.ar.CalibrationBoardAsset
 import ai.tokito.physical.ar.CameraIntrinsics
 import ai.tokito.physical.ar.CoordinateFrame
 import ai.tokito.physical.ar.DigitalTwinRenderResult
@@ -37,6 +38,7 @@ class ArSessionController(
     private val corners = mutableListOf<Point2>()
     private var cameraStarted = false
     private var activeTwin: DigitalTwinManifest? = null
+    private var activeTwinMode: TwinMode? = null
     private var hasRegistration = false
     private var sequence = 0L
 
@@ -99,21 +101,57 @@ class ArSessionController(
             glbFile,
             expectedAssemblyContextRevision,
         )
+        if (validation is DigitalTwinValidation.Accepted &&
+            validation.packageData.manifest.assetId == CalibrationBoardAsset.ASSET_ID
+        ) {
+            return DigitalTwinValidation.Rejected(
+                DigitalTwinValidation.Code.INVALID_MANIFEST,
+                "calibration assets require an explicit calibration session",
+            )
+        }
+        return activateValidatedTwin(validation, TwinMode.Project)
+    }
+
+    /** Starts a measured conformance session against the printable 120 x 80 mm target. */
+    fun beginCalibration() {
+        reset()
+        val packageData = CalibrationBoardAsset.create()
+        val validation = DigitalTwinValidator().validate(
+            packageData.manifest,
+            packageData.glb,
+            packageData.manifest.assemblyContextRevision,
+        )
+        val activated = activateValidatedTwin(validation, TwinMode.Calibration)
+        if (activated is DigitalTwinValidation.Accepted) {
+            onState(State("Calibration target", "Place the printed 120 x 80 mm target flat, then tap corners 1, 2, 3, 4"))
+        } else {
+            onState(State("Calibration unavailable", "The metric calibration asset was rejected"))
+        }
+    }
+
+    private fun activateValidatedTwin(
+        validation: DigitalTwinValidation,
+        mode: TwinMode,
+    ): DigitalTwinValidation {
         if (validation !is DigitalTwinValidation.Accepted) {
             activeTwin = null
+            activeTwinMode = null
             surface.digitalTwin.clearAsset()
             return validation
         }
         activeTwin = validation.packageData.manifest
+        activeTwinMode = mode
         when (surface.digitalTwin.load(validation) { result ->
             if (result !is DigitalTwinRenderResult.Loaded) {
                 activeTwin = null
+                activeTwinMode = null
                 surface.digitalTwin.clearAsset()
                 onState(State("3D unavailable", "The project digital twin was rejected by the renderer"))
             }
         }) {
             is DigitalTwinRenderResult.Rejected -> {
                 activeTwin = null
+                activeTwinMode = null
                 surface.digitalTwin.clearAsset()
             }
             DigitalTwinRenderResult.Initializing,
@@ -163,6 +201,7 @@ class ArSessionController(
             return
         }
         val twin = activeTwin
+        val registeredLabel = if (activeTwinMode == TwinMode.Calibration) "Calibration target registered" else "Board registered"
         val intrinsics = if (twin == null) null else surface.calibratedPreviewIntrinsics()
         val pose = if (twin == null || intrinsics == null) null else {
             poseEstimator.estimate(
@@ -176,12 +215,13 @@ class ArSessionController(
         when (val decision = runtime.render()) {
             is RenderDecision.Suppressed -> onState(State("Overlay suppressed", decision.reason))
             is RenderDecision.Ready -> when {
-                twin == null -> onState(State("Board registered", "2D guidance active; no validated project digital twin", true))
-                intrinsics == null -> onState(State("Board registered", "2D guidance active; calibrated intrinsics unavailable", true))
-                pose is PoseEstimation.Rejected -> onState(State("Board registered", "3D pose rejected: ${pose.reason}", true))
+                twin == null -> onState(State(registeredLabel, "2D guidance active; no validated project digital twin", true))
+                intrinsics == null -> onState(State(registeredLabel, "2D guidance active; calibrated intrinsics unavailable", true))
+                pose is PoseEstimation.Rejected -> onState(State(registeredLabel, "3D pose rejected: ${pose.reason}", true))
                 pose is PoseEstimation.Accepted -> {
                     surface.digitalTwin.updateRegistration(pose.pose, intrinsics)
-                    onState(State("3D registered", "${"%.2f".format(pose.pose.reprojectionRmsPx)} px reprojection RMS", true))
+                    val label = if (activeTwinMode == TwinMode.Calibration) "Calibration registered" else "3D registered"
+                    onState(State(label, "${"%.2f".format(pose.pose.reprojectionRmsPx)} px reprojection RMS", true))
                 }
             }
         }
@@ -189,14 +229,15 @@ class ArSessionController(
 
     private fun conformanceScene(revision: Long, now: Long): OverlayScene {
         val expiry = now + REGISTRATION_VALIDITY_NANOS
+        val calibration = activeTwinMode == TwinMode.Calibration
         return OverlayScene(
             sequence = ++sequence,
             transformRevision = revision,
             generatedAtNanos = now,
             expiresAtNanos = expiry,
             guidance = Guidance(
-                title = "Board registered",
-                detail = "Local frame established",
+                title = if (calibration) "Calibration target" else "Board registered",
+                detail = if (calibration) "Measured 120 x 80 mm frame" else "Local frame established",
                 step = 1,
                 stepCount = 1,
             ),
@@ -208,7 +249,7 @@ class ArSessionController(
                     observedAtNanos = now,
                     expiresAtNanos = expiry,
                     uncertaintyPx = 8.0,
-                    label = "Registered board",
+                    label = if (calibration) "Metric target" else "Registered board",
                     tone = OverlayTone.Primary,
                     points = listOf(Point2(0.0, 0.0), Point2(1.0, 0.0), Point2(1.0, 1.0), Point2(0.0, 1.0)),
                 ),
@@ -239,4 +280,6 @@ class ArSessionController(
     private companion object {
         const val REGISTRATION_VALIDITY_NANOS = 120_000_000_000L
     }
+
+    private enum class TwinMode { Project, Calibration }
 }

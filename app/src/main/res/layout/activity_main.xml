@@ -246,10 +246,26 @@
                 android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/calibrateArButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:minWidth="0dp"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:text="@string/calibrate_ar"
+                        android:textAllCaps="false"
+                        android:textSize="11sp"
+                        app:cornerRadius="14dp"
+                        app:strokeColor="@color/tokito_border" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/resetRegistrationButton"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="40dp"
+                        android:layout_marginStart="7dp"
                         android:layout_weight="1"
                         android:minWidth="0dp"
                         android:paddingStart="4dp"
@@ -260,22 +276,20 @@
                         app:cornerRadius="14dp"
                         app:strokeColor="@color/tokito_border" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/beginMeasurementButton"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginStart="7dp"
-                        android:layout_weight="1.25"
-                        android:minWidth="0dp"
-                        android:paddingStart="4dp"
-                        android:paddingEnd="4dp"
-                        android:text="@string/begin_measurement"
-                        android:textAllCaps="false"
-                        android:textSize="11sp"
-                        app:cornerRadius="14dp"
-                        app:strokeColor="@color/tokito_border" />
             </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/beginMeasurementButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="7dp"
+                android:minWidth="0dp"
+                android:text="@string/begin_measurement"
+                android:textAllCaps="false"
+                android:textSize="11sp"
+                app:cornerRadius="14dp"
+                app:strokeColor="@color/tokito_border" />
 
             <LinearLayout
                 android:layout_width="match_parent"
