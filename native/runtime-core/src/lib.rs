@@ -1851,4 +1851,93 @@ mod tests {
         .unwrap();
         assert_eq!(policy.concurrency_for(ThermalState::Critical), Ok(0));
     }
+
+    #[test]
+    fn thermal_state_never_alters_a_registration_confidence_threshold() {
+        // #11 requires thermal degradation to be explicit and never change a
+        // confidence threshold. Registration validation takes no thermal
+        // input at all, so run it under every declared thermal state and
+        // prove the accept/reject boundary at a fixed confidence never moves.
+        let policy = ThermalPolicy::new(HashMap::from([
+            (ThermalState::Nominal, 4),
+            (ThermalState::Constrained, 2),
+            (ThermalState::Critical, 0),
+        ]))
+        .unwrap();
+        let registration = Registration {
+            frame_id: 1,
+            revision: 1,
+            confidence: 0.5,
+            required_confidence: 0.5,
+            homography: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        };
+        for state in [
+            ThermalState::Nominal,
+            ThermalState::Constrained,
+            ThermalState::Critical,
+        ] {
+            // Thermal concurrency narrows independently...
+            let _ = policy.concurrency_for(state).unwrap();
+            // ...while the same registration validates identically regardless
+            // of which thermal state the caller is currently observing.
+            assert_eq!(registration.validate(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn scheduler_and_storage_hold_their_invariants_under_rapid_contention() {
+        // A bounded, deterministic stand-in for #11's resource-exhaustion
+        // requirement: hammer the scheduler and storage quota with far more
+        // concurrent demand than either can satisfy and assert the
+        // documented invariants (bounded capacity, observable drops, no
+        // silent overcommit) hold throughout rather than only in the
+        // steady-state cases the other tests cover. This does not replace a
+        // genuine 20-minute on-device stress run with real camera/inference
+        // load, which needs #12 (camera integration) to exist first.
+        let now = Instant::now();
+        let mut scheduler = BoundedRoiScheduler::new(4).unwrap();
+        for i in 0..2_000u64 {
+            let priority = if i % 5 == 0 {
+                WorkPriority::Interactive
+            } else {
+                WorkPriority::Background
+            };
+            let outcome = scheduler.enqueue(
+                request(&format!("key-{i}"), priority, now + Duration::from_secs(1)),
+                now,
+            );
+            assert!(
+                outcome.is_ok(),
+                "enqueue must never panic or corrupt state: {outcome:?}"
+            );
+        }
+        assert!(
+            scheduler.dropped_stale() > 0,
+            "overcommitted work must be observably dropped, not silently discarded"
+        );
+        let mut remaining = 0;
+        while scheduler.next(now, 0).is_some() {
+            remaining += 1;
+        }
+        assert!(
+            remaining <= 4,
+            "queue must never exceed its declared capacity"
+        );
+
+        let mut quota = StorageQuota::new(1_024).unwrap();
+        let mut reserved = 0u64;
+        let mut exhausted = 0u64;
+        for _ in 0..10_000 {
+            match quota.reserve(7) {
+                Ok(()) => reserved += 7,
+                Err(RuntimeError::ResourceExhausted) => exhausted += 1,
+                Err(other) => panic!("unexpected error under contention: {other:?}"),
+            }
+        }
+        assert!(exhausted > 0, "quota must reject once capacity is exceeded");
+        assert!(
+            reserved <= 1_024,
+            "quota must never overcommit its declared capacity"
+        );
+    }
 }
