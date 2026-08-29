@@ -8,3 +8,6 @@ description = "Fail-closed native core for Tokito physical runtime sessions and 
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+sha2 = "0.10.9"

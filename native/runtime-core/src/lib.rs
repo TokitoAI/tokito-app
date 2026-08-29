@@ -7,6 +7,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
+use sha2::{Digest, Sha256};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeError {
     InvalidTransition,
@@ -19,6 +21,10 @@ pub enum RuntimeError {
     ResourceExhausted,
     DuplicateTerminalOutcome,
     ContextRevisionMismatch,
+    IntegrityFailure,
+    IncompatibleSchema,
+    DuplicateReference,
+    ConflictingDesignTruth,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -576,9 +582,234 @@ impl StorageQuota {
         Ok(())
     }
 
+    pub fn replace(
+        &mut self,
+        released_bytes: u64,
+        reserved_bytes: u64,
+    ) -> Result<(), RuntimeError> {
+        let retained = self
+            .used_bytes
+            .checked_sub(released_bytes)
+            .ok_or(RuntimeError::InvalidConfiguration)?;
+        let next = retained
+            .checked_add(reserved_bytes)
+            .ok_or(RuntimeError::ResourceExhausted)?;
+        if next > self.capacity_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        self.used_bytes = next;
+        Ok(())
+    }
+
     pub fn remaining_bytes(&self) -> u64 {
         self.capacity_bytes - self.used_bytes
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchemaVersion {
+    pub major: u16,
+    pub minor: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceRole {
+    AuthoredPlacement,
+    Datasheet,
+    Supporting,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceEvidence {
+    pub source_id: String,
+    pub role: EvidenceRole,
+    pub license: String,
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentPlacement {
+    pub reference_designator: String,
+    pub footprint: String,
+    pub centroid: Point,
+    pub rotation_degrees: f64,
+    pub side: String,
+    pub polarity_or_pin_one: Option<String>,
+    pub alternates: Vec<String>,
+    pub placement_source_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Landmark {
+    pub landmark_id: String,
+    pub position: Point,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoardIdentity {
+    pub board_id: String,
+    pub revision: String,
+    pub coordinate_frame_id: String,
+    pub units: String,
+    pub handedness: String,
+    pub outline: Vec<Point>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BundleIntegrity {
+    /// Canonical `sha256:<lowercase-hex>` of the exact imported payload.
+    pub payload_sha256: String,
+    pub signature_id: String,
+}
+
+pub trait SignatureVerifier {
+    fn verify(&self, payload: &[u8], signature_id: &str) -> bool;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssemblyContext {
+    pub schema_version: SchemaVersion,
+    pub board: BoardIdentity,
+    pub components: Vec<ComponentPlacement>,
+    pub landmarks: Vec<Landmark>,
+    pub sources: Vec<SourceEvidence>,
+    pub integrity: BundleIntegrity,
+}
+
+impl AssemblyContext {
+    pub fn validate(&self, supported_major: u16) -> Result<(), RuntimeError> {
+        if self.schema_version.major != supported_major
+            || self.board.board_id.trim().is_empty()
+            || self.board.revision.trim().is_empty()
+            || self.board.coordinate_frame_id.trim().is_empty()
+            || self.board.units.trim().is_empty()
+            || self.board.handedness.trim().is_empty()
+            || self.board.outline.len() < 3
+            || self
+                .board
+                .outline
+                .iter()
+                .any(|point| !point.x.is_finite() || !point.y.is_finite())
+            || outline_is_degenerate(&self.board.outline)
+            || self.integrity.signature_id.trim().is_empty()
+            || !is_canonical_sha256(&self.integrity.payload_sha256)
+        {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+
+        let mut source_ids = HashMap::new();
+        for source in &self.sources {
+            if source.source_id.trim().is_empty()
+                || source.license.trim().is_empty()
+                || !is_canonical_sha256(&source.digest)
+            {
+                return Err(RuntimeError::InvalidConfiguration);
+            }
+            if source_ids
+                .insert(source.source_id.as_str(), source.role)
+                .is_some()
+            {
+                return Err(RuntimeError::ConflictingDesignTruth);
+            }
+        }
+
+        let mut references = HashSet::new();
+        for component in &self.components {
+            if component.reference_designator.trim().is_empty()
+                || component.footprint.trim().is_empty()
+                || component.side.trim().is_empty()
+                || !component.centroid.x.is_finite()
+                || !component.centroid.y.is_finite()
+                || !component.rotation_degrees.is_finite()
+                || !references.insert(component.reference_designator.as_str())
+            {
+                return Err(RuntimeError::DuplicateReference);
+            }
+            if source_ids.get(component.placement_source_id.as_str())
+                != Some(&EvidenceRole::AuthoredPlacement)
+            {
+                return Err(RuntimeError::ConflictingDesignTruth);
+            }
+        }
+
+        let mut landmark_ids = HashSet::new();
+        for landmark in &self.landmarks {
+            if landmark.landmark_id.trim().is_empty()
+                || !landmark.position.x.is_finite()
+                || !landmark.position.y.is_finite()
+                || !landmark_ids.insert(landmark.landmark_id.as_str())
+            {
+                return Err(RuntimeError::InvalidConfiguration);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn verify_integrity(
+        &self,
+        payload: &[u8],
+        verifier: &impl SignatureVerifier,
+    ) -> Result<(), RuntimeError> {
+        let actual = format!("sha256:{:x}", Sha256::digest(payload));
+        if actual != self.integrity.payload_sha256
+            || !verifier.verify(payload, &self.integrity.signature_id)
+        {
+            return Err(RuntimeError::IntegrityFailure);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AssemblyContextStore {
+    active: Option<AssemblyContext>,
+    active_bytes: u64,
+}
+
+impl AssemblyContextStore {
+    pub fn import_atomically(
+        &mut self,
+        candidate: AssemblyContext,
+        payload: &[u8],
+        supported_major: u16,
+        verifier: &impl SignatureVerifier,
+        quota: &mut StorageQuota,
+    ) -> Result<(), RuntimeError> {
+        candidate.validate(supported_major)?;
+        candidate.verify_integrity(payload, verifier)?;
+        let candidate_bytes =
+            u64::try_from(payload.len()).map_err(|_| RuntimeError::ResourceExhausted)?;
+        quota.replace(self.active_bytes, candidate_bytes)?;
+        self.active = Some(candidate);
+        self.active_bytes = candidate_bytes;
+        Ok(())
+    }
+
+    pub fn active(&self) -> Option<&AssemblyContext> {
+        self.active.as_ref()
+    }
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn outline_is_degenerate(outline: &[Point]) -> bool {
+    let mut twice_signed_area = 0.0;
+    for (point, next) in outline
+        .iter()
+        .zip(outline.iter().cycle().skip(1))
+        .take(outline.len())
+    {
+        twice_signed_area += point.x * next.y - next.x * point.y;
+    }
+    !twice_signed_area.is_finite() || twice_signed_area == 0.0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -632,6 +863,68 @@ mod tests {
                 y: 0.0,
                 width: 1.0,
                 height: 1.0,
+            },
+        }
+    }
+
+    struct AcceptingVerifier;
+
+    impl SignatureVerifier for AcceptingVerifier {
+        fn verify(&self, _payload: &[u8], signature_id: &str) -> bool {
+            signature_id == "verified-signature"
+        }
+    }
+
+    fn assembly_context(payload: &[u8]) -> AssemblyContext {
+        AssemblyContext {
+            schema_version: SchemaVersion { major: 1, minor: 0 },
+            board: BoardIdentity {
+                board_id: "board".into(),
+                revision: "revision".into(),
+                coordinate_frame_id: "board-plane".into(),
+                units: "declared-units".into(),
+                handedness: "declared-handedness".into(),
+                outline: vec![
+                    Point { x: 0.0, y: 0.0 },
+                    Point { x: 1.0, y: 0.0 },
+                    Point { x: 0.0, y: 1.0 },
+                ],
+            },
+            components: vec![ComponentPlacement {
+                reference_designator: "R1".into(),
+                footprint: "footprint".into(),
+                centroid: Point { x: 0.5, y: 0.5 },
+                rotation_degrees: 0.0,
+                side: "declared-side".into(),
+                polarity_or_pin_one: None,
+                alternates: Vec::new(),
+                placement_source_id: "placement".into(),
+            }],
+            landmarks: vec![Landmark {
+                landmark_id: "landmark".into(),
+                position: Point { x: 0.0, y: 0.0 },
+            }],
+            sources: vec![
+                SourceEvidence {
+                    source_id: "placement".into(),
+                    role: EvidenceRole::AuthoredPlacement,
+                    license: "declared-license".into(),
+                    digest:
+                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            .into(),
+                },
+                SourceEvidence {
+                    source_id: "datasheet".into(),
+                    role: EvidenceRole::Datasheet,
+                    license: "declared-license".into(),
+                    digest:
+                        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                            .into(),
+                },
+            ],
+            integrity: BundleIntegrity {
+                payload_sha256: format!("sha256:{:x}", Sha256::digest(payload)),
+                signature_id: "verified-signature".into(),
             },
         }
     }
@@ -849,6 +1142,51 @@ mod tests {
         assert_eq!(quota.remaining_bytes(), 16);
         assert_eq!(quota.release(16), Ok(()));
         assert_eq!(quota.remaining_bytes(), 32);
+    }
+
+    #[test]
+    fn assembly_context_import_is_verified_and_atomic() {
+        let payload = b"valid assembly context";
+        let context = assembly_context(payload);
+        let mut store = AssemblyContextStore::default();
+        let mut quota = StorageQuota::new(128).unwrap();
+        assert_eq!(
+            store.import_atomically(context.clone(), payload, 1, &AcceptingVerifier, &mut quota),
+            Ok(())
+        );
+        assert_eq!(store.active(), Some(&context));
+
+        let mut invalid = context.clone();
+        invalid.integrity.payload_sha256 =
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into();
+        assert_eq!(
+            store.import_atomically(invalid, payload, 1, &AcceptingVerifier, &mut quota),
+            Err(RuntimeError::IntegrityFailure)
+        );
+        assert_eq!(store.active(), Some(&context));
+    }
+
+    #[test]
+    fn assembly_context_rejects_datasheet_as_placement_truth() {
+        let payload = b"context";
+        let mut context = assembly_context(payload);
+        context.components[0].placement_source_id = "datasheet".into();
+        assert_eq!(
+            context.validate(1),
+            Err(RuntimeError::ConflictingDesignTruth)
+        );
+    }
+
+    #[test]
+    fn assembly_context_rejects_degenerate_outlines() {
+        let payload = b"context";
+        let mut context = assembly_context(payload);
+        context.board.outline = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 1.0, y: 1.0 },
+            Point { x: 2.0, y: 2.0 },
+        ];
+        assert_eq!(context.validate(1), Err(RuntimeError::InvalidConfiguration));
     }
 
     #[test]
