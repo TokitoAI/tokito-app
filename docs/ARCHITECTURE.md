@@ -79,8 +79,9 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-The repository now contains an initial Android application and `voice-runtime`
-library implementing the local STT/TTS slice. Their package coordinates remain
+The repository now contains an initial Android application, `voice-runtime`,
+and `measurement-runtime` implementing local STT/TTS and deterministic spoken
+measurement confirmation. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
 ABI. Vision, dialogue, tool, and AR artifacts remain gated work rather than
 stubbed capabilities.
@@ -111,6 +112,12 @@ evidence. Backpressure is latest-useful-work, not an unbounded frame queue.
 Runs wake-word detection, voice activity detection, streaming English STT,
 deterministic measurement parsing, and interruptible English TTS. Raw audio is
 ephemeral unless the user explicitly enables a diagnostic capture.
+
+Only final STT segments enter `MeasurementVoiceSession`. The session delegates
+numeric and unit handling to `measurement-runtime`, speaks correction or
+confirmation prompts through the same local TTS runtime, and accepts either a
+bounded spoken yes/no response or an explicit touch decision. Partial STT
+hypotheses cannot mutate measurement state.
 
 ### 5. Local dialogue and reasoning layer
 
