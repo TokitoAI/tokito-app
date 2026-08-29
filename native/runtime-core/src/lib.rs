@@ -264,12 +264,28 @@ pub struct Provenance {
     pub device_profile: String,
 }
 
+/// Mirrors the canonical schema's `observation.status` enum. Distinct from
+/// [`EvidenceAvailability`]: status describes the observation's own
+/// completion/redaction state, while evidence availability describes only
+/// its attached evidence items. An observation can be `Completed` with no
+/// available evidence, or `Redacted` as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationStatus {
+    Completed,
+    Redacted,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Observation {
+    pub schema_version: String,
     pub observation_id: String,
     pub tool_call_id: String,
     pub session_id: String,
     pub context_revision: String,
+    /// The capability/tool this observation resulted from. Validated against
+    /// the originating call's tool identity, never taken on trust alone.
+    pub kind: String,
+    pub status: ObservationStatus,
     pub coordinate_frame_id: Option<u64>,
     pub registration_revision: Option<u64>,
     pub confidence: Option<f64>,
@@ -352,10 +368,14 @@ impl CallLedger {
             return Err(RuntimeError::ContextRevisionMismatch);
         }
         if let TerminalOutcome::Observation(observation) = &outcome {
-            if observation.tool_call_id != call.tool_call_id
+            if observation.schema_version != call.schema_version
+                || observation.tool_call_id != call.tool_call_id
                 || observation.session_id != call.session_id
                 || observation.context_revision != call.context_revision
                 || observation.observation_id.trim().is_empty()
+                || observation.kind != call.tool.0
+                || (observation.status == ObservationStatus::Redacted)
+                    != (observation.evidence_availability == EvidenceAvailability::Redacted)
                 || observation
                     .confidence
                     .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
@@ -1403,10 +1423,13 @@ mod tests {
         assert_eq!(call.validate(&manifest, "context-1", now), Ok(()));
 
         let observation = Observation {
+            schema_version: call.schema_version.clone(),
             observation_id: "observation-1".into(),
             tool_call_id: call.tool_call_id.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: Some(4),
             confidence: Some(0.9),
@@ -1454,10 +1477,13 @@ mod tests {
             deadline: Instant::now() + Duration::from_secs(1),
         };
         let invalid = Observation {
+            schema_version: call.schema_version.clone(),
             observation_id: "observation-2".into(),
             tool_call_id: call.tool_call_id.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: None,
             confidence: Some(0.9),
@@ -1478,6 +1504,106 @@ mod tests {
         assert_eq!(
             ledger.finish(&call, TerminalOutcome::Observation(invalid)),
             Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    fn base_observation(call: &ToolCall) -> Observation {
+        Observation {
+            schema_version: call.schema_version.clone(),
+            observation_id: "observation-envelope".into(),
+            tool_call_id: call.tool_call_id.clone(),
+            session_id: call.session_id.clone(),
+            context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            status: ObservationStatus::Completed,
+            coordinate_frame_id: None,
+            registration_revision: None,
+            confidence: None,
+            evidence_availability: EvidenceAvailability::Unavailable,
+            evidence: Vec::new(),
+            provenance: Provenance {
+                runtime_revision: "runtime-revision".into(),
+                model_bundle_digest:
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                preprocessing_digest:
+                    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
+                backend: "selected-by-policy".into(),
+                device_profile: "profile-revision".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn observation_kind_must_match_the_tool_that_was_actually_called() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-kind".into(),
+            session_id: "session-kind".into(),
+            context_revision: "context-kind".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut spoofed = base_observation(&call);
+        spoofed.kind = "locate".into();
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(spoofed)),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn observation_schema_version_must_match_the_originating_call() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-schema".into(),
+            session_id: "session-schema".into(),
+            context_revision: "context-schema".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut mismatched = base_observation(&call);
+        mismatched.schema_version = "contract.v2".into();
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(mismatched)),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn observation_status_and_evidence_redaction_cannot_disagree() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-redaction".into(),
+            session_id: "session-redaction".into(),
+            context_revision: "context-redaction".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        // status: Completed but evidence_availability: Redacted must not be
+        // representable as a valid terminal observation.
+        let mut inconsistent = base_observation(&call);
+        inconsistent.status = ObservationStatus::Completed;
+        inconsistent.evidence_availability = EvidenceAvailability::Redacted;
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(inconsistent)),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        // Both marked Redacted together is consistent and accepted.
+        let mut consistent = base_observation(&call);
+        consistent.status = ObservationStatus::Redacted;
+        consistent.evidence_availability = EvidenceAvailability::Redacted;
+        let mut ledger = CallLedger::default();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(consistent)),
+            Ok(())
         );
     }
 
