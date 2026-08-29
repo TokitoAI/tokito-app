@@ -7,7 +7,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from build_frdm_reference_package import build_reference_package, classify_unresolved_footprint, parse_bom
+from build_frdm_reference_package import (
+    build_reference_package,
+    classify_unresolved_footprint,
+    footprint_bounding_box_mm,
+    parse_bom,
+)
 
 
 PCB_FIXTURE = """
@@ -101,6 +106,21 @@ class ClassifyUnresolvedFootprintTest(unittest.TestCase):
         self.assertEqual(category, "mounting_hole_candidate")
 
 
+class FootprintBoundingBoxTest(unittest.TestCase):
+    def test_bbox_is_union_of_pad_extents(self) -> None:
+        pads = [
+            {"at_x_mm": -0.5, "at_y_mm": 0.0, "size_w_mm": 0.5, "size_h_mm": 0.6},
+            {"at_x_mm": 0.5, "at_y_mm": 0.0, "size_w_mm": 0.5, "size_h_mm": 0.6},
+        ]
+        bbox = footprint_bounding_box_mm(pads)
+        # left pad spans [-0.75, -0.25], right pad spans [0.25, 0.75] -> total width 1.5
+        self.assertAlmostEqual(bbox["width"], 1.5)
+        self.assertAlmostEqual(bbox["height"], 0.6)
+
+    def test_no_pads_gives_zero_bbox(self) -> None:
+        self.assertEqual(footprint_bounding_box_mm([]), {"width": 0.0, "height": 0.0})
+
+
 class BuildFrdmReferencePackageTest(unittest.TestCase):
     def test_parse_bom_maps_refdes_to_part_number(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -137,6 +157,8 @@ class BuildFrdmReferencePackageTest(unittest.TestCase):
             component = bundle["components"][0]
             self.assertEqual(component["reference_designator"], "R1")
             self.assertEqual(component["centroid"], {"x": 5.0, "y": 5.0})
+            self.assertAlmostEqual(component["footprint_bbox_mm"]["width"], 1.5)
+            self.assertAlmostEqual(component["footprint_bbox_mm"]["height"], 0.6)
             self.assertTrue(component["bom_cross_check"])
             self.assertEqual(component["bom_part_number"], "123-45678")
 

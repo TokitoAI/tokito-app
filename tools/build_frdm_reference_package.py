@@ -124,6 +124,24 @@ def synthetic_footprint_descriptor(pads: Sequence[dict[str, Any]]) -> str:
     return f"derived-{len(pads)}pad-{widths[-1]:.2f}x{heights[-1]:.2f}mm"
 
 
+def footprint_bounding_box_mm(pads: Sequence[dict[str, Any]]) -> dict[str, float]:
+    """The real measured envelope of every pad in this footprint's own
+    (unrotated) local coordinate frame -- the union of each pad's axis-
+    aligned extent (its local center +/- half its size). This ignores each
+    pad's own individual rotation, which is a real approximation, not a
+    fabricated value: it is the same simplification any bounding-box-based
+    ROI has to make without per-pad rotation data.  Applying the
+    footprint's own rotation_degrees happens later, when a consumer places
+    this box in board or image coordinates."""
+    if not pads:
+        return {"width": 0.0, "height": 0.0}
+    min_x = min(pad["at_x_mm"] - pad["size_w_mm"] / 2 for pad in pads)
+    max_x = max(pad["at_x_mm"] + pad["size_w_mm"] / 2 for pad in pads)
+    min_y = min(pad["at_y_mm"] - pad["size_h_mm"] / 2 for pad in pads)
+    max_y = max(pad["at_y_mm"] + pad["size_h_mm"] / 2 for pad in pads)
+    return {"width": max_x - min_x, "height": max_y - min_y}
+
+
 def build_components(placements: Sequence[dict[str, Any]], bom: dict[str, str], source_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     components = []
     footprint_classification_rows = []
@@ -147,6 +165,7 @@ def build_components(placements: Sequence[dict[str, Any]], bom: dict[str, str], 
             {
                 "reference_designator": placement["reference"],
                 "footprint": synthetic_footprint_descriptor(pads),
+                "footprint_bbox_mm": footprint_bounding_box_mm(pads),
                 "centroid": {"x": placement["x_mm"], "y": placement["y_mm"]},
                 "rotation_degrees": placement["rotation_deg"],
                 "side": placement["side"],

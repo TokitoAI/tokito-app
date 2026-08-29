@@ -79,6 +79,21 @@ Real results from the actual board:
 - The `footprint` field on each component is a geometry-derived descriptor
   (pad count and measured size), not an authoritative KiCad/JEDEC footprint
   name — the Allegro importer does not preserve one.
+- Each component also carries a `footprint_bbox_mm` (`width`/`height`): the
+  real union of every pad's local axis-aligned extent, in the footprint's
+  own unrotated frame. This is what `locate_component()` (next section)
+  uses to size an ROI from real geometry instead of a fixed constant.
+  **9 of 391 components — `BH1`–`BH4` (battery holder) and `SJ1`–`SJ5`
+  (solder jumpers) — have a zero-size bbox**, verified directly against
+  their own parsed footprint nodes (not a proximity/grep artifact): their
+  pads genuinely report `size: 0, 0` in the imported `.kicad_pcb`. This
+  looks like the Allegro-to-KiCad importer not carrying over a custom pad
+  shape's real geometry into the simple `size` field for these specific
+  pad types. Their centroid/rotation/side positions are unaffected and
+  still real (e.g. `BH1`–`BH4` sit at the real corners of a rectangular
+  mounting pattern, cross-checked against the board outline). Consumers
+  must treat `footprint_bbox_mm == {0, 0}` as "extent unknown", not "this
+  component occupies zero space".
 
 ## What this bundle is not
 
