@@ -26,6 +26,13 @@ The first complete workflow is:
 7. optionally bind a Tokito design package for exact reference mapping;
 8. verify a requested change without silently modifying any design.
 
+The eventual authored workflow starts in Tokito: a project supplies the
+schematic, PCB/BOM/placement truth, while uploaded datasheets are processed by
+DS-ViRe for grounded package, pin, polarity, and electrical evidence. Those
+inputs become a portable assembly context bundle. The phone imports that bundle
+and remains fully offline during physical use. DS-ViRe does not determine where
+a reference designator is placed; the PCB design does.
+
 ## In scope
 
 - board registration and stable coordinate mapping;
@@ -72,3 +79,11 @@ interaction, locate a requested supported component, read supported LED states,
 capture a spoken electrical measurement, and return traceable observations
 within the latency and thermal gates. A polished demo without held-out device
 evidence is not completion.
+
+## First reference-board validation
+
+The first bounded proof is the NXP FRDM-MCXN236. It validates the standalone
+runtime before Tokito export is implemented by importing the same generic
+assembly-context schema from NXP's official schematic and design package. This
+is reference data, not a board-specific code path. See
+[FRDM-MCXN236 validation](FRDM_MCXN236_VALIDATION.md).

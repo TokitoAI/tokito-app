@@ -83,6 +83,10 @@ Every corpus item records:
 - track loss, reacquisition, and incorrect-board-lock rates;
 - touch-target and spoken-guidance task completion on phone and tablet layouts;
 - frame pacing and thermal behavior with overlays, speech, and local LLM active.
+- physical board-plane alignment error in millimetres where ground-truth scale
+  is available, plus preview-pixel error;
+- reference-designator localization and orientation correctness independently
+  of dialogue quality.
 
 ## Device benchmark matrix
 
@@ -120,6 +124,8 @@ At minimum:
 11. thermal degradation during a 20-minute mixed AR/LLM/voice scenario;
 12. corrupt model bundle rejection and verified rollback;
 13. low-confidence identity abstention rather than a wrong reference.
+14. FRDM-MCXN236 acquisition, motion/reacquisition, reference localization, and
+    orientation guidance across held-out sessions, viewpoints, and lighting.
 
 ## Report format
 
