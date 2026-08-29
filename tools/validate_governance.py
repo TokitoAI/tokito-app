@@ -15,6 +15,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas"
 EXAMPLE_DIR = ROOT / "examples" / "manifests"
+BOARD_REFERENCE_DIR = ROOT / "reference" / "boards"
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 
 REQUIRED_VPS_RUNNER_LABELS = {
@@ -165,6 +166,19 @@ def validate_examples(schemas: dict[str, dict[str, Any]]) -> None:
         if schema is None:
             fail(f"{example_path}: no matching schema {schema_name}")
         validate_value(str(example_path.relative_to(ROOT)), load_json(example_path), schema)
+
+
+def validate_board_references(schemas: dict[str, dict[str, Any]]) -> None:
+    schema = schemas.get("board.reference-manifest.schema.json")
+    if schema is None:
+        fail("missing board.reference-manifest.schema.json")
+    references = sorted(BOARD_REFERENCE_DIR.glob("*.board-reference.json"))
+    if not references:
+        fail("no tracked board-reference manifest found")
+    for reference_path in references:
+        validate_value(
+            str(reference_path.relative_to(ROOT)), load_json(reference_path), schema
+        )
 
 
 def tracked_files() -> list[str]:
@@ -336,6 +350,7 @@ def main() -> int:
     for name, schema in schemas.items():
         validate_schema_document(SCHEMA_DIR / name, schema)
     validate_examples(schemas)
+    validate_board_references(schemas)
     validate_tracked_artifacts(tracked_files())
     validate_workflow_runners()
     validate_corpus_contract_presence()
