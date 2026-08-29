@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import zipfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -87,6 +88,9 @@ def prepare_dataset(
     session_id: str,
     device_profile: str,
     captured_at: str,
+    viewpoint: str,
+    lighting: str,
+    side: str,
     class_names: Sequence[str],
 ) -> dict[str, Any]:
     if not source.exists():
@@ -102,7 +106,16 @@ def prepare_dataset(
     for directory in (images_dir, labels_dir, artifacts_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
-    image_records = copy_images(source, images_dir, labels_dir, board_slug, session_id)
+    image_records = copy_images(
+        source,
+        images_dir,
+        labels_dir,
+        board_slug,
+        session_id,
+        stable_slug(viewpoint),
+        stable_slug(lighting),
+        stable_slug(side),
+    )
     cad_inventory = copy_cad_artifacts(source, artifacts_dir)
     write_dataset_yaml(session_root / "data.yaml", class_names)
     write_annotation_tasks(session_root / "annotation_tasks.jsonl", image_records, class_names)
@@ -114,6 +127,11 @@ def prepare_dataset(
         "session_id": session_id,
         "device_profile": device_profile,
         "captured_at": captured_at,
+        "capture_metadata": {
+            "viewpoint": viewpoint,
+            "lighting": lighting,
+            "side": side,
+        },
         "source_root": str(source),
         "dataset_root": str(session_root),
         "annotation_policy": {
@@ -132,7 +150,16 @@ def prepare_dataset(
     return manifest
 
 
-def copy_images(source: Path, images_dir: Path, labels_dir: Path, board_slug: str, session_id: str) -> list[ImageRecord]:
+def copy_images(
+    source: Path,
+    images_dir: Path,
+    labels_dir: Path,
+    board_slug: str,
+    session_id: str,
+    viewpoint_slug: str,
+    lighting_slug: str,
+    side_slug: str,
+) -> list[ImageRecord]:
     records: list[ImageRecord] = []
     images = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS)
     seen_digests: set[str] = set()
@@ -141,7 +168,7 @@ def copy_images(source: Path, images_dir: Path, labels_dir: Path, board_slug: st
         if digest in seen_digests:
             continue
         seen_digests.add(digest)
-        image_id = f"{board_slug}_{session_id}_img_{index:04d}"
+        image_id = f"{board_slug}_{session_id}_{side_slug}_{viewpoint_slug}_{lighting_slug}_img_{index:04d}"
         extension = image_path.suffix.lower()
         destination = images_dir / f"{image_id}{extension}"
         label_path = labels_dir / f"{image_id}.txt"
@@ -168,9 +195,15 @@ def copy_cad_artifacts(source: Path, artifacts_dir: Path) -> dict[str, Any]:
     allowed_extensions = CAD_EXTENSIONS | GERBER_EXTENSIONS | MODEL_EXTENSIONS
     files = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in allowed_extensions)
     records: list[dict[str, Any]] = []
+    archive_records: list[dict[str, Any]] = []
     has_gerber = False
     has_drill = False
     has_model = False
+    has_pdf = False
+    has_archived_gerber = False
+    has_archived_drill = False
+    has_archived_model = False
+    has_vendor_board = False
     for path in files:
         relative = path.relative_to(source)
         destination = artifacts_dir / relative
@@ -180,6 +213,8 @@ def copy_cad_artifacts(source: Path, artifacts_dir: Path) -> dict[str, Any]:
         has_gerber = has_gerber or suffix in GERBER_EXTENSIONS - {".drl", ".xln"}
         has_drill = has_drill or suffix in {".drl", ".xln"}
         has_model = has_model or suffix in MODEL_EXTENSIONS
+        has_pdf = has_pdf or suffix == ".pdf"
+        has_vendor_board = has_vendor_board or suffix == ".brd"
         records.append(
             {
                 "original_relative_path": str(relative),
@@ -189,22 +224,77 @@ def copy_cad_artifacts(source: Path, artifacts_dir: Path) -> dict[str, Any]:
                 "byte_count": destination.stat().st_size,
             }
         )
+        if suffix == ".zip":
+            entries = inspect_zip_entries(destination)
+            archive_records.extend(
+                {
+                    **entry,
+                    "archive_relative_path": str(relative),
+                }
+                for entry in entries
+            )
+            for entry in entries:
+                entry_suffix = entry["extension"]
+                has_archived_gerber = has_archived_gerber or entry_suffix in GERBER_EXTENSIONS - {".drl", ".xln"}
+                has_archived_drill = has_archived_drill or entry_suffix in {".drl", ".xln"}
+                has_archived_model = has_archived_model or entry_suffix in MODEL_EXTENSIONS
+                has_vendor_board = has_vendor_board or entry_suffix == ".brd"
 
     if has_model:
         ar_status = "ready_for_ar_asset_review"
     elif has_gerber and has_drill:
         ar_status = "ready_for_board_mesh_conversion_tool"
+    elif has_archived_model or (has_archived_gerber and has_archived_drill):
+        ar_status = "blocked_archive_requires_extraction"
+    elif has_vendor_board:
+        ar_status = "blocked_vendor_board_requires_kicad_import_or_exports"
     else:
         ar_status = "blocked_missing_gerber_drill_or_step_exports"
 
     return {
         "artifact_count": len(records),
         "artifacts": records,
+        "archive_entries": archive_records,
         "has_gerber": has_gerber,
         "has_drill": has_drill,
+        "has_archived_gerber": has_archived_gerber,
+        "has_archived_drill": has_archived_drill,
         "has_step_or_wrl": has_model,
+        "has_archived_step_or_wrl": has_archived_model,
+        "has_pdf": has_pdf,
+        "has_vendor_board": has_vendor_board,
         "ar_3d_status": ar_status,
     }
+
+
+def inspect_zip_entries(path: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    try:
+        with zipfile.ZipFile(path) as archive:
+            for entry in sorted(archive.infolist(), key=lambda item: item.filename):
+                if entry.is_dir():
+                    continue
+                entries.append(
+                    {
+                        "path": entry.filename,
+                        "extension": Path(entry.filename).suffix.lower(),
+                        "byte_count": entry.file_size,
+                        "compressed_byte_count": entry.compress_size,
+                        "crc32": f"{entry.CRC:08x}",
+                    }
+                )
+    except zipfile.BadZipFile:
+        entries.append(
+            {
+                "path": "",
+                "extension": ".zip",
+                "byte_count": 0,
+                "compressed_byte_count": 0,
+                "crc32": "",
+                "error": "bad_zip_file",
+            }
+        )
+    return entries
 
 
 def write_dataset_yaml(path: Path, class_names: Sequence[str]) -> None:
@@ -256,6 +346,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--device-profile", required=True)
     parser.add_argument("--captured-at", default=date.today().isoformat())
+    parser.add_argument("--viewpoint", required=True)
+    parser.add_argument("--lighting", required=True)
+    parser.add_argument("--side", required=True)
     parser.add_argument("--class-name", action="append", dest="class_names", required=True)
     args = parser.parse_args(argv)
 
@@ -266,6 +359,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         session_id=args.session_id,
         device_profile=args.device_profile,
         captured_at=args.captured_at,
+        viewpoint=args.viewpoint,
+        lighting=args.lighting,
+        side=args.side,
         class_names=args.class_names,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))

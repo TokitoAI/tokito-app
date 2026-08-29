@@ -47,6 +47,35 @@ device decide the accepted bundle.
 Whisper is not the default. It may enter comparative evaluation, but the
 English-only streaming candidates above are the primary starting point.
 
+## Detector candidate status
+
+Tokito has not selected YOLO, Ultralytics, or any single object detector as the
+vision model. The vision architecture is composed: deterministic registration,
+tracking, coordinate transforms, candidate object detection, task-specific
+classification, bounded local VLM fallback, calibration, and typed validation
+remain separate stages.
+
+A compact YOLO-family detector is a candidate for learned board/component
+object detection because the mobile detector ecosystem is mature and export
+paths can target Android runtimes. It is not responsible for board-plane
+registration or design identity. Any YOLO implementation must pass license
+review, and at least one non-YOLO detector baseline must be evaluated on the
+exact iQOO target device before a model decision is recorded.
+
+Initial non-YOLO baselines may include EfficientDet-Lite or a MediaPipe
+MobileNet object-detector family when their exact code, model, and training
+artifact licenses satisfy release policy. These candidates still need the same
+Tokito detection contract, calibration policy, export evidence, and iQOO
+benchmark results as any YOLO-family candidate.
+
+The intended physical-vision path is:
+
+```text
+camera frame -> deterministic board registration -> candidate detector ROI
+             -> board coordinate -> assembly-context identity mapping
+             -> typed observation or abstention
+```
+
 ## Local orchestration contract
 
 The text LLM receives bounded conversation, compact observation summaries, and
