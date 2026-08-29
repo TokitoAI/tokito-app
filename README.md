@@ -46,11 +46,14 @@ flowchart LR
 
 ## Current status
 
-The main branch contains the architecture baseline and executable,
-standard-library-only corpus governance tooling. It does not yet claim a model,
-shipping Android runtime, or device-qualified capability. Runtime implementation
-continues through tracked issues on the
-[Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
+Implementation is active and tracked on the
+[Tokito project board](https://github.com/orgs/TokitoAI/projects/1). The
+repository now contains the versioned runtime contract, a fail-closed native
+runtime foundation, Android lifecycle/capability APIs, reference perception
+work, and a reusable Android AR presentation module with a standalone device
+conformance app. Model selection and production claims remain gated on the
+documented physical-device evidence; the conformance app's manual registration
+does not pretend to be automatic vision.
 
 ## Documentation
 
@@ -63,11 +66,12 @@ continues through tracked issues on the
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
 - [Delivery gates](docs/DELIVERY_GATES.md) - evidence required for each milestone
+- [AR runtime](docs/AR_RUNTIME.md) - coordinate, scene, lifecycle, and conformance contract
 - [Evidence manifests](docs/EVIDENCE_MANIFESTS.md) - machine-readable model, corpus, evaluation, security, and release records
 - [CI/CD](docs/CI_CD.md) - pull request flow, current CI checks, and branch-policy status
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
-## Planned implementation shape
+## Implementation shape
 
 Python is reserved for dataset preparation, training, export, evaluation, and a
 reference harness. The shipping phone hot path will be an Android-native
