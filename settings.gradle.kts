@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "tokito-physical-runtime"
 include(":android:runtime")
-include(":app", ":voice-runtime", ":dialogue-runtime")
+include(":app", ":voice-runtime", ":measurement-runtime", ":dialogue-runtime")

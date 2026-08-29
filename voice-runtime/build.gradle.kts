@@ -34,6 +34,7 @@ kotlin {
 }
 
 dependencies {
+    api(project(":measurement-runtime"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.moonshine.voice)

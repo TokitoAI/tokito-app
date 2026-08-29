@@ -80,8 +80,9 @@ The repository will eventually produce:
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
 The repository now contains an initial Android application, `voice-runtime`,
-and `dialogue-runtime` libraries implementing the local STT/TTS and text-LLM
-slices. Their package coordinates remain
+`measurement-runtime`, and `dialogue-runtime` implementing local STT/TTS,
+deterministic spoken measurement confirmation, and local text-LLM planning.
+Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
 ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
 app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.
@@ -114,6 +115,12 @@ evidence. Backpressure is latest-useful-work, not an unbounded frame queue.
 Runs wake-word detection, voice activity detection, streaming English STT,
 deterministic measurement parsing, and interruptible English TTS. Raw audio is
 ephemeral unless the user explicitly enables a diagnostic capture.
+
+Only final STT segments enter `MeasurementVoiceSession`. The session delegates
+numeric and unit handling to `measurement-runtime`, speaks correction or
+confirmation prompts through the same local TTS runtime, and accepts either a
+bounded spoken yes/no response or an explicit touch decision. Partial STT
+hypotheses cannot mutate measurement state.
 
 ### 5. Local dialogue and reasoning layer
 

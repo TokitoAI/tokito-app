@@ -47,17 +47,18 @@ flowchart LR
 ## Current status
 
 The repository now includes a standalone Android application plus executable
-offline voice and dialogue libraries. The implemented voice slice provides
-microphone capture, streaming English speech recognition, local English speech
-synthesis, typed partial/final transcript events, audio focus, cancellation,
-and barge-in. It uses Moonshine Voice with app-private model storage and a
-verified SHA-256 inventory. The dialogue slice uses pinned llama.cpp and the
-official pinned Qwen3-0.6B Q8_0 GGUF, with resumable verified provisioning, bounded local
-generation, exact typed outcomes, and deterministic tool-policy validation.
-The validation app connects typed or recognized text through local dialogue to
-local TTS while declaring no unfinished physical tools. Camera, perception,
-physical tool execution, and AR guidance remain tracked work; their absence is
-not hidden behind placeholder capabilities.
+offline voice, deterministic measurement, and dialogue libraries. The voice
+slice provides microphone capture, streaming English speech recognition, local
+English speech synthesis, typed partial/final transcript events, audio focus,
+cancellation, and barge-in. Final transcripts can enter locale-explicit
+electrical measurement parsing with bounded spoken/touch confirmation before a
+reading becomes evidence. The dialogue slice uses pinned llama.cpp and the
+official pinned Qwen3-0.6B Q8_0 GGUF, with resumable verified provisioning,
+bounded local generation, exact typed outcomes, and deterministic tool-policy
+validation. The validation app executes its declared `request_measurement`
+capability through the deterministic session and responds through local TTS.
+Camera, perception, other physical tools, and AR guidance remain tracked work;
+their absence is not hidden behind placeholder capabilities.
 
 The voice and dialogue candidates have passed JVM tests and Android arm64
 assembly. Target-device performance, schema reliability, and release-signing
@@ -77,6 +78,7 @@ tooling merged on the runtime-foundation path.
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
 - [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
 - [Local dialogue runtime](docs/DIALOGUE_RUNTIME.md) - executable LLM and constrained planner slice
+- [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary

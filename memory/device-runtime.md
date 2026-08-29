@@ -47,3 +47,9 @@ GGUF through llama.cpp pinned at commit
 digest-verified provisioning, bounded serialized generation, exact typed JSON
 outcomes, and deterministic capability validation. It is not an accepted
 release backend until issue #38 and Gate 5 pass on the declared iQOO device.
+
+Deterministic electrical measurement parsing lives in `measurement-runtime`.
+`MeasurementVoiceSession` accepts only final STT segments, retains at most one
+unconfirmed draft, speaks prompts through local TTS, and requires confirmation
+before emitting `engineer_voice` evidence. Numeric, locale, unit, and
+relationship normalization must never be delegated to the local LLM.

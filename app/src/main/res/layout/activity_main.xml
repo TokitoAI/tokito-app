@@ -100,6 +100,49 @@
             android:textColor="@color/tokito_text"
             android:textIsSelectable="true" />
 
+        <TextView
+            android:id="@+id/measurementText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@color/tokito_surface"
+            android:padding="16dp"
+            android:text="@string/measurement_placeholder"
+            android:textColor="@color/tokito_text" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/beginMeasurementButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/begin_measurement" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/confirmMeasurementButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="@string/confirm_measurement" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/rejectMeasurementButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="@string/reject_measurement" />
+        </LinearLayout>
+
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

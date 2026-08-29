@@ -36,7 +36,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: tokito-physical-voice-debug-${{ github.sha }}
+          name: tokito-physical-runtime-debug-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: |
@@ -49,3 +49,6 @@ jobs:
             dialogue-runtime/build/reports/lint-results-debug.html
             dialogue-runtime/build/reports/tests/testDebugUnitTest/
             dialogue-runtime/build/test-results/testDebugUnitTest/
+            measurement-runtime/build/reports/lint-results-debug.html
+            measurement-runtime/build/reports/tests/testDebugUnitTest/
+            measurement-runtime/build/test-results/testDebugUnitTest/

@@ -45,6 +45,7 @@ kotlin {
 dependencies {
     implementation(project(":voice-runtime"))
     implementation(project(":dialogue-runtime"))
+    implementation(project(":measurement-runtime"))
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.lifecycle.runtime)
