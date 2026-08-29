@@ -14,6 +14,8 @@ The documentation is split by authority and purpose:
 | [DELIVERY_GATES.md](DELIVERY_GATES.md) | Evidence-gated implementation sequence |
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
+| [DEVICE_PROFILE_CAPTURE.md](DEVICE_PROFILE_CAPTURE.md) | Reproducible, privacy-safe Android target-device evidence capture |
+| [DEVICE_PROFILE_I2501.md](DEVICE_PROFILE_I2501.md) | Sanitized evidence for the declared target device profile |
 | [decisions/](decisions/) | Architecture Decision Records |
 | [proposals/](proposals/) | Source proposals; informative, not normative |
 

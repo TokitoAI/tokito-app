@@ -29,6 +29,7 @@ datasets/local/
 models/local/
 reports/generated/
 device-logs/
+device-profiles/
 
 # Secrets and local configuration
 .env
