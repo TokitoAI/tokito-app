@@ -73,9 +73,9 @@ shipping Android hot path. Camera calibration and a fresh board pose compose
 the asset into the camera frame. Invalid assets or registration loss suppress
 3D content instead of retaining the last transform.
 
-## Planned deployable artifacts
+## Deployable artifacts
 
-The repository will eventually produce:
+The repository produces, or is converging on, these artifacts:
 
 1. a standalone camera-first Android AR application;
 2. an Android AAR exposing reusable Kotlin APIs and lifecycle integration;
@@ -86,11 +86,11 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-The repository now contains an initial Android application, `voice-runtime`,
-`measurement-runtime`, and `dialogue-runtime` implementing local STT/TTS,
-deterministic spoken measurement confirmation, and local text-LLM planning.
-Registered presentation lives in `android/ar-runtime`, while `android/ar-demo`
-is its manual-registration conformance host. Their package coordinates remain
+The `app` module is the sole user-facing Android application. Its camera-first
+activity composes `voice-runtime`, `measurement-runtime`, `dialogue-runtime`,
+and `android/ar-runtime` in-process so AR, speech, dialogue, and typed tools
+share one lifecycle and one interaction surface. `android/ar-demo` is only the
+manual-registration conformance host and is not a second product. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
 ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
 app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.

@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "dev.tokito.physical"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.tokito.physical"
@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":voice-runtime"))
     implementation(project(":dialogue-runtime"))
     implementation(project(":measurement-runtime"))
+    implementation(project(":android:ar-runtime"))
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.lifecycle.runtime)

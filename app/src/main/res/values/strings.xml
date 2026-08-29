@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tokito Physical</string>
-    <string name="voice_lab_title">Offline physical assistant</string>
-    <string name="voice_lab_subtitle">English STT, constrained local dialogue, and TTS on this device. Verified local model bundles are required.</string>
+    <string name="product_title">Tokito Physical</string>
+    <string name="product_subtitle">Offline bench assistant</string>
+    <string name="assistant_title">Bench assistant</string>
+    <string name="offline">Offline</string>
+    <string name="camera_starting">Camera starting</string>
+    <string name="tap_board_corners">Tap the board corners: top-left, top-right, bottom-right, bottom-left</string>
+    <string name="prepare_models">Prepare local AI</string>
+    <string name="models_required">Verified voice and dialogue bundles are required</string>
+    <string name="talk">Talk</string>
+    <string name="stop">Stop</string>
+    <string name="send">Send</string>
+    <string name="preview_3d">Preview 3D</string>
+    <string name="reset_ar">Reset AR</string>
+    <string name="assistant_welcome">Place a board in view. I can listen, reason locally, and present registered guidance here.</string>
+    <string name="heard_placeholder">Your live transcript will appear here.</string>
     <string name="model_notice">Model sources: Moonshine Voice 0.1.5 and Piper en_US-amy-low. See docs/VOICE_RUNTIME.md for provenance and licenses.</string>
     <string name="initialize">Initialize</string>
     <string name="start_listening">Start listening</string>

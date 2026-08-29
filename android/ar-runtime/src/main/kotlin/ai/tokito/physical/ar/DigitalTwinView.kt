@@ -129,7 +129,9 @@ class DigitalTwinView @JvmOverloads constructor(
         destroyed = true
         unschedule()
         pendingLoad?.second?.invoke(DigitalTwinRenderResult.Rejected("renderer was destroyed before asset initialization"))
-        viewer?.destroy()
+        // ModelViewer installs its own TextureView detach listener and destroys
+        // the native resource loader there. Calling destroy() here as well
+        // double-frees that loader during Activity recreation.
         viewer = null
         pendingLoad = null
     }

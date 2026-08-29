@@ -28,13 +28,20 @@ assumptions into the runtime; unsupported paths must fail closed.
 Python is approved for training, export, evaluation, and reference conformance,
 not the shipping Android camera/audio hot path (ADR 0003).
 
-The Android AR presentation boundary is `android/ar-runtime`; its standalone
-manual-registration host is `android/ar-demo`. Presentation consumes the same
+The Android AR presentation boundary is `android/ar-runtime`; `app` is the
+single user-facing host that composes AR, local dialogue, STT/TTS, and typed
+measurements. `android/ar-demo` is manual-registration conformance tooling, not
+a second product. Presentation consumes the same
 versioned coordinate graph as camera/tracking and uses a latest-only scene
 mailbox. Every overlay primitive is frame-, revision-, time-, expiry-, and
 uncertainty-bound. Missing/stale transforms, lifecycle suspension, and a new
 registration revision clear geometry rather than preserving the last visual.
 The demo is conformance tooling and must never be cited as automatic vision.
+Filament `ModelViewer` owns native teardown through its `TextureView` detach
+listener. Hosts mark `DigitalTwinView` destroyed and stop scheduling frames,
+but must not invoke `ModelViewer.destroy()` a second time during Activity
+teardown; doing so double-frees the resource loader during configuration
+recreation.
 
 Baseline runtime inference is entirely local: text LLM, bounded VLM, compact
 vision models, English STT, and English TTS. Current benchmark candidates are

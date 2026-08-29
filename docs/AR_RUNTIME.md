@@ -12,7 +12,10 @@ ownership of detection, tracking, design truth, or inference to the renderer.
 - `android/ar-demo` is an installable conformance app. A tester taps four board
   corners in clockwise order, then checks that a clearly labelled registration
   outline and orientation marker remain aligned. It emits no detection result
-  and contains no board-specific coordinates.
+  and contains no board-specific coordinates. It is not a user-facing product.
+- `app` is the shipping camera-first host. It composes this AR boundary with
+  the local dialogue, voice, and measurement runtimes in one activity and one
+  lifecycle; users do not install separate AR and assistant applications.
 - `android/runtime` remains the product-level capability and session lifecycle
   boundary. A production host must advertise AR only after its registration
   provider and device evidence have passed the applicable gates.

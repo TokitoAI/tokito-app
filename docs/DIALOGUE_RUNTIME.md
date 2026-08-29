@@ -42,10 +42,17 @@ and recently duplicated proposal IDs. A proposal is data, not execution. The
 host remains responsible for authorization and the physical tool layer remains
 responsible for measurements and observations.
 
-The validation application intentionally declares no tools. It can load an
-admitted model, send typed or recognized English text to the local LLM, display a
-response or clarification, and pass that text to the local TTS runtime. It
-cannot pretend that unfinished physical tools exist.
+The product application declares only the implemented, typed
+`request_measurement` capability. It can load an admitted model, send typed or
+recognized English text to the local LLM, display a response or clarification,
+execute that proposal through deterministic measurement confirmation, and pass
+assistant text to the local TTS runtime. It cannot advertise unfinished
+physical tools.
+
+The current native backend is packaged only for `arm64-v8a`. Runtime creation
+is lazy and the ABI is checked before native loading, so unsupported emulator
+or device ABIs remain usable for non-dialogue UI and AR verification and report
+a typed failure if dialogue initialization is requested.
 
 ## Verification
 
@@ -57,8 +64,8 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 ```
 
 The unit suite exercises the bounded input contract, exact output shapes,
-typed arguments, capability allow-list, deadlines, and rejection of
-measurement-like extra fields. CI compiles the arm64 native runtime and uploads
+typed arguments, capability allow-list, deadlines, ABI admission, and rejection
+of measurement-like extra fields. CI compiles the arm64 native runtime and uploads
 the AAR, APK, lint reports, and unit reports.
 
 This is a runnable candidate, not accepted device evidence. Issue #38 and Gate

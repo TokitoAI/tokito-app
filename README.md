@@ -49,8 +49,10 @@ flowchart LR
 
 ## Current status
 
-The repository now includes a standalone Android application plus executable
-offline voice, deterministic measurement, and dialogue libraries. The voice
+The repository now includes one camera-first Android product application. Its
+single activity composes live camera/AR presentation, offline voice,
+deterministic measurement, and local dialogue; these are runtime modules, not
+separate user-facing apps. The voice
 slice provides microphone capture, streaming English speech recognition, local
 English speech synthesis, typed partial/final transcript events, audio focus,
 cancellation, and barge-in. Final transcripts can enter locale-explicit
@@ -58,10 +60,11 @@ electrical measurement parsing with bounded spoken/touch confirmation before a
 reading becomes evidence. The dialogue slice uses pinned llama.cpp and the
 official Qwen3-0.6B Q8_0 GGUF admitted through a verified local manifest,
 bounded local generation, exact typed outcomes, and deterministic tool-policy
-validation. The validation app executes its declared `request_measurement`
+validation. The product app executes its declared `request_measurement`
 capability through the deterministic session and responds through local TTS.
-The reusable registered AR presentation module and its standalone
-manual-registration conformance app are also present; automatic camera
+The reusable registered AR presentation module and a separate
+manual-registration conformance app are also present; `android/ar-demo` is
+development tooling and is not distributed as another product. Automatic camera
 tracking, perception, and other physical tools remain tracked work and are not
 advertised as implemented capabilities.
 

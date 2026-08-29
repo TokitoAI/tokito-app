@@ -3,8 +3,12 @@ package dev.tokito.physical
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -13,6 +17,9 @@ import dev.tokito.physical.dialogue.Capability
 import dev.tokito.physical.dialogue.DialogueModelProvisioner
 import dev.tokito.physical.dialogue.DialogueOutcome
 import dev.tokito.physical.dialogue.DialogueRequest
+import dev.tokito.physical.dialogue.DialogueRole
+import dev.tokito.physical.dialogue.DialogueRuntimeState
+import dev.tokito.physical.dialogue.DialogueTurn
 import dev.tokito.physical.dialogue.ObservationSummary
 import dev.tokito.physical.dialogue.TokitoDialogueRuntime
 import dev.tokito.physical.measurement.MeasurementCandidate
@@ -29,168 +36,260 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** One product surface: camera, AR, local dialogue, STT, TTS, and typed tools. */
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var voice: TokitoVoiceRuntime
     private lateinit var dialogue: TokitoDialogueRuntime
     private lateinit var measurementSession: MeasurementVoiceSession
-    private val finalTranscript = StringBuilder()
+    private lateinit var ar: ArSessionController
+
+    private val conversation = ArrayDeque<DialogueTurn>()
     private var lastMeasurement: ObservationSummary? = null
+    private var preparingModels = false
+
+    private val cameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) ar.start()
+        else renderArState(ArSessionController.State("Camera blocked", "Camera permission is required for board guidance"))
+    }
 
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) launchAction { voice.startListening() }
-        else binding.statusText.text = "Microphone permission denied"
+        else showStatus("Microphone permission denied; text chat remains available")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         dialogue = TokitoDialogueRuntime(this)
         measurementSession = MeasurementVoiceSession(voice)
+        ar = ArSessionController(this, binding.cameraSurface, ::renderArState)
+
         bindActions()
-        observeRuntime()
+        observeRuntimes()
+        ensureCameraPermission()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (::ar.isInitialized && hasPermission(Manifest.permission.CAMERA)) ar.start()
+    }
+
+    override fun onStop() {
+        if (::ar.isInitialized) ar.stop()
+        if (::voice.isInitialized && voice.state.value == VoiceRuntimeState.Listening) {
+            lifecycleScope.launch { runCatching { voice.stopListening() } }
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
-        dialogue.close()
-        voice.close()
+        if (::ar.isInitialized) ar.destroy()
+        if (::dialogue.isInitialized) dialogue.close()
+        if (::voice.isInitialized) voice.close()
         super.onDestroy()
     }
 
     private fun bindActions() {
-        binding.initializeButton.setOnClickListener { launchAction { voice.initialize() } }
-        binding.startButton.setOnClickListener {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                launchAction { voice.startListening() }
-            } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-        }
-        binding.stopButton.setOnClickListener { launchAction { voice.stopListening() } }
-        binding.speakButton.setOnClickListener {
-            launchAction { voice.speak(binding.speechInput.text?.toString().orEmpty()) }
-        }
-        binding.interruptButton.setOnClickListener { launchAction { voice.interruptSpeech() } }
-        binding.initializeDialogueButton.setOnClickListener { launchAction { initializeDialogue() } }
-        binding.askDialogueButton.setOnClickListener { launchAction { askDialogue() } }
-        binding.beginMeasurementButton.setOnClickListener { launchAction { beginMeasurement() } }
+        binding.modelButton.setOnClickListener { launchAction(::prepareLocalAi) }
+        binding.preview3dButton.setOnClickListener { ar.preview3d() }
+        binding.resetRegistrationButton.setOnClickListener { ar.reset() }
+        binding.beginMeasurementButton.setOnClickListener { launchAction(::beginMeasurement) }
         binding.confirmMeasurementButton.setOnClickListener {
             launchAction { renderMeasurementTurn(measurementSession.confirmPrimary()) }
         }
         binding.rejectMeasurementButton.setOnClickListener {
             launchAction { renderMeasurementTurn(measurementSession.reject()) }
         }
+        binding.micButton.setOnClickListener { toggleVoice() }
+        binding.interruptButton.setOnClickListener { launchAction { voice.interruptSpeech() } }
+        binding.sendButton.setOnClickListener { launchAction(::askDialogue) }
+        binding.speechInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                launchAction(::askDialogue)
+                true
+            } else false
+        }
     }
 
-    private suspend fun initializeDialogue() {
-        binding.initializeDialogueButton.isEnabled = false
-        binding.statusText.text = "Loading verified local dialogue model"
-        val provisioner = DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
-        val model = withContext(Dispatchers.IO) {
-            provisioner.requireInstalled()
+    private fun ensureCameraPermission() {
+        if (hasPermission(Manifest.permission.CAMERA)) ar.start()
+        else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun toggleVoice() {
+        when (voice.state.value) {
+            VoiceRuntimeState.Listening -> launchAction { voice.stopListening() }
+            is VoiceRuntimeState.Speaking -> launchAction { voice.interruptSpeech() }
+            is VoiceRuntimeState.Ready -> {
+                if (hasPermission(Manifest.permission.RECORD_AUDIO)) launchAction { voice.startListening() }
+                else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            else -> showStatus("Prepare the verified local voice bundle first")
         }
-        dialogue.initialize(model)
-        binding.progressBar.visibility = android.view.View.GONE
-        binding.askDialogueButton.isEnabled = true
-        binding.statusText.text = "Local dialogue ready · ${model.id}"
+    }
+
+    private suspend fun prepareLocalAi() {
+        if (preparingModels) return
+        preparingModels = true
+        binding.modelButton.isEnabled = false
+        binding.progressBar.visibility = View.VISIBLE
+        showStatus("Verifying local voice and dialogue bundles")
+        try {
+            if (voice.state.value !is VoiceRuntimeState.Ready) voice.initialize()
+            if (dialogue.state.value !is DialogueRuntimeState.Ready) {
+                val model = withContext(Dispatchers.IO) {
+                    DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
+                        .requireInstalled()
+                }
+                dialogue.initialize(model)
+            }
+            showStatus("Local AI ready · no cloud fallback")
+        } finally {
+            preparingModels = false
+            binding.progressBar.visibility = View.GONE
+            updateAiControls()
+        }
     }
 
     private suspend fun askDialogue() {
-        binding.askDialogueButton.isEnabled = false
-        binding.statusText.text = "Thinking locally"
-        try {
-            val request = DialogueRequest(
-                utterance = binding.speechInput.text?.toString().orEmpty(),
+        val utterance = binding.speechInput.text?.toString().orEmpty().trim()
+        require(utterance.isNotEmpty()) { "Ask a question or use Talk first" }
+        check(dialogue.state.value is DialogueRuntimeState.Ready) { "Verified local dialogue model is not ready" }
+
+        hideKeyboard()
+        binding.speechInput.text?.clear()
+        binding.transcriptText.text = "You · $utterance"
+        binding.assistantText.text = "Thinking locally…"
+        val priorHistory = conversation.toList()
+        appendTurn(DialogueTurn(DialogueRole.USER, utterance))
+        val outcome = dialogue.respond(
+            DialogueRequest(
+                utterance = utterance,
+                history = priorHistory,
                 observations = listOfNotNull(lastMeasurement),
                 capabilities = listOf(REQUEST_MEASUREMENT),
-            )
-            when (val outcome = dialogue.respond(request)) {
-                is DialogueOutcome.Response -> speakDialogue(outcome.text)
-                is DialogueOutcome.Clarification -> speakDialogue(outcome.question)
-                is DialogueOutcome.ToolProposal -> executeTool(outcome)
-            }
-        } finally {
-            binding.askDialogueButton.isEnabled = true
+            ),
+        )
+        when (outcome) {
+            is DialogueOutcome.Response -> presentAssistant(outcome.text)
+            is DialogueOutcome.Clarification -> presentAssistant(outcome.question)
+            is DialogueOutcome.ToolProposal -> executeTool(outcome)
         }
     }
 
     private suspend fun executeTool(proposal: DialogueOutcome.ToolProposal) {
         check(proposal.tool == REQUEST_MEASUREMENT.name && proposal.version == REQUEST_MEASUREMENT.version) {
-            "The proposed tool is not authorized by this host"
+            "The proposed tool is not authorized by this app"
         }
         beginMeasurement()
-        binding.dialogueText.setText(R.string.measurement_request_prompt)
-        voice.speak(getString(R.string.measurement_request_prompt), SpeechQueuePolicy.REPLACE)
+        presentAssistant(getString(R.string.measurement_request_prompt))
+    }
+
+    private suspend fun presentAssistant(text: String) {
+        binding.assistantText.text = text
+        appendTurn(DialogueTurn(DialogueRole.ASSISTANT, text))
+        if (voice.state.value is VoiceRuntimeState.Ready || voice.state.value == VoiceRuntimeState.Listening) {
+            runCatching { voice.speak(text, SpeechQueuePolicy.REPLACE) }
+                .onFailure { showStatus("Response ready; local speech failed: ${it.message}") }
+        }
     }
 
     private suspend fun beginMeasurement() {
         measurementSession.begin()
+        binding.measurementCard.visibility = View.VISIBLE
         binding.beginMeasurementButton.isEnabled = false
         binding.measurementText.setText(R.string.measurement_armed)
+        showStatus("Measurement capture armed")
     }
 
-    private suspend fun speakDialogue(text: String) {
-        binding.dialogueText.text = text
-        binding.statusText.text = "Local dialogue complete"
-        voice.speak(text, SpeechQueuePolicy.REPLACE)
-    }
-
-    private fun observeRuntime() {
+    private fun observeRuntimes() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch { voice.state.collect(::renderState) }
-                launch { voice.events.collect(::renderEvent) }
+                launch { voice.state.collect(::renderVoiceState) }
+                launch { voice.events.collect(::renderVoiceEvent) }
+                launch { dialogue.state.collect(::renderDialogueState) }
             }
         }
     }
 
-    private fun renderState(state: VoiceRuntimeState) {
-        binding.statusText.text = when (state) {
-            VoiceRuntimeState.Uninitialized -> "Not initialized"
-            is VoiceRuntimeState.Provisioning -> "Provisioning ${state.artifact}"
-            is VoiceRuntimeState.Ready -> "Ready · ${state.capabilities.joinToString()}"
+    private fun renderVoiceState(state: VoiceRuntimeState) {
+        binding.voiceChip.text = when (state) {
+            VoiceRuntimeState.Uninitialized -> "Voice model not ready"
+            is VoiceRuntimeState.Ready -> "Voice ready · on device"
             VoiceRuntimeState.Listening -> "Listening locally"
-            is VoiceRuntimeState.Speaking -> "Speaking · tap Interrupt or speak to barge in"
-            is VoiceRuntimeState.Failed -> "${state.error.code}: ${state.error.message}"
-            VoiceRuntimeState.Closed -> "Closed"
+            is VoiceRuntimeState.Speaking -> "Speaking locally"
+            is VoiceRuntimeState.Failed -> "Voice unavailable"
+            VoiceRuntimeState.Closed -> "Voice closed"
         }
-        val ready = state is VoiceRuntimeState.Ready || state is VoiceRuntimeState.Listening
-        binding.initializeButton.isEnabled = state == VoiceRuntimeState.Uninitialized || state is VoiceRuntimeState.Failed
-        binding.startButton.isEnabled = state is VoiceRuntimeState.Ready
-        binding.stopButton.isEnabled = state == VoiceRuntimeState.Listening
-        binding.speakButton.isEnabled = ready
+        binding.micButton.text = when (state) {
+            VoiceRuntimeState.Listening -> getString(R.string.stop)
+            is VoiceRuntimeState.Speaking -> getString(R.string.interrupt)
+            else -> getString(R.string.talk)
+        }
+        binding.micButton.isEnabled = state is VoiceRuntimeState.Ready ||
+            state == VoiceRuntimeState.Listening || state is VoiceRuntimeState.Speaking
+        binding.interruptButton.visibility = if (state is VoiceRuntimeState.Speaking) View.VISIBLE else View.GONE
         binding.interruptButton.isEnabled = state is VoiceRuntimeState.Speaking
-        binding.progressBar.visibility = if (state is VoiceRuntimeState.Provisioning) android.view.View.VISIBLE else android.view.View.GONE
-        if (state is VoiceRuntimeState.Provisioning) {
-            binding.progressBar.progress = (state.fraction * 100).toInt().coerceIn(0, 100)
-        }
+        if (state is VoiceRuntimeState.Failed) showStatus("${state.error.code}: ${state.error.message}")
+        updateAiControls()
     }
 
-    private fun renderEvent(event: VoiceEvent) {
+    private fun renderDialogueState(state: DialogueRuntimeState) {
+        when (state) {
+            DialogueRuntimeState.Generating -> binding.assistantText.text = "Thinking locally…"
+            is DialogueRuntimeState.Failed -> showStatus("${state.failure.code}: ${state.failure.message}")
+            else -> Unit
+        }
+        updateAiControls()
+    }
+
+    private fun updateAiControls() {
+        if (!::voice.isInitialized || !::dialogue.isInitialized) return
+        val voiceReady = voice.state.value is VoiceRuntimeState.Ready ||
+            voice.state.value == VoiceRuntimeState.Listening || voice.state.value is VoiceRuntimeState.Speaking
+        val dialogueReady = dialogue.state.value is DialogueRuntimeState.Ready
+        binding.sendButton.isEnabled = dialogueReady
+        binding.modelButton.isEnabled = !preparingModels && !(voiceReady && dialogueReady)
+        binding.modelButton.text = if (voiceReady && dialogueReady) "Local AI ready" else getString(R.string.prepare_models)
+        binding.progressBar.visibility = if (preparingModels || dialogue.state.value == DialogueRuntimeState.Loading ||
+            dialogue.state.value == DialogueRuntimeState.Generating
+        ) View.VISIBLE else View.GONE
+    }
+
+    private fun renderVoiceEvent(event: VoiceEvent) {
         when (event) {
             is VoiceEvent.Transcript -> {
+                val prefix = if (event.segment.isFinal) "Heard" else "Listening"
+                binding.transcriptText.text = "$prefix · ${event.segment.text}"
                 if (event.segment.isFinal) {
-                    finalTranscript.appendLine(event.segment.text)
-                    binding.transcriptText.text = finalTranscript.toString()
+                    binding.speechInput.setText(event.segment.text)
+                    binding.speechInput.setSelection(event.segment.text.length)
                     launchAction {
                         measurementSession.accept(event.segment)?.let { renderMeasurementTurn(it) }
                     }
-                } else binding.transcriptText.text = finalTranscript.toString() + event.segment.text
+                }
             }
-            is VoiceEvent.BargeInDetected -> binding.statusText.text = "Barge-in detected"
-            is VoiceEvent.Error -> binding.statusText.text = "${event.failure.code}: ${event.failure.message}"
+            is VoiceEvent.BargeInDetected -> showStatus("Barge-in detected · speech interrupted")
+            is VoiceEvent.Error -> showStatus("${event.failure.code}: ${event.failure.message}")
             else -> Unit
         }
     }
 
     private suspend fun renderMeasurementTurn(turn: MeasurementTurn) {
+        binding.measurementCard.visibility = View.VISIBLE
         binding.measurementText.text = when (turn) {
             is MeasurementTurn.ConfirmationRequired -> {
                 binding.confirmMeasurementButton.isEnabled = true
                 binding.rejectMeasurementButton.isEnabled = true
-                "Awaiting confirmation: ${turn.draft.primary.display()}"
+                "Confirm ${turn.draft.primary.display()}"
             }
             is MeasurementTurn.Confirmed -> {
                 resetMeasurementControls()
@@ -202,21 +301,20 @@ class MainActivity : AppCompatActivity() {
                     observedAtElapsedMs = turn.measurement.confirmedAtMonotonicMillis,
                 )
                 val confirmation = "Confirmed ${candidate.display()}"
-                voice.speak(confirmation, SpeechQueuePolicy.REPLACE)
+                if (voice.state.value is VoiceRuntimeState.Ready || voice.state.value == VoiceRuntimeState.Listening) {
+                    voice.speak(confirmation, SpeechQueuePolicy.REPLACE)
+                }
                 confirmation
             }
             is MeasurementTurn.CorrectionRequired -> {
                 binding.confirmMeasurementButton.isEnabled = false
                 binding.rejectMeasurementButton.isEnabled = false
-                "Not recorded: ${turn.incomplete.recoverablePrompt}"
+                turn.incomplete.recoverablePrompt
             }
             is MeasurementTurn.Rejected -> {
                 resetMeasurementControls()
                 "Not recorded: ${turn.reason}"
             }
-        }
-        if (turn is MeasurementTurn.ConfirmationRequired || turn is MeasurementTurn.CorrectionRequired) {
-            binding.beginMeasurementButton.isEnabled = false
         }
     }
 
@@ -224,6 +322,19 @@ class MainActivity : AppCompatActivity() {
         binding.beginMeasurementButton.isEnabled = true
         binding.confirmMeasurementButton.isEnabled = false
         binding.rejectMeasurementButton.isEnabled = false
+    }
+
+    private fun renderArState(state: ArSessionController.State) {
+        binding.trackingChip.text = state.label
+        binding.trackingChip.setTextColor(
+            ContextCompat.getColor(this, if (state.registered) R.color.tokito_primary else R.color.tokito_text),
+        )
+        showStatus(state.detail)
+    }
+
+    private fun appendTurn(turn: DialogueTurn) {
+        conversation.addLast(turn)
+        while (conversation.size > MAX_CONVERSATION_TURNS) conversation.removeFirst()
     }
 
     private fun MeasurementCandidate.display(): String {
@@ -241,14 +352,27 @@ class MainActivity : AppCompatActivity() {
         return "$renderedValue ${unit.symbol}$location"
     }
 
+    private fun hideKeyboard() {
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(binding.speechInput.windowToken, 0)
+    }
+
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun showStatus(message: String) {
+        binding.statusText.text = message
+    }
+
     private fun launchAction(block: suspend () -> Unit) {
         lifecycleScope.launch {
             runCatching { block() }
-                .onFailure { binding.statusText.text = it.message ?: "Local operation failed" }
+                .onFailure { showStatus(it.message ?: "Local operation failed") }
         }
     }
 
     companion object {
+        private const val MAX_CONVERSATION_TURNS = 8
         private val REQUEST_MEASUREMENT = Capability(
             name = "request_measurement",
             version = 1,

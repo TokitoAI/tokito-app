@@ -59,6 +59,7 @@ sealed interface DialogueOutcome {
 }
 
 enum class DialogueFailureCode {
+    UNSUPPORTED_DEVICE,
     MODEL_MISSING,
     MODEL_INTEGRITY,
     INVALID_REQUEST,

@@ -1,6 +1,7 @@
 package dev.tokito.physical.dialogue
 
 import android.content.Context
+import android.os.Build
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.isModelLoaded
@@ -22,7 +23,12 @@ class TokitoDialogueRuntime(
     context: Context,
     private val limits: DialogueLimits = DialogueLimits(),
 ) : AutoCloseable {
-    private val engine = AiChat.getInferenceEngine(context.applicationContext)
+    private val applicationContext = context.applicationContext
+    private val engineDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ensureSupportedDevice()
+        AiChat.getInferenceEngine(applicationContext)
+    }
+    private val engine by engineDelegate
     private val protocol = DialogueProtocol(limits)
     private val operation = Mutex()
     private val closed = AtomicBoolean(false)
@@ -32,6 +38,7 @@ class TokitoDialogueRuntime(
 
     suspend fun initialize(model: DialogueModel) = operation.withLock {
         ensureOpen()
+        ensureSupportedDevice()
         require(model.sha256.matches(Regex("[a-f0-9]{64}"))) { "Expected a lowercase SHA-256" }
         if (!model.file.isFile) throw DialogueFailure(DialogueFailureCode.MODEL_MISSING, "Model file is absent")
         _state.value = DialogueRuntimeState.Loading
@@ -102,12 +109,23 @@ class TokitoDialogueRuntime(
         if (!closed.compareAndSet(false, true)) return
         // llama.cpp owns one process-wide backend. Unload this model while keeping the
         // backend reusable after an Activity recreation in the same Android process.
-        if (engine.state.value.isModelLoaded) runCatching { engine.cleanUp() }
+        if (engineDelegate.isInitialized() && engine.state.value.isModelLoaded) {
+            runCatching { engine.cleanUp() }
+        }
         _state.update { DialogueRuntimeState.Closed }
     }
 
     private fun ensureOpen() {
         if (closed.get()) throw DialogueFailure(DialogueFailureCode.CLOSED, "Dialogue runtime is closed")
+    }
+
+    private fun ensureSupportedDevice() {
+        if (!supportsDialogueRuntime(Build.SUPPORTED_ABIS)) {
+            throw DialogueFailure(
+                DialogueFailureCode.UNSUPPORTED_DEVICE,
+                "Local dialogue requires a $SUPPORTED_ABI Android device",
+            )
+        }
     }
 
     private fun sha256(file: java.io.File): String = file.inputStream().buffered().use { input ->
@@ -120,4 +138,11 @@ class TokitoDialogueRuntime(
         }
         digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private companion object {
+        const val SUPPORTED_ABI = "arm64-v8a"
+    }
 }
+
+internal fun supportsDialogueRuntime(abis: Array<String>): Boolean =
+    abis.any { it == "arm64-v8a" }
