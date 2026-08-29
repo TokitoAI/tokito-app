@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from build_frdm_reference_package import build_reference_package, parse_bom
+from build_frdm_reference_package import build_reference_package, classify_unresolved_footprint, parse_bom
 
 
 PCB_FIXTURE = """
@@ -66,10 +66,39 @@ PCB_FIXTURE = """
       (net 0 "")
     )
   )
+  (footprint ""
+    (layer "F.Cu")
+    (uuid "eee")
+    (at 9.0 9.0 0)
+    (pad "" smd circle
+      (at 0 0 0)
+      (size 1.524 1.524)
+      (layers "F.Cu")
+    )
+  )
 )
 """
 
 BOM_FIXTURE = "1\t1\t123-45678\t\t\tR1\n"
+
+
+class ClassifyUnresolvedFootprintTest(unittest.TestCase):
+    def test_unnamed_no_net_smd_circle_is_fiducial_regardless_of_diameter(self) -> None:
+        pads = [{"number": "", "pad_type": "smd", "shape": "circle", "size_w_mm": 1.524, "size_h_mm": 1.524, "net": None}]
+        category, evidence = classify_unresolved_footprint(pads)
+        self.assertEqual(category, "fiducial_candidate")
+        self.assertIn("1.52mm", evidence)
+
+    def test_named_smd_circle_with_net_at_same_diameter_is_not_a_fiducial(self) -> None:
+        pads = [{"number": "1", "pad_type": "smd", "shape": "circle", "size_w_mm": 1.524, "size_h_mm": 1.524, "net": "N1"}]
+        category, _ = classify_unresolved_footprint(pads)
+        self.assertNotEqual(category, "fiducial_candidate")
+        self.assertEqual(category, "single_pad_unclassified")
+
+    def test_thru_hole_circle_is_mounting_hole(self) -> None:
+        pads = [{"number": "1", "pad_type": "thru_hole", "shape": "circle", "size_w_mm": 2.5, "size_h_mm": 2.5, "net": None}]
+        category, _ = classify_unresolved_footprint(pads)
+        self.assertEqual(category, "mounting_hole_candidate")
 
 
 class BuildFrdmReferencePackageTest(unittest.TestCase):
@@ -114,10 +143,12 @@ class BuildFrdmReferencePackageTest(unittest.TestCase):
             counts = bundle["footprint_classification_report"]["counts_by_category"]
             self.assertEqual(counts.get("mounting_hole_candidate"), 1)
             self.assertEqual(counts.get("fiducial_or_test_point_candidate"), 1)
+            self.assertEqual(counts.get("fiducial_candidate"), 1)
 
             landmark_categories = {landmark["category"] for landmark in bundle["landmarks"]}
             self.assertIn("mounting_hole_candidate", landmark_categories)
             self.assertIn("fiducial_or_test_point_candidate", landmark_categories)
+            self.assertIn("fiducial_candidate", landmark_categories)
 
             self.assertTrue(bundle["integrity"]["payload_sha256"].startswith("sha256:"))
             self.assertEqual(bundle["status"], "candidate_pending_importer_and_registration_validation")

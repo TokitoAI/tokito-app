@@ -54,19 +54,28 @@ Real results from the actual board:
   number recorded alongside. This is independent confirmation that the
   recovered designators are real, not fabricated.
 - **11 real board-outline segments** extracted from the `Edge.Cuts` layer.
-- **190 footprints with no usable reference designator**, classified from
-  real pad geometry only (no identity is asserted, only a geometric
-  category and the measurement that produced it):
+- **190 footprints with no usable reference designator**, all fully
+  classified from real pad geometry only (no identity is asserted, only a
+  geometric category and the measurement that produced it):
   - 187 have zero pads (`graphic_or_mechanical_no_pads`) — most likely
     silkscreen text, logos, or keepout graphics that Allegro represented as
     footprints.
-  - 3 have exactly one ~1.52mm circular pad (`single_pad_unclassified`) —
-    left unclassified rather than guessed, since 1.52mm sits at the
-    boundary between this tool's mounting-hole and fiducial heuristics.
-  - 0 met the `mounting_hole_candidate` or `fiducial_or_test_point_candidate`
-    thresholds on this board, so **no landmarks were produced**. That is a
-    real result, not a bug: this board's Allegro export does not appear to
-    carry distinct fiducial/mounting-hole footprints with pads.
+  - **3 are `fiducial_candidate`**: each is a single unnamed (empty pad
+    number) SMD circular pad, 1.524mm diameter, with no net connection at
+    all. That combination — no electrical connection and no pad number —
+    is the standard signature of an optical alignment fiducial, not a
+    mounting hole (which is mechanical/through-hole) or a real component
+    (which has a net). This was refined from an earlier diameter-only
+    heuristic that left these 3 ambiguously "unclassified" at 1.52mm; the
+    no-net/no-pad-number signature is decisive regardless of the exact
+    diameter. Three fiducials is also a plausible, unremarkable count for
+    a rectangular PCB (non-collinear placement for pick-and-place
+    registration).
+  - **These 3 fiducials are emitted as `landmarks`** in the bundle — the
+    only landmarks this board's Allegro export supports. No
+    `mounting_hole_candidate` was found (no through-hole pad on this board
+    met that geometry), which is a real result, not a bug.
+  - Zero footprints remain unclassified.
 - The `footprint` field on each component is a geometry-derived descriptor
   (pad count and measured size), not an authoritative KiCad/JEDEC footprint
   name — the Allegro importer does not preserve one.

@@ -88,10 +88,18 @@ def classify_unresolved_footprint(pads: Sequence[dict[str, Any]]) -> tuple[str, 
     if len(pads) == 1:
         pad = pads[0]
         diameter = max(pad["size_w_mm"], pad["size_h_mm"])
+        no_net = not pad["net"]
+        no_pad_number = not pad["number"]
         if pad["shape"] == "circle" and pad["pad_type"] in ("thru_hole", "np_thru_hole") and diameter >= 1.5:
             return (
                 "mounting_hole_candidate",
                 f"1 {pad['pad_type']} circular pad, {diameter:.2f}mm diameter",
+            )
+        if pad["shape"] == "circle" and pad["pad_type"] == "smd" and no_net and no_pad_number:
+            return (
+                "fiducial_candidate",
+                f"1 unnamed SMD circular pad, {diameter:.2f}mm diameter, no net connection "
+                "(optical alignment marker signature: no electrical connection, no pad number)",
             )
         if diameter < 1.5:
             return (
@@ -155,7 +163,7 @@ def build_components(placements: Sequence[dict[str, Any]], bom: dict[str, str], 
 def build_landmarks(footprint_classification_rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     landmarks = []
     for index, row in enumerate(footprint_classification_rows):
-        if row["category"] in ("mounting_hole_candidate", "fiducial_or_test_point_candidate"):
+        if row["category"] in ("mounting_hole_candidate", "fiducial_or_test_point_candidate", "fiducial_candidate"):
             landmarks.append(
                 {
                     "landmark_id": f"{row['category']}-{index}",
