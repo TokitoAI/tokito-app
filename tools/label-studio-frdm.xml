@@ -1,6 +1,6 @@
 <View>
   <Header value="FRDM-MCXN236 visible-object review" />
-  <Text name="policy" value="Box only visible, identifiable objects. Do not infer hidden parts or reference designators." />
+  <Text name="policy" value="Box only visible, identifiable objects. A board printed in a guide or datasheet is a printed-board depiction, never a physical full-board object. Do not infer hidden parts or reference designators." />
   <Image name="image" value="$image" zoom="true" rotateControl="false" />
   <RectangleLabels name="label" toName="image" choice="single" showInline="false">
     <Label value="NXP_FRDM-MCXN236_full_board" background="#00CDB4" />
@@ -11,5 +11,6 @@
     <Label value="NXP_FRDM-MCXN236_header" background="#277DA1" />
     <Label value="NXP_FRDM-MCXN236_passive_component" background="#90BE6D" />
     <Label value="NXP_FRDM-MCXN236_test_point" background="#F3722C" />
+    <Label value="NXP_FRDM-MCXN236_printed_board_depiction" background="#B5179E" />
   </RectangleLabels>
 </View>

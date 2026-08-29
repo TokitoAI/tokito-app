@@ -43,7 +43,10 @@ are not negative examples.
 ### Label Studio review
 
 Tokito's checked-in Label Studio configuration is
-`tools/label-studio-frdm.xml`. Generate import tasks from an intake manifest:
+`tools/label-studio-frdm.xml` for physical captures. Printed guide, datasheet,
+packaging, and screen sessions must instead use
+`tools/label-studio-frdm-printed-reference.xml`, which exposes only the
+printed-depiction class. Generate import tasks from an intake manifest:
 
 ```bash
 python tools/annotation_review.py prepare \
@@ -51,6 +54,7 @@ python tools/annotation_review.py prepare \
   --document-root datasets/local \
   --license-status approved \
   --source-uri local://iqoo/<session-id> \
+  --media-domain physical_capture \
   --output datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/label-studio-tasks.json
 ```
 
@@ -70,12 +74,14 @@ python tools/annotation_review.py import \
   --export datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/label-studio-export.json \
   --output-dir datasets/local/nxp-frdm-mcxn236/sessions/<session-id>/review \
   --session-id <session-id> \
-  --license-status approved
+  --license-status approved \
+  --media-domain physical_capture
 ```
 
 The importer rejects multiple active reviews, missing reviewer identity,
 unknown classes, rotated boxes, invalid geometry, session/license drift, and
-overwriting prior reviewed output. A `pending` or `rejected` source is always
+media-domain drift, printed/physical label confusion, and overwriting prior
+reviewed output. A `pending` or `rejected` source is always
 marked `trainable: false`; changing a CLI flag cannot silently promote it.
 Use `--allow-empty` only when a reviewer has confirmed a true negative image.
 The reviewed labels and review manifest remain under ignored local storage.
@@ -101,6 +107,15 @@ nxp-frdm-mcxn236_iqoo-2026-08-29-session01_top_mixed-angle_indoor-bench_img_0001
   point; design identity such as `D1` or `R14` comes later from board
   coordinates plus the reviewed assembly context.
 - Draw bounding boxes only around visible and identifiable objects.
+- A board image printed in a quick-start guide, datasheet, packaging, screen,
+  or other document is not a physical-board positive. Ingest those sessions
+  with `--media-domain printed_reference` and expose only
+  `NXP_FRDM-MCXN236_printed_board_depiction`. The bridge rejects a physical
+  class in that domain. These reviewed depictions are useful as hard
+  distractors for false-positive evaluation or rejection training only after
+  their source license is approved.
+- For a printed depiction cut by a photograph boundary, box only the visible
+  printed board extent. Do not extend the box to an inferred hidden outline.
 - Do not infer hidden components or reference designators from schematic
   knowledge alone.
 - Keep train/validation/test splits disjoint by physical board and capture

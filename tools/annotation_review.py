@@ -18,7 +18,14 @@ from typing import Any, Sequence
 from urllib.parse import quote
 
 RECTANGLE_TYPE = "rectanglelabels"
+PERCENT_EPSILON = 1e-9
 SUPPORTED_LICENSE_STATES = {"approved", "pending", "rejected"}
+SUPPORTED_MEDIA_DOMAINS = {
+    "physical_capture",
+    "printed_reference",
+    "public_web_reference",
+}
+PRINTED_DEPICTION_LABEL = "NXP_FRDM-MCXN236_printed_board_depiction"
 
 
 @dataclass(frozen=True)
@@ -70,12 +77,23 @@ def prepare_label_studio_tasks(
     document_root: Path,
     license_status: str,
     source_uri: str,
+    media_domain: str,
 ) -> list[dict[str, Any]]:
     if license_status not in SUPPORTED_LICENSE_STATES:
         raise ValueError(f"unsupported license status: {license_status}")
+    if media_domain not in SUPPORTED_MEDIA_DOMAINS:
+        raise ValueError(f"unsupported media domain: {media_domain}")
     class_names = intake_manifest.get("class_names", [])
     if not class_names:
         raise ValueError("intake manifest has no class names")
+    if media_domain == "printed_reference" and class_names != [PRINTED_DEPICTION_LABEL]:
+        raise ValueError(
+            "printed-reference intake must expose only the printed-board-depiction label"
+        )
+    if media_domain == "physical_capture" and PRINTED_DEPICTION_LABEL in class_names:
+        raise ValueError(
+            "physical-capture intake cannot expose the printed-board-depiction label"
+        )
 
     tasks: list[dict[str, Any]] = []
     for image in intake_manifest.get("images", []):
@@ -95,6 +113,7 @@ def prepare_label_studio_tasks(
                     "session_id": intake_manifest["session_id"],
                     "license_status": license_status,
                     "source_uri": source_uri,
+                    "media_domain": media_domain,
                     "allowed_labels": class_names,
                 }
             }
@@ -148,7 +167,12 @@ def reviewed_boxes(
         y = _finite_percent(value.get("y"), "y")
         width = _finite_percent(value.get("width"), "width")
         height = _finite_percent(value.get("height"), "height")
-        if width <= 0.0 or height <= 0.0 or x + width > 100.0 or y + height > 100.0:
+        if (
+            width <= 0.0
+            or height <= 0.0
+            or x + width > 100.0 + PERCENT_EPSILON
+            or y + height > 100.0 + PERCENT_EPSILON
+        ):
             raise ValueError(
                 "bounding box must have positive area and remain inside the image"
             )
@@ -170,10 +194,13 @@ def import_reviewed_export(
     output_dir: Path,
     expected_session_id: str,
     license_status: str,
+    media_domain: str,
     allow_empty: bool = False,
 ) -> dict[str, Any]:
     if license_status not in SUPPORTED_LICENSE_STATES:
         raise ValueError(f"unsupported license status: {license_status}")
+    if media_domain not in SUPPORTED_MEDIA_DOMAINS:
+        raise ValueError(f"unsupported media domain: {media_domain}")
     labels_dir = output_dir / "labels" / "reviewed"
     if labels_dir.exists() and any(labels_dir.iterdir()):
         raise ValueError(
@@ -195,6 +222,8 @@ def import_reviewed_export(
         image_ids_seen.add(image_id)
         if data.get("license_status") != license_status:
             raise ValueError(f"license state drift for {image_id}")
+        if data.get("media_domain") != media_domain:
+            raise ValueError(f"media domain drift for {image_id}")
         class_names = data.get("allowed_labels", [])
         if not class_names:
             raise ValueError(f"task {image_id} has no allowed labels")
@@ -203,6 +232,17 @@ def import_reviewed_export(
         elif class_names_seen != list(class_names):
             raise ValueError("class ordering differs between exported tasks")
         boxes, reviewer = reviewed_boxes(task, class_names)
+        box_classes = {box.class_name for box in boxes}
+        if media_domain == "printed_reference" and box_classes - {
+            PRINTED_DEPICTION_LABEL
+        }:
+            raise ValueError(
+                f"printed reference {image_id} contains a physical-object label"
+            )
+        if media_domain == "physical_capture" and PRINTED_DEPICTION_LABEL in box_classes:
+            raise ValueError(
+                f"physical capture {image_id} contains a printed-depiction label"
+            )
         if not boxes and not allow_empty:
             raise ValueError(
                 f"task {image_id} has no reviewed boxes; use --allow-empty only for true negatives"
@@ -231,6 +271,7 @@ def import_reviewed_export(
                 "image_id": image_id,
                 "media_sha256": media_sha256,
                 "source_uri": source_uri,
+                "media_domain": media_domain,
                 "reviewer": reviewer,
                 "box_count": len(boxes),
                 "classes": sorted({box.class_name for box in boxes}),
@@ -243,6 +284,7 @@ def import_reviewed_export(
         "schema_version": "1.0",
         "session_id": expected_session_id,
         "license_status": license_status,
+        "media_domain": media_domain,
         "trainable": license_status == "approved" and bool(records),
         "trainability_reason": (
             "reviewed annotations and approved source license"
@@ -274,6 +316,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--license-status", required=True, choices=sorted(SUPPORTED_LICENSE_STATES)
     )
     prepare.add_argument("--source-uri", required=True)
+    prepare.add_argument(
+        "--media-domain", required=True, choices=sorted(SUPPORTED_MEDIA_DOMAINS)
+    )
     prepare.add_argument("--output", required=True, type=Path)
 
     convert = subparsers.add_parser(
@@ -285,6 +330,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     convert.add_argument(
         "--license-status", required=True, choices=sorted(SUPPORTED_LICENSE_STATES)
     )
+    convert.add_argument(
+        "--media-domain", required=True, choices=sorted(SUPPORTED_MEDIA_DOMAINS)
+    )
     convert.add_argument("--allow-empty", action="store_true")
 
     args = parser.parse_args(argv)
@@ -294,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.document_root,
             args.license_status,
             args.source_uri,
+            args.media_domain,
         )
         write_json(args.output, tasks)
         print(
@@ -307,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output_dir,
             args.session_id,
             args.license_status,
+            args.media_domain,
             args.allow_empty,
         )
         print(json.dumps(manifest, indent=2, sort_keys=True))
