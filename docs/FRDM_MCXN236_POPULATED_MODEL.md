@@ -46,21 +46,48 @@ zero-size pads noted in `docs/FRDM_MCXN236_REFERENCE_PACKAGE.md`.
    at `C:\Program Files\KiCad\10.0\share\kicad\3dmodels\...` (checked with
    `Path.is_file()`, not assumed).
 
-Real result against the actual board:
+Real result against the actual board, after two resolution passes (see
+below for what the second pass added):
 
 | Status | Count | Meaning |
 |---|---|---|
-| `matched_official_kicad_model` | 295 | Real package code recognized in the BOM description and the exact KiCad library file exists on disk |
-| `no_recognized_package_code` | 86 | BOM description has no recognized standard package code (test points, connectors, headers, most ICs, switches, crystals, mounting hardware, jumpers) |
-| `package_recognized_but_unresolved` | 10 | A package code was recognized but this resolver doesn't have a rule for it yet (5 diodes with a plain `0603` chip-diode designator; 5 solder jumpers with `0402`, which are correctly not real mountable parts anyway per their BOM description) |
+| `matched_official_kicad_model` | 316 | Real package code recognized in the BOM description and the exact KiCad library file exists on disk |
+| `no_recognized_package_code` | 70 | BOM description has no recognized standard package code |
+| `package_recognized_but_unresolved` | 5 | A package code was recognized (5 solder jumpers, `0402`) but they are correctly not real mountable parts per their own BOM description ("SOLDER BLOB JUMPER ... NO PART TO ORDER") |
 
-75.4% of the 391 real components got a real, verified, non-fabricated
-model. The remainder -- overwhelmingly test points (28), connectors (20),
-ICs (13, including the MCU), jumper headers (8), diodes (8), mounting
-holes (4), and switches/crystals -- are honestly reported as unresolved,
-not guessed. This was a deliberate, time-boxed stopping point: the major
-ICs and connectors would require per-part manual vendor CAD sourcing, not
-something this generic resolver batch-solves.
+80.8% of the 391 real components got a real, verified, non-fabricated
+model.
+
+### Second pass: LED/SOT-89/SOT-363/bare-header families
+
+The first pass (295/391) only mapped chip-passive package codes for
+`R`/`C`/`L` prefixes plus `SOT-23`/`SOD-523`. A second pass added, each
+checked against a real installed file before being accepted:
+
+- **LED chip packages** (`LED_SMD.3dshapes`): gated on the BOM description
+  containing the word "LED" (not just a package-shaped number, since `D`
+  prefixes cover both LEDs and diodes) plus a recognized chip package code.
+  Resolved 5 LEDs (`D3`, `D6`, `D7`, `D8`, `D12`, all `0603`).
+- **`SOT-363`/`SC-70-6`**: resolved 1 diode (`D11`).
+- **Bare THT pin headers** (`Connector_PinHeader_*mm.3dshapes`): only
+  matches a BOM description starting `"HDR NxM TH"` -- this pattern
+  deliberately does **not** match `"CON ... SKT SHRD"` (shrouded box
+  connectors), which are a different physical shape. Pin count and pitch
+  (50mil/1.27mm or 100mil/2.54mm) come directly from the BOM text; a
+  single-pin header (`1x1`) defaults to the 2.54mm family since pitch is
+  meaningless for one pin. Resolved 7 headers (`J12`, `J13`, `J15`,
+  `J16`, `J17`, `J19`, `J20`). These are recorded with
+  `model_kind: "generic_family_approximate"` (real pin-count/pitch match,
+  not an exact vendor part) rather than `"exact_family"` -- the component
+  map preserves this distinction.
+- **A real near-miss, correctly left unresolved**: `U2`'s BOM description
+  says `"SOT-89-5"`, but KiCad's library only has `SOT-89-3.step` (a
+  different pin count = a different real physical part). This is reported
+  as unresolved rather than silently substituting the wrong-pin-count
+  model.
+
+The remainder (75 components) are honestly reported as unresolved, not
+guessed -- see the tiered report below.
 
 ## Attaching models: text-splice, not pcbnew scripting
 
@@ -99,28 +126,60 @@ python tools/attach_3d_models_text.py \
 
 - `kicad-cli pcb export glb` accepted the spliced file cleanly (same
   pre-existing zero-sized-pad warnings as the original import, no new
-  errors).
-- GLB grew from 2 nodes / 1 mesh (board-only) to **592 nodes / 296 meshes**
-  (295 attached component models + 1 board-substrate mesh) -- file size
-  877KB to 1.84MB.
+  errors), across both resolution passes.
+- GLB grew from 2 nodes / 1 mesh (board-only) -> 592 nodes / 296 meshes
+  (first pass, 295 models) -> **634 nodes / 317 meshes** (second pass,
+  316 models) -- file size 877KB -> 1.84MB -> 2.29MB.
 - Visually rendered (`kicad-cli pcb render`, both top orthographic and
-  isometric views, saved as
-  `build/ar-assets/frdm-mcxn236/generated/frdm_mcxn236_populated_render_top.png`
-  and `..._render_iso.png`): correctly shaped, properly seated resistor
-  and capacitor bodies are visible scattered across the board matching
-  real component density, plus a visible SOT-23 body near the RGB header
-  area. Nothing floating, mirrored, or obviously misplaced.
+  isometric views) after each pass and actually inspected: correctly
+  shaped, properly seated resistor/capacitor/SOT-23 bodies, plus (second
+  pass) real black/gold THT pin-header bodies visible at multiple
+  locations with pins correctly protruding. Nothing floating, mirrored,
+  or obviously misplaced in either render.
+
+## Tiered report of the 75 still-unresolved components
+
+Generated from `component_model_resolution.json`; saved as
+`build/ar-assets/frdm-mcxn236/generated/unresolved_component_report.json`
+with full reference/position/rotation/side/BOM fields per component.
+
+| Tier | Count | Meaning |
+|---|---|---|
+| 1 | 29 | MCU/major ICs (`U1`-`U12`, `U41`), USB-C/audio/major shrouded connectors (`J1`-`J4`, `J8`-`J11`, `J14`, `J21`), buttons (`SW1`-`SW3`), crystals (`Y1`-`Y3`), tri-color LED (`D13`) |
+| 2 | 8 | Smaller connectors/jumper headers not covered by the bare-header pattern, plain diodes, transistors |
+| 3 | 38 | Test points (28, no real 3D body -- bare pads), mounting holes (4, `"NO PART TO ORDER"`), solder jumpers (5, `"NO PART TO ORDER"`), remaining passive/misc |
+
+Tier 1 is exactly the set a hackathon judge would most want to see in
+3D, and exactly the set that needs real vendor CAD (Digi-Key/Mouser/
+Ultra Librarian STEP files) rather than a KiCad-library lookup: BGA/QFN/
+WLCSP/DFN/HVSON/LGA packages for the ICs, and USB-C receptacle/shrouded-
+box/audio-jack housings for the connectors, are vendor- and part-
+specific shapes with no generic KiCad equivalent that could be trusted
+without a real dimensional cross-check.
+
+### Why the real iQOO photos weren't used to crop reference thumbnails
+
+This was considered (project board position -> approximate image ROI ->
+crop, for visual identification only, not mesh generation). It was not
+done: computing an image-pixel region requires a real, calibrated
+board-to-camera transform, and the only transform available anywhere in
+this codebase is `tools/component_locator.py`'s
+`identity_test_transform` -- an explicit test fixture (`transform_revision:
+"test-fixture-identity-scale"`), not derived from any actual photo's real
+camera parameters. Cropping "reference thumbnails" with it would show an
+essentially arbitrary region of the photo, not the component's real
+location -- that would be misleading rather than helpful, so it was
+skipped rather than faked. The BOM descriptions already extracted here
+(e.g. `"CON 2X8 USB2.0_TYPE_C RCPT"` for `J10`/`J11`, `"IC MCU ... VFBGA184"`
+for `U1`) are specific enough for a human to identify these parts directly
+in the real photos without a crop.
 
 ## What this is not
 
-- **Not fully populated.** The MCU (`U1`, VFBGA184 package), other major
-  ICs, and all connectors/headers/switches/crystals remain flat
-  outline-only in the render -- exactly the components a hackathon judge
-  would most want to see in 3D, and exactly the ones this pass does not
-  attempt (no exact BGA/QFN/connector-shell model exists in KiCad's
-  library for these vendor-specific parts, and sourcing one per part is
-  manual, per-component work, not something this generic resolver batch-
-  solves).
+- **Not fully populated.** 29 Tier 1 components -- the MCU, other major
+  ICs, and the USB-C/audio/major connectors -- remain flat outline-only
+  in the render. Real vendor 3D models for these would need manual
+  per-part sourcing, not something this generic resolver batch-solves.
 - **Not board registration, a detector, or an AR asset.** This is a
   visual-quality improvement to the reference 3D asset only. It does not
   change, and is not required by, `tools/component_locator.py`'s
@@ -129,6 +188,9 @@ python tools/attach_3d_models_text.py \
 - **Not a redistribution-rights determination.** KiCad's official 3D
   library ships under its own license (separate from this repository);
   this document does not re-state or verify that license here.
+- **Does not touch the YOLO labeling track.** No file under
+  `datasets/local` was read or modified by this work; the 22 iQOO images
+  remain exactly as your teammate's labeling session will find them.
 
 ## Files
 
@@ -143,3 +205,5 @@ policy as the rest of the AR asset pipeline:
   evidence for every one of the 391 real components
 - `frdm_mcxn236_populated_render_top.png` / `..._render_iso.png` --
   visual verification renders
+- `unresolved_component_report.json` -- the 75 still-unresolved
+  components with tier, full BOM fields, and real position/rotation/side

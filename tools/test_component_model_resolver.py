@@ -7,8 +7,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from component_model_resolver import resolve_all, resolve_chip_passive_model, resolve_sot23_model
-from xlsx_bom_parser import extract_chip_package_code, extract_sot23_variant, has_sod523_package
+from component_model_resolver import (
+    resolve_all,
+    resolve_bare_header_model,
+    resolve_chip_passive_model,
+    resolve_led_chip_model,
+    resolve_sot23_model,
+    resolve_sot363_model,
+)
+from xlsx_bom_parser import (
+    extract_bare_header_spec,
+    extract_chip_package_code,
+    extract_sot23_variant,
+    has_sod523_package,
+    has_sot363_package,
+    is_led_description,
+)
 
 
 def make_component(reference: str, x: float = 0.0, y: float = 0.0, rotation: float = 0.0, side: str = "top") -> dict:
@@ -46,6 +60,76 @@ class HasSod523PackageTest(unittest.TestCase):
 
     def test_no_match(self) -> None:
         self.assertFalse(has_sod523_package("CAP CER 4.7uF 16V 10% X5R 0603"))
+
+
+class IsLedDescriptionTest(unittest.TestCase):
+    def test_detects_led(self) -> None:
+        self.assertTrue(is_led_description("LED RED SGL 20MA 0603"))
+
+    def test_diode_is_not_led(self) -> None:
+        self.assertFalse(is_led_description("DIODE SCH 1A 30V MICROSMP SMT"))
+
+
+class HasSot363PackageTest(unittest.TestCase):
+    def test_detects_sot363(self) -> None:
+        self.assertTrue(has_sot363_package("DIODE TVS UNIDIR 3.3VWM 12VC SOT363"))
+
+    def test_no_match(self) -> None:
+        self.assertFalse(has_sot363_package("CAP CER 4.7uF 16V 10% X5R 0603"))
+
+
+class ExtractBareHeaderSpecTest(unittest.TestCase):
+    def test_extracts_multi_pin_header_with_explicit_pitch(self) -> None:
+        self.assertEqual(extract_bare_header_spec("HDR 2X5 TH 50MIL CTR 167H AU 91L"), (2, 5, 1.27))
+
+    def test_single_pin_header_defaults_to_2_54mm(self) -> None:
+        self.assertEqual(extract_bare_header_spec("HDR 1X1 TH -- 330H AU 100L"), (1, 1, 2.54))
+
+    def test_shrouded_connector_does_not_match(self) -> None:
+        self.assertIsNone(extract_bare_header_spec("CON 2X8 SKT SHRD TH 100MIL CTR 345H AU 126L"))
+
+    def test_multi_pin_header_without_recognized_pitch_returns_none(self) -> None:
+        self.assertIsNone(extract_bare_header_spec("HDR 2X5 TH -- 167H AU 91L"))
+
+
+class ResolveLedChipModelTest(unittest.TestCase):
+    def test_resolves_when_file_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "LED_SMD.3dshapes"
+            folder.mkdir()
+            (folder / "LED_0603_1608Metric.step").write_text("x", encoding="utf-8")
+            model_path, _ = resolve_led_chip_model("0603", library_root)
+            self.assertIsNotNone(model_path)
+
+
+class ResolveSot363ModelTest(unittest.TestCase):
+    def test_resolves_when_file_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "Package_TO_SOT_SMD.3dshapes"
+            folder.mkdir()
+            (folder / "SOT-363_SC-70-6.step").write_text("x", encoding="utf-8")
+            model_path, _ = resolve_sot363_model(library_root)
+            self.assertIsNotNone(model_path)
+
+
+class ResolveBareHeaderModelTest(unittest.TestCase):
+    def test_resolves_when_file_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            library_root = Path(directory)
+            folder = library_root / "Connector_PinHeader_2.54mm.3dshapes"
+            folder.mkdir()
+            (folder / "PinHeader_2x05_P2.54mm_Vertical.step").write_text("x", encoding="utf-8")
+            model_path, reason = resolve_bare_header_model(2, 5, 2.54, library_root)
+            self.assertIsNotNone(model_path)
+            self.assertIn("generic", reason.lower())
+
+    def test_missing_file_reported_not_fabricated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_path, reason = resolve_bare_header_model(2, 5, 2.54, Path(directory))
+            self.assertIsNone(model_path)
+            self.assertIn("does not exist", reason)
 
 
 class ResolveChipPassiveModelTest(unittest.TestCase):

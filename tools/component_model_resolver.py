@@ -21,9 +21,12 @@ from typing import Any
 
 from xlsx_bom_parser import (
     expand_by_reference_designator,
+    extract_bare_header_spec,
     extract_chip_package_code,
     extract_sot23_variant,
     has_sod523_package,
+    has_sot363_package,
+    is_led_description,
     parse_bom_records,
 )
 
@@ -91,6 +94,36 @@ def resolve_sod523_model(library_root: Path) -> tuple[str | None, str]:
     return str(path), "matched real installed KiCad official 3D model file"
 
 
+def resolve_led_chip_model(package_code: str, library_root: Path) -> tuple[str | None, str]:
+    metric = IMPERIAL_TO_METRIC.get(package_code)
+    if metric is None:
+        return None, f"package code '{package_code}' has no known imperial->metric mapping"
+    path = library_root / "LED_SMD.3dshapes" / f"LED_{package_code}_{metric}Metric.step"
+    if not path.is_file():
+        return None, f"expected model file does not exist on disk: {path}"
+    return str(path), "matched real installed KiCad official 3D model file"
+
+
+def resolve_sot363_model(library_root: Path) -> tuple[str | None, str]:
+    path = library_root / "Package_TO_SOT_SMD.3dshapes" / "SOT-363_SC-70-6.step"
+    if not path.is_file():
+        return None, f"expected model file does not exist on disk: {path}"
+    return str(path), "matched real installed KiCad official 3D model file"
+
+
+def resolve_bare_header_model(rows: int, cols: int, pitch_mm: float, library_root: Path) -> tuple[str | None, str]:
+    """Only for a plain THT pin header (BARE_HEADER_PATTERN already
+    excludes shrouded/SMD connectors). This is a generic family match on
+    real pin-count and pitch from the BOM text, not an exact vendor part
+    -- callers should record that distinction."""
+    pitch_folder = f"Connector_PinHeader_{pitch_mm:.2f}mm.3dshapes"
+    filename = f"PinHeader_{rows}x{cols:02d}_P{pitch_mm:.2f}mm_Vertical.step"
+    path = library_root / pitch_folder / filename
+    if not path.is_file():
+        return None, f"expected model file does not exist on disk: {path}"
+    return str(path), "matched real installed KiCad official 3D model file (generic pin-count/pitch family, not an exact vendor part)"
+
+
 def resolve_all(
     components: list[dict[str, Any]],
     bom_by_reference: dict[str, dict[str, Any]],
@@ -102,27 +135,52 @@ def resolve_all(
         bom_record = bom_by_reference.get(reference)
         description = bom_record.get("Description", "") if bom_record else ""
         package_code = extract_chip_package_code(description) if description else None
+        is_led = is_led_description(description) if description else False
         sot23_variant = extract_sot23_variant(description) if description else None
         is_sod523 = has_sod523_package(description) if description else False
+        is_sot363 = has_sot363_package(description) if description else False
+        bare_header_spec = extract_bare_header_spec(description) if description else None
 
         model_path = None
         status = "no_recognized_package_code"
         evidence = f"BOM description: {description!r}" if description else "reference not found in BOM"
+        model_kind = None
 
-        if package_code is not None:
+        if package_code is not None and is_led:
+            model_path, reason = resolve_led_chip_model(package_code, library_root)
+            status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
+            evidence = reason
+            model_kind = "exact_family" if model_path else None
+        elif package_code is not None:
             model_path, reason = resolve_chip_passive_model(reference, package_code, library_root)
             status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
             evidence = reason
+            model_kind = "exact_family" if model_path else None
         elif sot23_variant is not None:
             model_path, reason = resolve_sot23_model(sot23_variant, library_root)
             status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
             evidence = reason
             package_code = f"SOT-23-{sot23_variant}" if sot23_variant else "SOT-23"
+            model_kind = "exact_family" if model_path else None
         elif is_sod523:
             model_path, reason = resolve_sod523_model(library_root)
             status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
             evidence = reason
             package_code = "SOD-523"
+            model_kind = "exact_family" if model_path else None
+        elif is_sot363:
+            model_path, reason = resolve_sot363_model(library_root)
+            status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
+            evidence = reason
+            package_code = "SOT-363"
+            model_kind = "exact_family" if model_path else None
+        elif bare_header_spec is not None:
+            rows, cols, pitch_mm = bare_header_spec
+            model_path, reason = resolve_bare_header_model(rows, cols, pitch_mm, library_root)
+            status = "matched_official_kicad_model" if model_path else "package_recognized_but_unresolved"
+            evidence = reason
+            package_code = f"HDR-{rows}x{cols}-{pitch_mm}mm"
+            model_kind = "generic_family_approximate" if model_path else None
 
         results.append(
             {
@@ -136,6 +194,7 @@ def resolve_all(
                 "bom_description": description,
                 "package_code": package_code,
                 "model_path": model_path,
+                "model_kind": model_kind,
                 "status": status,
                 "evidence": evidence,
             }

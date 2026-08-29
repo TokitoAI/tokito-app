@@ -136,6 +136,49 @@ def has_sod523_package(description: str) -> bool:
     return SOD523_PATTERN.search(description) is not None
 
 
+SOT363_PATTERN = re.compile(r"\bSOT[- ]?363\b", re.IGNORECASE)
+
+
+def has_sot363_package(description: str) -> bool:
+    return SOT363_PATTERN.search(description) is not None
+
+
+LED_MARKER_PATTERN = re.compile(r"\bLED\b", re.IGNORECASE)
+
+
+def is_led_description(description: str) -> bool:
+    return LED_MARKER_PATTERN.search(description) is not None
+
+
+BARE_HEADER_PATTERN = re.compile(r"\bHDR\s+(\d+)X(\d+)\s+TH\b", re.IGNORECASE)
+HEADER_PITCH_MIL_PATTERN = re.compile(r"(\d+)MIL")
+
+MIL_TO_MM = {"50": 1.27, "100": 2.54}
+
+
+def extract_bare_header_spec(description: str) -> tuple[int, int, float] | None:
+    """Extracts (rows, cols, pitch_mm) for a plain THT pin header
+    ("HDR NxM TH ..."), never for a shrouded/SMD connector ("CON ... SKT
+    SHRD" etc, which this pattern does not match). Returns None rather
+    than guessing a pitch when a multi-pin header's pitch isn't stated in
+    a recognized MIL value; a single-pin header (1x1) has no meaningful
+    pitch, so it defaults to the near-universal 100mil/2.54mm post size."""
+    match = BARE_HEADER_PATTERN.search(description)
+    if not match:
+        return None
+    rows, cols = int(match.group(1)), int(match.group(2))
+    pitch_match = HEADER_PITCH_MIL_PATTERN.search(description)
+    if pitch_match:
+        pitch_mm = MIL_TO_MM.get(pitch_match.group(1))
+        if pitch_mm is None:
+            return None
+    elif rows * cols == 1:
+        pitch_mm = 2.54
+    else:
+        return None
+    return (rows, cols, pitch_mm)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Parse an xlsx BOM export into per-reference-designator records.")
     parser.add_argument("--input", required=True, type=Path)
