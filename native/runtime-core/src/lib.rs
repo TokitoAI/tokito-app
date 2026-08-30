@@ -1272,6 +1272,58 @@ mod tests {
     }
 
     #[test]
+    fn a_different_contract_version_is_rejected_not_silently_upgraded() {
+        // Additive/minor contract changes never bump `contract_version` (see
+        // RUNTIME_CONTRACT.md's Compatibility section), so any observed
+        // mismatch here is a genuine major/incompatible change and must be
+        // rejected rather than treated as an implicit upgrade.
+        let now = Instant::now();
+        let manifest = CapabilityManifest::new("contract.v1", [ToolId("inspect".into())]).unwrap();
+        let call = ToolCall {
+            schema_version: "contract.v2".into(),
+            tool_call_id: "call-version".into(),
+            session_id: "session-version".into(),
+            context_revision: "context-version".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        assert_eq!(
+            call.validate(&manifest, "context-version", now),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn failure_categories_stay_distinct_across_the_contract() {
+        // #22 requires that "unsupported capability" is never confused with
+        // unavailable model, invalid input, overload, or inference failure.
+        // Each comes from an independent code path; assert they cannot
+        // collapse onto the same variant.
+        let categories = [
+            RuntimeError::UnsupportedCapability,
+            RuntimeError::ModelUnavailable,
+            RuntimeError::InvalidArgument,
+            RuntimeError::ResourceExhausted,
+            RuntimeError::BackendFailure,
+        ];
+        for (i, a) in categories.iter().enumerate() {
+            for (j, b) in categories.iter().enumerate() {
+                assert_eq!(i == j, a == b, "{a:?} vs {b:?} distinctness mismatch");
+            }
+        }
+
+        let manifest = CapabilityManifest::new("contract.v1", []).unwrap();
+        assert_eq!(
+            manifest.require(&ToolId("inspect".into())),
+            Err(RuntimeError::UnsupportedCapability)
+        );
+        assert_eq!(
+            select_measured_backend(&["candidate".into()], &[], "profile", "abi"),
+            Err(RuntimeError::ModelUnavailable)
+        );
+    }
+
+    #[test]
     fn contract_call_has_one_valid_terminal_outcome() {
         let now = Instant::now();
         let manifest = CapabilityManifest::new("contract.v1", [ToolId("inspect".into())]).unwrap();
