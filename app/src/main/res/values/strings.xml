@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tokito Physical</string>
+    <string name="product_title">Tokito</string>
+    <string name="camera_content_description">Live board camera with registered AR guidance</string>
+    <string name="camera_starting">Camera starting</string>
+    <string name="register_ar">Register board</string>
+    <string name="preview_digital_twin">Preview 3D</string>
+    <string name="preview_digital_twin_description">Preview the validated board model without AR registration</string>
+    <string name="reset_ar">Clear AR</string>
+    <string name="call_ready">Ready</string>
+    <string name="call_preparing">Preparing on-device models</string>
+    <string name="call_listening">Listening</string>
+    <string name="call_thinking">Thinking locally</string>
+    <string name="call_speaking">Speaking</string>
+</resources>

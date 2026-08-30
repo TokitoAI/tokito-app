@@ -67,6 +67,22 @@
           "display_name": { "type": "string", "minLength": 1 },
           "category": { "enum": ["port", "header", "switch", "led", "processor", "debugger", "sensor", "transceiver", "memory"] },
           "identifiers": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+          "query_aliases": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "board_target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference_designator", "x_normalized", "y_normalized", "source_id"],
+            "properties": {
+              "reference_designator": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$" },
+              "x_normalized": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y_normalized": { "type": "number", "minimum": 0, "maximum": 1 },
+              "source_id": { "type": "string", "minLength": 1 }
+            }
+          },
           "guide_targets": {
             "type": "array",
             "items": {
