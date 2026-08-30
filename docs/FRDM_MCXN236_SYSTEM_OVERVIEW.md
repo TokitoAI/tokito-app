@@ -199,6 +199,39 @@ The vision and dialogue lanes report YOLO and the local LLM working on the
 teammates' machines; what is not yet demonstrated is the *joined* loop
 running against a real board with a real pose.
 
+## Running it on a device
+
+Verified on an iQOO I2501 (Android 16, arm64-v8a) over USB debugging:
+the app builds from `main` (`./gradlew :app:assembleDebug` with Android
+Studio's JBR as `JAVA_HOME`), installs, and launches without crashing.
+
+The app reads its runtime assets from its own private files directory:
+
+| Path under `filesDir` | Contents | Produced by |
+|---|---|---|
+| `contexts/active.board-reference.json` | reviewed board reference map | the vision lane (`reference/boards/frdm-mcxn236.board-reference.json`) |
+| `contexts/active.digital-twin.json` | digital-twin manifest | `tools/build_digital_twin_package.py` |
+| `contexts/active.digital-twin.glb` | AR GLB | `tools/glb_embed_metadata.py --node-prefix ref:` |
+| `models/vision/manifest.json` + `model.tflite` | YOLO pose bundle | the vision lane (not in the repo) |
+
+**The manifest's `assemblyContextRevision` must equal what the app
+computes**, which `BoardReferenceContext` derives as
+`<manifest_id>@<integrity.manifest_digest>` from the board reference --
+for the current reference that is
+`nxp-frdm-mcxn236-guide-reference-v1@sha256:7427e9a8...`. A mismatch is
+rejected as `CONTEXT_MISMATCH` and the 3D layer stays invisible with no
+obvious error, so `tools/build_digital_twin_package.py` takes the value
+as an explicit argument and `tools/verify_digital_twin_acceptance.py`
+checks it.
+
+The remaining gap for a live demo is the **YOLO pose bundle**: the app
+requires `model.tflite` whose graph takes `[1, 3, S, S]` and returns
+`[1, 17, 8400]` (YOLOv8-pose, four keypoints = the board corners), plus a
+`manifest.json` whose `model_sha256` matches the file.
+`tools/verify_vision_bundle.py` checks a candidate bundle against every
+one of those rules on the host, so a handover can be validated before it
+is pushed to a phone.
+
 ## Open coordination
 
 1. **`assemblyContextRevision`** in the digital-twin manifest is currently
