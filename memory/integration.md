@@ -27,3 +27,23 @@ generic board-reference manifest. Guide target percentages are evidence-review
 coordinates only; they remain unbound until an authored-design source supplies
 the board coordinate frame. Pending-license guide media stays local and is
 non-redistributable even when its reviewed facts are tracked.
+
+The digital-twin asset package is the NXP lane's handoff to the AR runtime, and
+its acceptance rules are enforced on device. Component nodes must carry the
+manifest's declared `componentNodePrefix` (`ref:` today), so a GLB whose nodes
+are named by bare reference designator loads but selects nothing. Manifest
+bounds must be strictly non-degenerate on every axis: a KiCad GLB export
+contains coincident zero-thickness soldermask and silkscreen nodes sharing the
+substrate footprint, and choosing one of those as the board plane produces a
+package the runtime rejects. `assemblyContextRevision` must equal the value the
+app derives from the active board reference, `<manifest_id>@<integrity.
+manifest_digest>`; a mismatch is rejected as `CONTEXT_MISMATCH` and the 3D layer
+stays invisible without an obvious error. Asset loading is bounded to 64 MiB, so
+the AR export omits copper, zone and silkscreen geometry that the full-fidelity
+visual master keeps.
+
+Component identity crosses lanes as `component_id`,
+`<board_id>:<board_revision>:<reference>`. The vision lane's reviewed board
+reference is the naming authority for human phrases: its landmark categories,
+not a preference encoded in tooling, decide which of several same-class parts
+holds a role such as the board's main processor.

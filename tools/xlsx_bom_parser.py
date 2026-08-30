@@ -22,6 +22,34 @@ from xml.etree import ElementTree as ET
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
+# An .xlsx is a zip of XML, so a hostile or corrupt workbook can attack the
+# parser in two ways that cost nothing to close: a decompression bomb (a small
+# entry that inflates to gigabytes) and XML entity expansion. External entities
+# are already refused by ElementTree, but internal expansion is not, and
+# spreadsheet XML written by any real tool never declares a DOCTYPE -- so
+# rejecting one outright is a safe, complete defence rather than a heuristic.
+MAXIMUM_ENTRY_BYTES = 64 * 1024 * 1024
+DOCTYPE_PATTERN = re.compile(rb"<!DOCTYPE", re.IGNORECASE)
+
+
+def read_archive_entry(archive: zipfile.ZipFile, name: str) -> bytes:
+    """Reads one archive entry with a declared-size ceiling, then verifies the
+    bytes actually produced, so a lying zip header cannot exhaust memory."""
+    info = archive.getinfo(name)
+    if info.file_size > MAXIMUM_ENTRY_BYTES:
+        raise ValueError(f"{name} declares {info.file_size} bytes, above the {MAXIMUM_ENTRY_BYTES} byte ceiling")
+    with archive.open(name) as handle:
+        data = handle.read(MAXIMUM_ENTRY_BYTES + 1)
+    if len(data) > MAXIMUM_ENTRY_BYTES:
+        raise ValueError(f"{name} inflates beyond the {MAXIMUM_ENTRY_BYTES} byte ceiling")
+    return data
+
+
+def parse_spreadsheet_xml(data: bytes) -> ET.Element:
+    if DOCTYPE_PATTERN.search(data):
+        raise ValueError("spreadsheet XML declares a DOCTYPE; refusing to parse")
+    return ET.fromstring(data)
+
 
 def column_letters(cell_ref: str) -> str:
     return "".join(ch for ch in cell_ref if ch.isalpha())
@@ -29,10 +57,10 @@ def column_letters(cell_ref: str) -> str:
 
 def load_shared_strings(archive: zipfile.ZipFile) -> list[str]:
     try:
-        data = archive.read("xl/sharedStrings.xml")
+        data = read_archive_entry(archive, "xl/sharedStrings.xml")
     except KeyError:
         return []
-    root = ET.fromstring(data)
+    root = parse_spreadsheet_xml(data)
     strings = []
     for si in root.findall("m:si", NS):
         text = "".join(node.text or "" for node in si.findall(".//m:t", NS))
@@ -41,7 +69,7 @@ def load_shared_strings(archive: zipfile.ZipFile) -> list[str]:
 
 
 def load_rows(archive: zipfile.ZipFile, shared_strings: list[str], sheet_path: str = "xl/worksheets/sheet1.xml") -> list[dict[str, str]]:
-    root = ET.fromstring(archive.read(sheet_path))
+    root = parse_spreadsheet_xml(read_archive_entry(archive, sheet_path))
     rows = []
     for row in root.findall(".//m:sheetData/m:row", NS):
         cells: dict[str, str] = {}
