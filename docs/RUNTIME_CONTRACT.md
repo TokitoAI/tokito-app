@@ -99,6 +99,14 @@ IDs and revision strings are examples of shape, not hardcoded values.
   "kind": "component_inspection",
   "source": "camera",
   "captured_monotonic_ms": 123456000,
+  "captured_wall_time_unix_ms": 1788021000000,
+  "design_identity": {
+    "binding": "registered",
+    "project_id": "opaque-project-id",
+    "board_id": "opaque-board-id",
+    "reference_designator": "U7"
+  },
+  "status": "completed",
   "confidence": 0.997,
   "calibration": {
     "method": "held-out-temperature-scaling",
@@ -119,7 +127,9 @@ IDs and revision strings are examples of shape, not hardcoded values.
     {
       "kind": "roi_crop",
       "digest": "sha256",
-      "retention": "session"
+      "retention": {
+        "scope": "session"
+      }
     }
   ],
   "provenance": {
@@ -223,11 +233,20 @@ Evidence availability is explicit. An observation declares `available`,
 Redacted or unavailable evidence is not silently represented as a successful
 empty list.
 
+Evidence retention is independent from inference success. Every available
+evidence reference declares `ephemeral`, `session`, or `persisted`; persisted
+evidence also declares an absolute expiry later than the observation capture
+time. Unbound observations carry no hidden design identifiers. Registered
+observations require explicit project and board identities and may add a
+reference designator.
+
 ## Compatibility
 
 - Major schema/tool version changes are incompatible and rejected.
 - Minor versions are additive; unknown optional fields are preserved or ignored
   according to generated conformance tests.
+- Observation JSON is deterministic for identical typed input and bounded by a
+  caller-supplied byte ceiling on both serialization and parsing.
 - Capability discovery precedes tool use.
 - A context revision mismatch is a conflict, not an implicit upgrade.
 - Tool-call IDs make retries idempotent within the documented retention window.
