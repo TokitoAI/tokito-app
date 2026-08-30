@@ -14,6 +14,15 @@ SHA-256 digest. Component nodes use the declared prefix followed by the
 reference designator, for example `ref:D1`. Unknown additive manifest fields
 are accepted; an unknown major version is rejected.
 
+The registration quad defaults to the corners of the signed board-plane
+bounds. A manifest may instead declare `boardPlaneCornerPointsMetres`: four
+explicit metric landmarks in the vision model's keypoint order, for authored
+physical anchors such as corner mounting-hole centres taken from the PCB
+source. The corner semantics belong to the detector, so this field is only
+emitted together with a model trained on the same landmarks; a list that is
+not exactly four finite in-bounds points is rejected as invalid geometry
+rather than silently repaired.
+
 Loading is bounded to 64 MiB. The complete GLB header/chunk structure, byte
 length, digest, finite bounds and context revision are verified before the
 package is atomically activated. Filament-decoded bounds are compared with the
