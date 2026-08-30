@@ -51,6 +51,24 @@ class VoiceCallControllerTest {
 
         assertEquals(listOf("inspect the board"), harness.requests)
         assertEquals(listOf("local: inspect the board"), harness.spoken)
+        assertTrue(harness.states.indexOf(CallState.Thinking) < harness.states.indexOf(CallState.Speaking))
+        assertEquals(CallState.Listening, harness.states.last())
+    }
+
+    @Test
+    fun remainsThinkingUntilPlaybackStarts() = runTest {
+        val playback = CompletableDeferred<Unit>()
+        val harness = Harness(this, playbackGate = playback)
+        harness.controller.start()
+        harness.controller.accept(final("locate the main chip", 10))
+        testScheduler.runCurrent()
+
+        assertEquals(CallState.Thinking, harness.states.last())
+        assertTrue(CallState.Speaking !in harness.states)
+
+        playback.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(CallState.Speaking in harness.states)
         assertEquals(CallState.Listening, harness.states.last())
     }
 
@@ -126,6 +144,7 @@ class VoiceCallControllerTest {
         private val prepareFailure: Throwable? = null,
         private val prepareGate: CompletableDeferred<Unit>? = null,
         private val responseGate: CompletableDeferred<Unit>? = null,
+        private val playbackGate: CompletableDeferred<Unit>? = null,
     ) {
         val states = mutableListOf<CallState>()
         val requests = mutableListOf<String>()
@@ -149,7 +168,11 @@ class VoiceCallControllerTest {
                 responseGate?.await()
                 "local: $it"
             },
-            speak = { spoken += it },
+            speak = { text, onPlaybackStarted ->
+                spoken += text
+                playbackGate?.await()
+                onPlaybackStarted()
+            },
             onState = { states += it },
         )
     }

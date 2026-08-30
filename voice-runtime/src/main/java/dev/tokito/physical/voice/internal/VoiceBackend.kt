@@ -17,7 +17,7 @@ internal interface StreamingRecognizer : Closeable {
 
 internal interface SpeechSynthesizer : Closeable {
     val isSpeaking: Boolean
-    fun speak(text: String)
+    fun speak(text: String, onPlaybackStarted: () -> Unit)
     fun stop()
 }
 

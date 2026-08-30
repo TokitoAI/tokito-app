@@ -109,6 +109,68 @@ class LocalDesignContextIndexTest {
         assertEquals("mcu-usb-port", selected.getJSONObject(1).getString("record_id"))
     }
 
+    @Test
+    fun unqualifiedPinNumberResolvesOnlyWhenUnique() {
+        val connectorJ9 = DesignContextRecord(
+            recordId = "connector-j9",
+            authority = DesignFactAuthority.SUPPORTING,
+            exactKeys = setOf("J9", "P0_19"),
+            text = "Camera header J9 pin map: 32=P0_19.",
+            sourceIds = setOf("manual"),
+            spokenAliases = setOf("J9", "camera header"),
+            detailAnswers = listOf(DesignContextAnswer(setOf("32"), "J9 pin 32 is P0_19.")),
+        )
+        val connectorJ1 = connectorJ9.copy(
+            recordId = "connector-j1",
+            exactKeys = setOf("J1", "P4_3"),
+            text = "Header J1 pin map: 2=P4_3.",
+            spokenAliases = setOf("J1", "header one"),
+            rankingAliases = setOf("J1", "header one"),
+            detailAnswers = listOf(DesignContextAnswer(setOf("2"), "J1 pin 2 is P4_3.")),
+        )
+        val connectorJ2 = connectorJ9.copy(
+            recordId = "connector-j2",
+            exactKeys = setOf("J2", "P0_23"),
+            text = "Header J2 pin map: 2=P0_23.",
+            spokenAliases = setOf("J2", "header two"),
+            rankingAliases = setOf("J2", "header two"),
+            detailAnswers = listOf(DesignContextAnswer(setOf("2"), "J2 pin 2 is P0_23.")),
+        )
+        val competingJ1Fact = DesignContextRecord(
+            recordId = "knowledge-j1-capability",
+            authority = DesignFactAuthority.DATASHEET,
+            exactKeys = setOf("J1"),
+            text = "J1 exposes expansion functions.",
+            sourceIds = setOf("manual"),
+            spokenAliases = setOf("J1 capability"),
+        )
+        val pinIndex = LocalDesignContextIndex(
+            "context-revision-a",
+            listOf(connectorJ9, connectorJ1, connectorJ2, competingJ1Fact),
+        )
+
+        assertEquals("J9 pin 32 is P0_19.", pinIndex.answer("Where is pin32?"))
+        assertNull(pinIndex.answer("Where is pin 2?"))
+        assertEquals("J1 pin 2 is P4_3.", pinIndex.answer("What is J1 pin 2?"))
+    }
+
+    @Test
+    fun asrTypoCanRecoverAUniqueKnowledgeAlias() {
+        val timer = DesignContextRecord(
+            recordId = "knowledge-timers",
+            authority = DesignFactAuthority.DATASHEET,
+            exactKeys = setOf("CTIMER0"),
+            text = "The MCU has five 32-bit timer and counter instances.",
+            sourceIds = setOf("sdk"),
+            spokenAliases = setOf("timer", "counter"),
+            spokenSummary = "Yes. It has five 32-bit CTIMER instances, CTIMER0 through CTIMER4.",
+        )
+        val timerIndex = LocalDesignContextIndex("context-revision-a", listOf(timer))
+
+        assertEquals(timer.spokenSummary, timerIndex.answer("Does it have a cunter?"))
+        assertEquals(timer.spokenSummary, timerIndex.answer("Does this have a timer?"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun malformedRecordsAreRejectedAtConstruction() {
         LocalDesignContextIndex(

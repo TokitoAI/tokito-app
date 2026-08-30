@@ -33,7 +33,10 @@ stored in `reference/boards/*.board-reference.json` under
 `schemas/board.reference-manifest.schema.json`. It records named landmarks,
 connector pin tables, signal aliases, functions, and typed electrical roles
 such as ground, power rail, power input, reset, analog, bus, GPIO, and not
-connected.
+connected. Its optional `knowledge_graph` normalizes reviewed manuals,
+schematics, and SDK documentation into entities and facts. Each fact carries a
+subject, predicate, value, query aliases, related entities, and one or more
+source-page locators.
 
 A `guide_target` is only a percentage point in a cited guide image. It answers
 "which depicted part does this callout name?" It is not a millimetre position,
@@ -51,6 +54,14 @@ FRDM reference with:
 python tools/board_reference.py validate \
   --manifest reference/boards/frdm-mcxn236.board-reference.json
 ```
+
+Raw document text and page images are not runtime context. A reviewer converts
+tables and diagrams into compact facts, and the manifest digest binds those
+facts to exact source-media digests. The FRDM-MCXN236 graph cites the NXP
+MCXN23x Rev. 3 data sheet, UM12041 Rev. 4 board manual, SPF-90828 Rev. C
+schematic, and MCUXpresso SDK 25.09.00 documentation. Knowledge facts may
+describe capability or electrical behavior, but cannot create board-plane
+placement coordinates.
 
 ## Import checks
 

@@ -95,7 +95,9 @@ class MainActivity : AppCompatActivity() {
             stopListening = { voice.stopListening() },
             interruptSpeech = { voice.interruptSpeech() },
             respond = ::respondLocally,
-            speak = { voice.speak(it, SpeechQueuePolicy.REPLACE) },
+            speak = { text, onPlaybackStarted ->
+                voice.speak(text, SpeechQueuePolicy.REPLACE, onPlaybackStarted)
+            },
             onState = ::renderCallState,
         )
 
@@ -169,7 +171,8 @@ class MainActivity : AppCompatActivity() {
         activateProjectTwinIfPresent()
         if (voice.state.value !is VoiceRuntimeState.Ready &&
             voice.state.value != VoiceRuntimeState.Listening &&
-            voice.state.value !is VoiceRuntimeState.Speaking
+            voice.state.value !is VoiceRuntimeState.Speaking &&
+            voice.state.value !is VoiceRuntimeState.Synthesizing
         ) {
             voice.initialize()
         }

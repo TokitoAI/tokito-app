@@ -52,7 +52,7 @@ flowchart LR
 The repository contains one landscape, camera-first Android product. Its single
 activity composes CameraX, local board-pose detection, registered 2D/3D
 presentation, push-to-talk voice, deterministic measurement parsing, grounded
-board retrieval, and local dialogue. Transcripts and model reasoning stay out
+board retrieval over a page-cited local knowledge graph, and local dialogue. Transcripts and model reasoning stay out
 of the product UI.
 
 The verified device profile uses Sherpa ONNX 1.13.6 for streaming English STT
@@ -62,6 +62,13 @@ the FRDM-MCXN236 board quad. A digest-bound GLB follows the live quad and is
 cleared when tracking expires. Manual registration and unregistered 3D preview
 remain explicit recovery tools. No runtime path has network permission or a
 cloud fallback.
+
+Official device data sheets, board manuals, schematics, and board-specific SDK
+documentation are reviewed offline into compact entity/fact records. Runtime
+retrieval selects a bounded subgraph deterministically; Qwen receives only
+those admitted facts and acts as a natural-language renderer. Raw PDF pages,
+images, and tables are not placed in the prompt or redistributed by this
+repository.
 
 Model binaries and board assets are not committed to Git. They are provisioned
 to app-private storage and admitted only when their manifests, sizes, digests,

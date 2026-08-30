@@ -39,3 +39,9 @@ sidecar only after the pull request is merged and the `main` workflows pass.
 App-private model bundles are preserved only across APK upgrades signed by the
 same key. A signing-key change requires explicit model reprovisioning; never
 work around Android signature enforcement.
+
+After provisioning app-private models, install upgrades with `adb install -r`
+and invoke the installed test runner directly with `adb shell am instrument`.
+Do not use a Gradle managed-device or Unified Test Platform run for this stage:
+those runners may uninstall the target package during cleanup and remove every
+provisioned model and board asset.

@@ -127,7 +127,11 @@ class TokitoVoiceRuntime internal constructor(
         }
     }
 
-    override suspend fun speak(text: String, policy: SpeechQueuePolicy): String {
+    override suspend fun speak(
+        text: String,
+        policy: SpeechQueuePolicy,
+        onPlaybackStarted: () -> Unit,
+    ): String {
         val normalized = text.trim()
         require(normalized.isNotEmpty()) { "speech text cannot be blank" }
         require(normalized.length <= MAX_SPEECH_CHARACTERS) { "speech text exceeds the bounded limit" }
@@ -137,7 +141,7 @@ class TokitoVoiceRuntime internal constructor(
         if (policy == SpeechQueuePolicy.REPLACE && speechMutex.isLocked) {
             interruptSpeech()
         }
-        return speechMutex.withLock { speakLocked(normalized) }
+        return speechMutex.withLock { speakLocked(normalized, onPlaybackStarted) }
     }
 
     override suspend fun interruptSpeech() = lifecycleMutex.withLock {
@@ -158,7 +162,7 @@ class TokitoVoiceRuntime internal constructor(
         _state.value = VoiceRuntimeState.Closed
     }
 
-    private suspend fun speakLocked(text: String): String {
+    private suspend fun speakLocked(text: String, onPlaybackStarted: () -> Unit): String {
         val utteranceId = UUID.randomUUID().toString()
         var resumeListening = false
         lifecycleMutex.withLock {
@@ -179,13 +183,18 @@ class TokitoVoiceRuntime internal constructor(
             } else {
                 null
             }
-            _state.value = VoiceRuntimeState.Speaking(utteranceId)
-            _events.tryEmit(VoiceEvent.SpeechStarted(utteranceId, text))
+            _state.value = VoiceRuntimeState.Synthesizing(utteranceId)
         }
 
         var synthesisFailure: VoiceFailure? = null
         try {
-            withContext(Dispatchers.IO) { requireBackend().synthesizer.speak(text) }
+            withContext(Dispatchers.IO) {
+                requireBackend().synthesizer.speak(text) {
+                    _state.value = VoiceRuntimeState.Speaking(utteranceId)
+                    _events.tryEmit(VoiceEvent.SpeechStarted(utteranceId, text))
+                    onPlaybackStarted()
+                }
+            }
         } catch (error: Throwable) {
             synthesisFailure = VoiceFailure(
                 VoiceErrorCode.SYNTHESIS_FAILURE,

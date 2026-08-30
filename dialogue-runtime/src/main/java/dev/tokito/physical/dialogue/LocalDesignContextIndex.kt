@@ -16,9 +16,17 @@ data class DesignContextRecord(
     val text: String,
     val sourceIds: Set<String>,
     val spokenAliases: Set<String> = emptySet(),
+    val rankingAliases: Set<String> = spokenAliases,
     val spokenSummary: String = text,
     val detailAnswers: List<DesignContextAnswer> = emptyList(),
     val boardTarget: DesignBoardTarget? = null,
+    val evidenceLocators: List<DesignEvidenceLocator> = emptyList(),
+)
+
+data class DesignEvidenceLocator(
+    val sourceId: String,
+    val page: Int,
+    val locator: String,
 )
 
 data class DesignBoardTarget(
@@ -60,6 +68,8 @@ class LocalDesignContextIndex(
     private val limits: DesignContextIndexLimits = DesignContextIndexLimits(),
 ) {
     private val records = records.toList()
+    private val indexedRecords: List<IndexedRecord>
+    private val tokenPostings: Map<String, List<IndexedRecord>>
 
     init {
         requireCanonical(contextRevision, "context revision")
@@ -76,6 +86,10 @@ class LocalDesignContextIndex(
             requireCanonical(record.spokenSummary, "spoken summary")
             require(record.spokenSummary.length <= limits.maxRecordChars) { "spoken summary exceeds its text limit" }
             record.spokenAliases.forEach { requireCanonical(it, "spoken alias") }
+            record.rankingAliases.forEach { alias ->
+                requireCanonical(alias, "ranking alias")
+                require(alias in record.spokenAliases) { "ranking aliases must also be spoken aliases" }
+            }
             record.detailAnswers.forEach { answer ->
                 require(answer.requiredTokens.isNotEmpty()) { "detail answer must declare required tokens" }
                 answer.requiredTokens.forEach { requireCanonical(it, "detail answer token") }
@@ -88,7 +102,34 @@ class LocalDesignContextIndex(
                     "board target must use normalized coordinates"
                 }
             }
+            record.evidenceLocators.forEach { evidence ->
+                require(evidence.sourceId in record.sourceIds) { "evidence locator must cite record evidence" }
+                require(evidence.page > 0) { "evidence page must be positive" }
+                requireCanonical(evidence.locator, "evidence locator")
+            }
         }
+        indexedRecords = this.records.map { record ->
+            IndexedRecord(
+                record = record,
+                searchableTokens = tokenize(record.text) +
+                    record.exactKeys.map { it.lowercase() } +
+                    record.spokenAliases.flatMap(::tokenize),
+                aliasPhrases = record.spokenAliases.map(::normalizedPhrase)
+                    .filter { it.length >= MIN_FUZZY_PHRASE_CHARS }
+                    .toSet(),
+                rankingAliasPhrases = record.rankingAliases.map(::normalizedPhrase)
+                    .filter { it.length >= MIN_FUZZY_PHRASE_CHARS }
+                    .toSet(),
+                rankingAliasTokens = record.rankingAliases.flatMap(::tokenize).toSet(),
+            )
+        }
+        val postings = mutableMapOf<String, MutableList<IndexedRecord>>()
+        indexedRecords.forEach { indexed ->
+            indexed.searchableTokens.forEach { token ->
+                postings.getOrPut(token, ::mutableListOf).add(indexed)
+            }
+        }
+        tokenPostings = postings.mapValues { (_, values) -> values.toList() }
     }
 
     fun retrieve(query: String): String? {
@@ -157,33 +198,107 @@ class LocalDesignContextIndex(
         val queryTokens = tokenize(query)
         if (queryTokens.isEmpty()) return emptyList()
 
-        val lexical = records.mapNotNull { record ->
-            val exact = record.exactKeys.any { it.lowercase() in queryTokens }
-            val searchable = tokenize(record.text) +
-                record.exactKeys.map { it.lowercase() } +
-                record.spokenAliases.flatMap(::tokenize)
-            val overlap = queryTokens.count(searchable::contains)
-            if (!exact && overlap == 0) null else RankedRecord(record, exact, overlap)
-        }.sortedWith(RANKING)
-        if (lexical.isNotEmpty()) return lexical
+        val pinNumber = PIN_QUERY.find(query)?.groupValues?.get(1)
+        if (pinNumber != null) {
+            val pinRecords = indexedRecords.filter { indexed ->
+                indexed.record.detailAnswers.any { pinNumber in it.requiredTokens }
+            }
+            val connector = CONNECTOR_REFERENCE.find(query)?.groupValues?.get(1)?.let { "J$it" }
+            val selected = if (connector == null) {
+                pinRecords.singleOrNull()
+            } else {
+                pinRecords.singleOrNull { connector in it.record.exactKeys }
+            } ?: return emptyList()
+            return listOf(
+                RankedRecord(
+                    selected.record,
+                    target = false,
+                    authority = authorityScore(selected.record.authority),
+                    exact = false,
+                    primaryPhrase = 2,
+                    primaryOverlap = 2,
+                    phrase = 2,
+                    overlap = 2,
+                ),
+            )
+        }
 
+        val candidates = queryTokens.flatMap { tokenPostings[it].orEmpty() }.distinctBy { it.record.recordId }
         val queryPhrase = normalizedPhrase(query)
-        if (queryPhrase.length < MIN_FUZZY_PHRASE_CHARS) return emptyList()
-        val candidates = records.mapNotNull { record ->
-            record.spokenAliases
-                .map(::normalizedPhrase)
-                .filter { it.length >= MIN_FUZZY_PHRASE_CHARS }
-                .minOfOrNull { normalizedEditDistance(queryPhrase, it) }
-                ?.let { FuzzyRecord(record, it) }
-        }.sortedWith(compareBy<FuzzyRecord> { it.distance }.thenBy { it.record.recordId })
-        val best = candidates.firstOrNull() ?: return emptyList()
-        val runnerUp = candidates.firstOrNull { it.record.recordId != best.record.recordId }
+        val locationIntent = LOCATION_INTENT.containsMatchIn(query)
+        val lexical = candidates.mapNotNull { indexed ->
+            val record = indexed.record
+            val exact = record.exactKeys.any { it.lowercase() in queryTokens }
+            val primaryPhrase = indexed.rankingAliasPhrases.maxOfOrNull { alias -> phraseScore(queryPhrase, alias) } ?: 0
+            val primaryOverlap = queryTokens.count(indexed.rankingAliasTokens::contains)
+            val phrase = indexed.aliasPhrases.maxOfOrNull { alias -> phraseScore(queryPhrase, alias) } ?: 0
+            val overlap = queryTokens.count(indexed.searchableTokens::contains)
+            if (!exact && phrase == 0 && overlap == 0) {
+                null
+            } else {
+                RankedRecord(
+                    record = record,
+                    target = locationIntent && record.boardTarget != null,
+                    authority = authorityScore(record.authority),
+                    exact = exact,
+                    primaryPhrase = primaryPhrase,
+                    primaryOverlap = primaryOverlap,
+                    phrase = phrase,
+                    overlap = overlap,
+                )
+            }
+        }.sortedWith(RANKING)
+        if (lexical.isNotEmpty()) {
+            val targeted = lexical.filter(RankedRecord::target)
+            if (targeted.isNotEmpty()) return targeted
+            val strongestAliasOverlap = lexical.maxOf(RankedRecord::primaryOverlap)
+            if (strongestAliasOverlap > 0) {
+                return lexical.filter { it.primaryOverlap == strongestAliasOverlap }
+            }
+            val strongestPhrase = lexical.maxOf(RankedRecord::primaryPhrase)
+            if (strongestPhrase > 0) return lexical.filter { it.primaryPhrase == strongestPhrase }
+            return lexical
+        }
+
+        if (queryPhrase.length < MIN_FUZZY_PHRASE_CHARS || queryTokens.size != 1) return emptyList()
+        val fuzzyCandidates = indexedRecords.mapNotNull { indexed ->
+            indexed.rankingAliasPhrases.map { alias ->
+                val aliasTokens = tokenize(alias)
+                FuzzyRecord(
+                    record = indexed.record,
+                    distance = aliasTokens.minOf { aliasToken ->
+                        normalizedEditDistance(queryTokens.single(), aliasToken)
+                    },
+                    aliasTokenCount = aliasTokens.size,
+                )
+            }.minWithOrNull(compareBy<FuzzyRecord> { it.distance }.thenBy { it.aliasTokenCount })
+        }.sortedWith(
+            compareBy<FuzzyRecord> { it.distance }
+                .thenBy { it.aliasTokenCount }
+                .thenBy { it.record.recordId },
+        )
+        val best = fuzzyCandidates.firstOrNull() ?: return emptyList()
+        val runnerUp = fuzzyCandidates.firstOrNull { it.record.recordId != best.record.recordId }
         if (best.distance > MAX_FUZZY_DISTANCE ||
-            runnerUp?.let { it.distance - best.distance < MIN_FUZZY_MARGIN } == true
+            runnerUp?.let {
+                it.aliasTokenCount == best.aliasTokenCount &&
+                    it.distance - best.distance < MIN_FUZZY_MARGIN
+            } == true
         ) {
             return emptyList()
         }
-        return listOf(RankedRecord(best.record, exact = false, overlap = 0))
+        return listOf(
+            RankedRecord(
+                best.record,
+                target = locationIntent && best.record.boardTarget != null,
+                authority = authorityScore(best.record.authority),
+                exact = false,
+                primaryPhrase = 0,
+                primaryOverlap = 0,
+                phrase = 1,
+                overlap = 0,
+            ),
+        )
     }
 
     private fun envelope(records: JSONArray): String = JSONObject()
@@ -197,25 +312,51 @@ class LocalDesignContextIndex(
         .put("exact_keys", JSONArray(record.exactKeys.sorted()))
         .put("text", textOverride ?: record.text)
         .put("source_ids", JSONArray(record.sourceIds.sorted()))
+        .put(
+            "evidence_locators",
+            JSONArray(record.evidenceLocators.map { evidence ->
+                JSONObject()
+                    .put("source_id", evidence.sourceId)
+                    .put("page", evidence.page)
+                    .put("locator", evidence.locator)
+            }),
+        )
+
+    private data class IndexedRecord(
+        val record: DesignContextRecord,
+        val searchableTokens: Set<String>,
+        val aliasPhrases: Set<String>,
+        val rankingAliasPhrases: Set<String>,
+        val rankingAliasTokens: Set<String>,
+    )
 
     private data class RankedRecord(
         val record: DesignContextRecord,
+        val target: Boolean,
+        val authority: Int,
         val exact: Boolean,
+        val primaryPhrase: Int,
+        val primaryOverlap: Int,
+        val phrase: Int,
         val overlap: Int,
     )
 
     private data class FuzzyRecord(
         val record: DesignContextRecord,
         val distance: Double,
+        val aliasTokenCount: Int,
     )
 
     private companion object {
         val TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
         val NUMBER = Regex("(?<![A-Za-z])(?:[0-9]+(?:\\.[0-9]+)?)(?![A-Za-z])")
         val KEY = Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}")
+        val PIN_QUERY = Regex("(?i)\\bpin\\s*([0-9]+)\\b")
+        val CONNECTOR_REFERENCE = Regex("(?i)\\bJ\\s*([0-9]+)\\b")
+        val LOCATION_INTENT = Regex("(?i)\\b(where|locate|show|highlight|point)\\b")
         val STOP_WORDS = setOf(
-            "a", "about", "an", "and", "are", "board", "component", "do", "does",
-            "for", "had", "has", "have", "how", "is", "it", "many", "me", "of", "please",
+            "a", "about", "an", "and", "are", "board", "can", "component", "do", "does",
+            "for", "had", "has", "have", "how", "is", "it", "many", "me", "of", "on", "please",
             "tell", "that", "the", "these", "this", "those", "to", "what", "where", "which",
         )
 
@@ -236,7 +377,12 @@ class LocalDesignContextIndex(
             }
         }
 
-        val RANKING = compareByDescending<RankedRecord> { it.exact }
+        val RANKING = compareByDescending<RankedRecord> { it.target }
+            .thenByDescending { it.authority }
+            .thenByDescending { it.primaryPhrase }
+            .thenByDescending { it.primaryOverlap }
+            .thenByDescending { it.exact }
+            .thenByDescending { it.phrase }
             .thenByDescending { it.overlap }
             .thenBy { it.record.recordId }
 
@@ -244,6 +390,12 @@ class LocalDesignContextIndex(
         const val MIN_ANCHOR_CHARS = 2
         const val MAX_FUZZY_DISTANCE = 0.40
         const val MIN_FUZZY_MARGIN = 0.12
+
+        fun authorityScore(authority: DesignFactAuthority): Int = when (authority) {
+            DesignFactAuthority.AUTHORED_PLACEMENT -> 3
+            DesignFactAuthority.DATASHEET -> 2
+            DesignFactAuthority.SUPPORTING -> 1
+        }
 
         fun normalizedPhrase(value: String): String = TOKEN.findAll(normalizeDomainTerms(value))
             .map { it.value.trim('.', '-').lowercase() }
@@ -253,12 +405,23 @@ class LocalDesignContextIndex(
             .map(::singularize)
             .joinToString(" ")
 
-        fun normalizeDomainTerms(value: String): String = IO_TERM.replace(value, " io ")
+        fun normalizeDomainTerms(value: String): String = PIN_TERM.replace(
+            IO_TERM.replace(CAN_TERM.replace(value, " canbus "), " io "),
+            " pin $1 ",
+        )
 
         fun singularize(value: String): String =
             if (value.length > 3 && value.endsWith('s') && !value.endsWith("ss")) value.dropLast(1) else value
 
         val IO_TERM = Regex("(?i)(?<![A-Za-z0-9])I\\s*/\\s*O(?![A-Za-z0-9])")
+        val CAN_TERM = Regex("(?<![A-Za-z0-9])CAN(?![A-Za-z0-9])")
+        val PIN_TERM = Regex("(?i)\\bpin\\s*([0-9]+)\\b")
+
+        fun phraseScore(query: String, alias: String): Int = when {
+            query == alias || query.contains(alias) -> 2
+            alias.contains(query) -> 1
+            else -> 0
+        }
 
         fun normalizedEditDistance(left: String, right: String): Double {
             if (left == right) return 0.0

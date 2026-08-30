@@ -30,6 +30,7 @@ sealed interface VoiceRuntimeState {
     data object Uninitialized : VoiceRuntimeState
     data class Ready(val capabilities: Set<VoiceCapability>) : VoiceRuntimeState
     data object Listening : VoiceRuntimeState
+    data class Synthesizing(val utteranceId: String) : VoiceRuntimeState
     data class Speaking(val utteranceId: String) : VoiceRuntimeState
     data class Failed(val error: VoiceFailure) : VoiceRuntimeState
     data object Closed : VoiceRuntimeState
@@ -85,6 +86,7 @@ interface VoiceRuntime : Closeable {
     suspend fun speak(
         text: String,
         policy: SpeechQueuePolicy = SpeechQueuePolicy.REPLACE,
+        onPlaybackStarted: () -> Unit = {},
     ): String
     suspend fun interruptSpeech()
 }

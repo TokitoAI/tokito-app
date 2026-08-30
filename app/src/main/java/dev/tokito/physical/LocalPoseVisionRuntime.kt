@@ -44,8 +44,14 @@ class LocalPoseVisionRuntime private constructor(
     private val stabilizer = PoseStabilizer(manifest)
     private val output = Array(1) { Array(17) { FloatArray(8400) } }
     private var analyzedFrames = 0L
+    private var closed = false
 
+    @Synchronized
     fun analyze(frame: ArCameraSurface.CameraFrame): PoseVisionObservation? {
+        if (closed) {
+            frame.bitmap.recycle()
+            return null
+        }
         if (frame.previewWidth <= 0 || frame.previewHeight <= 0) {
             frame.bitmap.recycle()
             return null
@@ -77,7 +83,10 @@ class LocalPoseVisionRuntime private constructor(
         return stabilizer.accept(candidate)
     }
 
+    @Synchronized
     override fun close() {
+        if (closed) return
+        closed = true
         interpreter.close()
     }
 

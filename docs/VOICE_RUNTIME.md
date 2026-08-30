@@ -70,6 +70,8 @@ bundle does not expose either speech capability.
 - `speak` supports queue, replacement, and busy rejection policies.
 - synthesis pauses recognition; capture remains local and becomes the barge-in
   signal path only when echo cancellation is active.
+- the runtime reports `Synthesizing` while local TTS generates samples and
+  reports `Speaking` only after audio playback starts.
 - speech loss, touch interruption, or detected barge-in stops synthesis and
   restores recognition deterministically.
 - permission, focus, model, integrity, capture, recognition, synthesis,

@@ -2,6 +2,7 @@ package dev.tokito.physical
 
 import dev.tokito.physical.voice.TranscriptSegment
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -25,7 +26,7 @@ internal class VoiceCallController(
     private val stopListening: suspend () -> Unit,
     private val interruptSpeech: suspend () -> Unit,
     private val respond: suspend (String) -> String,
-    private val speak: suspend (String) -> Unit,
+    private val speak: suspend (String, () -> Unit) -> Unit,
     private val onState: (CallState) -> Unit,
 ) : AutoCloseable {
     private var active = false
@@ -95,8 +96,16 @@ internal class VoiceCallController(
                 val response = respond(utterance).trim()
                 require(response.isNotEmpty()) { "Local dialogue returned an empty response" }
                 if (!active) return@launch
-                transition(CallState.Speaking)
-                speak(response)
+                val playbackStarted = CompletableDeferred<Unit>()
+                val playbackState = scope.launch {
+                    playbackStarted.await()
+                    if (active && state == CallState.Thinking) transition(CallState.Speaking)
+                }
+                try {
+                    speak(response) { playbackStarted.complete(Unit) }
+                } finally {
+                    if (playbackStarted.isCompleted) playbackState.join() else playbackState.cancel()
+                }
                 if (active) transition(CallState.Listening)
             } catch (failure: CancellationException) {
                 throw failure
