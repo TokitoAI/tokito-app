@@ -8,7 +8,10 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -62,6 +65,22 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The camera view intentionally draws edge to edge, so the AR
+        // controls column must clear the system bar / display cutout itself:
+        // in landscape the navigation bar sits at the screen's end edge and
+        // otherwise covers the buttons, leaving them clipped and only
+        // partially tappable.
+        val controlsBaseEndMargin =
+            (binding.arControls.layoutParams as android.widget.FrameLayout.LayoutParams).marginEnd
+        ViewCompat.setOnApplyWindowInsetsListener(binding.arControls) { view, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            view.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
+                marginEnd = controlsBaseEndMargin + maxOf(insets.right, insets.left)
+            }
+            windowInsets
+        }
 
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         dialogue = TokitoDialogueRuntime(
