@@ -246,14 +246,30 @@ impl ToolCall {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionScope {
+    Ephemeral,
+    Session,
+    Persisted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionPolicy {
+    pub scope: RetentionScope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at_unix_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceReference {
     pub digest: String,
     pub kind: String,
-    pub retention: String,
+    pub retention: RetentionPolicy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceAvailability {
     Available,
     Redacted,
@@ -269,18 +285,88 @@ pub struct Provenance {
     pub device_profile: String,
 }
 
+/// Mirrors the canonical schema's `observation.status` enum. Distinct from
+/// [`EvidenceAvailability`]: status describes the observation's own
+/// completion/redaction state, while evidence availability describes only
+/// its attached evidence items. An observation can be `Completed` with no
+/// available evidence, or `Redacted` as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationStatus {
+    Completed,
+    Redacted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignBinding {
+    Unbound,
+    Registered,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesignIdentity {
+    pub binding: DesignBinding,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_designator: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
+    pub schema_version: String,
     pub observation_id: String,
     pub tool_call_id: String,
     pub session_id: String,
     pub context_revision: String,
+    /// The capability/tool this observation resulted from. Validated against
+    /// the originating call's tool identity, never taken on trust alone.
+    pub kind: String,
+    pub source: String,
+    pub captured_monotonic_ms: u64,
+    pub captured_wall_time_unix_ms: u64,
+    pub design_identity: DesignIdentity,
+    pub status: ObservationStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinate_frame_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub registration_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
     pub evidence_availability: EvidenceAvailability,
     pub evidence: Vec<EvidenceReference>,
     pub provenance: Provenance,
+}
+
+impl Observation {
+    pub fn to_json(&self, max_bytes: usize) -> Result<Vec<u8>, RuntimeError> {
+        if max_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        validate_observation_intrinsic(self)?;
+        let bytes =
+            serde_json::to_vec(self).map_err(|_| RuntimeError::InternalInvariantViolation)?;
+        if bytes.len() > max_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        Ok(bytes)
+    }
+
+    pub fn from_json(bytes: &[u8], max_bytes: usize) -> Result<Self, RuntimeError> {
+        if max_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        if bytes.len() > max_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let observation: Self =
+            serde_json::from_slice(bytes).map_err(|_| RuntimeError::InvalidConfiguration)?;
+        validate_observation_intrinsic(&observation)?;
+        Ok(observation)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,7 +377,7 @@ pub struct Abstention {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TerminalOutcome {
-    Observation(Observation),
+    Observation(Box<Observation>),
     Abstained(Abstention),
     Cancelled,
     Error(RuntimeError),
@@ -488,33 +574,86 @@ fn validate_terminal_outcome(
     outcome: &TerminalOutcome,
 ) -> Result<(), RuntimeError> {
     if let TerminalOutcome::Observation(observation) = outcome {
-        if observation.tool_call_id != tool_call_id
+        validate_observation_intrinsic(observation)?;
+        if observation.schema_version != identity.schema_version
+            || observation.tool_call_id != tool_call_id
             || observation.session_id != identity.session_id
             || observation.context_revision != identity.context_revision
-            || observation.observation_id.trim().is_empty()
-            || observation
-                .confidence
-                .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-            || observation.coordinate_frame_id.is_some()
-                != observation.registration_revision.is_some()
-            || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
-            || (observation.evidence_availability == EvidenceAvailability::Available
-                && observation.evidence.is_empty())
-            || (observation.evidence_availability != EvidenceAvailability::Available
-                && !observation.evidence.is_empty())
-            || observation.evidence.iter().any(|evidence| {
-                !is_canonical_sha256(&evidence.digest)
-                    || evidence.kind.trim().is_empty()
-                    || evidence.retention.trim().is_empty()
-            })
-            || observation.provenance.runtime_revision.trim().is_empty()
-            || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
-            || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
-            || observation.provenance.backend.trim().is_empty()
-            || observation.provenance.device_profile.trim().is_empty()
+            || observation.kind != identity.tool.0
         {
             return Err(RuntimeError::InvalidConfiguration);
         }
+    }
+    Ok(())
+}
+
+fn validate_observation_intrinsic(observation: &Observation) -> Result<(), RuntimeError> {
+    let design_identity_invalid = match observation.design_identity.binding {
+        DesignBinding::Unbound => {
+            observation.design_identity.project_id.is_some()
+                || observation.design_identity.board_id.is_some()
+                || observation.design_identity.reference_designator.is_some()
+        }
+        DesignBinding::Registered => {
+            observation
+                .design_identity
+                .project_id
+                .as_deref()
+                .map_or(true, |value| value.trim().is_empty())
+                || observation
+                    .design_identity
+                    .board_id
+                    .as_deref()
+                    .map_or(true, |value| value.trim().is_empty())
+                || observation
+                    .design_identity
+                    .reference_designator
+                    .as_deref()
+                    .is_some_and(|value| value.trim().is_empty())
+        }
+    };
+    let retention_invalid = observation.evidence.iter().any(|evidence| {
+        let invalid_expiry = match evidence.retention.scope {
+            RetentionScope::Ephemeral | RetentionScope::Session => {
+                evidence.retention.expires_at_unix_ms.is_some()
+            }
+            RetentionScope::Persisted => evidence
+                .retention
+                .expires_at_unix_ms
+                .map_or(true, |expiry| {
+                    expiry <= observation.captured_wall_time_unix_ms
+                }),
+        };
+        !is_canonical_sha256(&evidence.digest) || evidence.kind.trim().is_empty() || invalid_expiry
+    });
+
+    if observation.schema_version.trim().is_empty()
+        || observation.observation_id.trim().is_empty()
+        || observation.tool_call_id.trim().is_empty()
+        || observation.session_id.trim().is_empty()
+        || observation.context_revision.trim().is_empty()
+        || observation.kind.trim().is_empty()
+        || observation.source.trim().is_empty()
+        || design_identity_invalid
+        || (observation.status == ObservationStatus::Redacted)
+            != (observation.evidence_availability == EvidenceAvailability::Redacted)
+        || observation
+            .confidence
+            .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+        || observation.coordinate_frame_id.is_some() != observation.registration_revision.is_some()
+        || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
+        || (observation.evidence_availability == EvidenceAvailability::Available
+            && observation.evidence.is_empty())
+        || (observation.evidence_availability != EvidenceAvailability::Available
+            && !observation.evidence.is_empty())
+        || retention_invalid
+        || observation.provenance.runtime_revision.trim().is_empty()
+        || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
+        || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
+        || observation.provenance.backend.trim().is_empty()
+        || observation.provenance.device_profile.trim().is_empty()
+    {
+        return Err(RuntimeError::InvalidConfiguration);
     }
     Ok(())
 }
@@ -1587,10 +1726,22 @@ mod tests {
         assert_eq!(call.validate(&manifest, "context-1", now), Ok(()));
 
         let observation = Observation {
+            schema_version: call.schema_version.clone(),
             observation_id: "observation-1".into(),
             tool_call_id: call.tool_call_id.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Registered,
+                project_id: Some("project".into()),
+                board_id: Some("board".into()),
+                reference_designator: Some("U1".into()),
+            },
+            status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: Some(4),
             confidence: Some(0.9),
@@ -1599,7 +1750,10 @@ mod tests {
                 digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .into(),
                 kind: "frame".into(),
-                retention: "session".into(),
+                retention: RetentionPolicy {
+                    scope: RetentionScope::Session,
+                    expires_at_unix_ms: None,
+                },
             }],
             provenance: Provenance {
                 runtime_revision: "runtime-revision".into(),
@@ -1614,11 +1768,14 @@ mod tests {
         let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(observation.clone())),
+            ledger.finish(
+                &call,
+                TerminalOutcome::Observation(Box::new(observation.clone()))
+            ),
             Ok(())
         );
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(observation)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(observation))),
             Err(RuntimeError::DuplicateTerminalOutcome)
         );
         assert!(matches!(
@@ -1638,10 +1795,22 @@ mod tests {
             deadline: Instant::now() + Duration::from_secs(1),
         };
         let invalid = Observation {
+            schema_version: call.schema_version.clone(),
             observation_id: "observation-2".into(),
             tool_call_id: call.tool_call_id.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Unbound,
+                project_id: None,
+                board_id: None,
+                reference_designator: None,
+            },
+            status: ObservationStatus::Completed,
             coordinate_frame_id: Some(10),
             registration_revision: None,
             confidence: Some(0.9),
@@ -1660,9 +1829,217 @@ mod tests {
         let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
-            ledger.finish(&call, TerminalOutcome::Observation(invalid)),
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(invalid))),
             Err(RuntimeError::InvalidConfiguration)
         );
+    }
+
+    fn base_observation(call: &ToolCall) -> Observation {
+        Observation {
+            schema_version: call.schema_version.clone(),
+            observation_id: "observation-envelope".into(),
+            tool_call_id: call.tool_call_id.clone(),
+            session_id: call.session_id.clone(),
+            context_revision: call.context_revision.clone(),
+            kind: call.tool.0.clone(),
+            source: "camera".into(),
+            captured_monotonic_ms: 100,
+            captured_wall_time_unix_ms: 1_000,
+            design_identity: DesignIdentity {
+                binding: DesignBinding::Unbound,
+                project_id: None,
+                board_id: None,
+                reference_designator: None,
+            },
+            status: ObservationStatus::Completed,
+            coordinate_frame_id: None,
+            registration_revision: None,
+            confidence: None,
+            evidence_availability: EvidenceAvailability::Unavailable,
+            evidence: Vec::new(),
+            provenance: Provenance {
+                runtime_revision: "runtime-revision".into(),
+                model_bundle_digest:
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+                preprocessing_digest:
+                    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".into(),
+                backend: "selected-by-policy".into(),
+                device_profile: "profile-revision".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn observation_kind_must_match_the_tool_that_was_actually_called() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-kind".into(),
+            session_id: "session-kind".into(),
+            context_revision: "context-kind".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut spoofed = base_observation(&call);
+        spoofed.kind = "locate".into();
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(spoofed))),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn observation_schema_version_must_match_the_originating_call() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-schema".into(),
+            session_id: "session-schema".into(),
+            context_revision: "context-schema".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut mismatched = base_observation(&call);
+        mismatched.schema_version = "contract.v2".into();
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(mismatched))),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn observation_status_and_evidence_redaction_cannot_disagree() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-redaction".into(),
+            session_id: "session-redaction".into(),
+            context_revision: "context-redaction".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        // status: Completed but evidence_availability: Redacted must not be
+        // representable as a valid terminal observation.
+        let mut inconsistent = base_observation(&call);
+        inconsistent.status = ObservationStatus::Completed;
+        inconsistent.evidence_availability = EvidenceAvailability::Redacted;
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(inconsistent))),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        // Both marked Redacted together is consistent and accepted.
+        let mut consistent = base_observation(&call);
+        consistent.status = ObservationStatus::Redacted;
+        consistent.evidence_availability = EvidenceAvailability::Redacted;
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(&call, TerminalOutcome::Observation(Box::new(consistent))),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn observation_json_is_bounded_deterministic_and_forward_compatible() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-json".into(),
+            session_id: "session-json".into(),
+            context_revision: "context-json".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let observation = base_observation(&call);
+        let encoded = observation.to_json(16_384).unwrap();
+        assert_eq!(encoded, observation.to_json(16_384).unwrap());
+        assert_eq!(
+            Observation::from_json(&encoded, 16_384),
+            Ok(observation.clone())
+        );
+
+        let mut forward: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        forward
+            .as_object_mut()
+            .unwrap()
+            .insert("future_optional_field".into(), serde_json::json!(true));
+        let forward = serde_json::to_vec(&forward).unwrap();
+        assert_eq!(Observation::from_json(&forward, 16_384), Ok(observation));
+        assert_eq!(
+            Observation::from_json(&encoded, 1),
+            Err(RuntimeError::ResourceExhausted)
+        );
+    }
+
+    #[test]
+    fn design_binding_cannot_claim_partial_or_hidden_identity() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-design".into(),
+            session_id: "session-design".into(),
+            context_revision: "context-design".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut observation = base_observation(&call);
+        observation.design_identity.project_id = Some("hidden-project".into());
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        observation.design_identity = DesignIdentity {
+            binding: DesignBinding::Registered,
+            project_id: Some("project".into()),
+            board_id: None,
+            reference_designator: None,
+        };
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+
+        observation.design_identity.board_id = Some("board".into());
+        assert!(observation.to_json(16_384).is_ok());
+    }
+
+    #[test]
+    fn evidence_retention_is_explicit_and_independent_from_success() {
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-retention".into(),
+            session_id: "session-retention".into(),
+            context_revision: "context-retention".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let mut observation = base_observation(&call);
+        observation.evidence_availability = EvidenceAvailability::Available;
+        observation.evidence.push(EvidenceReference {
+            digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+            kind: "roi".into(),
+            retention: RetentionPolicy {
+                scope: RetentionScope::Ephemeral,
+                expires_at_unix_ms: None,
+            },
+        });
+        assert!(observation.to_json(16_384).is_ok());
+
+        observation.evidence[0].retention = RetentionPolicy {
+            scope: RetentionScope::Persisted,
+            expires_at_unix_ms: None,
+        };
+        assert_eq!(
+            observation.to_json(16_384),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+        observation.evidence[0].retention.expires_at_unix_ms =
+            Some(observation.captured_wall_time_unix_ms + 1);
+        assert!(observation.to_json(16_384).is_ok());
     }
 
     #[test]
@@ -2000,7 +2377,12 @@ mod tests {
         let preference = vec!["candidate".into()];
         let accepted = backend_candidate(false);
         assert_eq!(
-            select_measured_backend(&preference, &[accepted.clone()], "profile", "abi"),
+            select_measured_backend(
+                &preference,
+                std::slice::from_ref(&accepted),
+                "profile",
+                "abi"
+            ),
             Ok(BackendSelection {
                 candidate_id: accepted.candidate_id,
                 backend: accepted.backend,
