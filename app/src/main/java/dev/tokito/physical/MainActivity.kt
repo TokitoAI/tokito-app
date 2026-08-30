@@ -177,11 +177,24 @@ class MainActivity : AppCompatActivity() {
             voice.initialize()
         }
         if (dialogue.state.value !is DialogueRuntimeState.Ready) {
-            val model = withContext(Dispatchers.IO) {
-                DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
-                    .requireInstalled()
+            // The local LLM refines grounded answers into conversational
+            // phrasing; the answers themselves come from the verified board
+            // reference (respondLocally already falls back to the grounded
+            // text when dialogue is unavailable or unfaithful). A missing
+            // dialogue bundle therefore degrades phrasing, not capability,
+            // and must not take down the whole voice loop with it.
+            runCatching {
+                val model = withContext(Dispatchers.IO) {
+                    DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
+                        .requireInstalled()
+                }
+                dialogue.initialize(model)
+            }.onFailure { failure ->
+                android.util.Log.i(
+                    "TokitoDialogue",
+                    "local LLM bundle unavailable; responding with verified board data only: ${failure.message}",
+                )
             }
-            dialogue.initialize(model)
         }
     }
 
