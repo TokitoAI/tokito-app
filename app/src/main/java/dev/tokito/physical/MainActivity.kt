@@ -106,6 +106,47 @@ class MainActivity : AppCompatActivity() {
         ensureCameraPermission()
         lifecycleScope.launch { prepareLocalVision() }
         lifecycleScope.launch { call.warmUp() }
+        registerDebugUtteranceReceiver()
+    }
+
+    // Debug builds accept an utterance over adb so the grounded-answer and
+    // highlight path can be exercised and diagnosed independently of the
+    // microphone and speech recognition:
+    //   adb shell am broadcast -a dev.tokito.physical.debug.UTTERANCE \
+    //     --es utterance "where is the main chip"
+    // Release builds never register the receiver, so the production entry
+    // point for dialogue remains the local voice loop only.
+    private var debugUtteranceReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerDebugUtteranceReceiver() {
+        if (!BuildConfig.DEBUG) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                val utterance = intent?.getStringExtra("utterance")?.takeIf { it.isNotBlank() } ?: return
+                lifecycleScope.launch {
+                    val answer = respondLocally(utterance)
+                    android.util.Log.i(
+                        "TokitoDialogue",
+                        "debug utterance='$utterance' answer='$answer'",
+                    )
+                    // Some devices (observed on vivo/iQOO) drop all app logcat
+                    // output via a system log kill switch, so the debug hook
+                    // also records its outcome to a run-as readable file.
+                    runCatching {
+                        File(filesDir, "debug-last-answer.txt")
+                            .writeText("utterance=$utterance\nanswer=$answer\n")
+                    }
+                    voice.speak(answer, SpeechQueuePolicy.REPLACE) {}
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            android.content.IntentFilter("dev.tokito.physical.debug.UTTERANCE"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        debugUtteranceReceiver = receiver
     }
 
     override fun onStart() {
@@ -125,6 +166,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        debugUtteranceReceiver?.let(::unregisterReceiver)
+        debugUtteranceReceiver = null
         if (::call.isInitialized) call.close()
         if (::ar.isInitialized) ar.destroy()
         if (::dialogue.isInitialized) dialogue.close()
