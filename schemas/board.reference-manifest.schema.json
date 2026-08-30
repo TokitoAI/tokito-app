@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/board.reference-manifest.schema.json",
+  "title": "Tokito Board Reference Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "manifest_id", "board", "placement_binding", "sources", "landmarks", "connectors", "integrity"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "manifest_id": { "type": "string", "minLength": 1 },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manufacturer", "model"],
+      "properties": {
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 }
+      }
+    },
+    "placement_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "enum": ["unbound", "authored"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "coordinate_frame_id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "kind", "media_sha256", "locator", "license_status", "redistributable", "review"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["printed_guide_photo", "datasheet", "authored_design"] },
+          "media_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "locator": { "type": "string", "minLength": 1 },
+          "license_status": { "enum": ["approved", "pending", "rejected"] },
+          "redistributable": { "type": "boolean" },
+          "review": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "reviewer", "reviewed_at"],
+            "properties": {
+              "state": { "enum": ["reviewed", "pending", "rejected"] },
+              "reviewer": { "type": "string", "minLength": 1 },
+              "reviewed_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "landmarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["landmark_id", "display_name", "category", "identifiers", "guide_targets", "evidence_refs"],
+        "properties": {
+          "landmark_id": { "type": "string", "minLength": 1 },
+          "display_name": { "type": "string", "minLength": 1 },
+          "category": { "enum": ["port", "header", "switch", "led", "processor", "debugger", "sensor", "transceiver", "memory"] },
+          "identifiers": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+          "query_aliases": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "board_target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference_designator", "x_normalized", "y_normalized", "source_id"],
+            "properties": {
+              "reference_designator": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$" },
+              "x_normalized": { "type": "number", "minimum": 0, "maximum": 1 },
+              "y_normalized": { "type": "number", "minimum": 0, "maximum": 1 },
+              "source_id": { "type": "string", "minLength": 1 }
+            }
+          },
+          "guide_targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_id", "x_percent", "y_percent"],
+              "properties": {
+                "source_id": { "type": "string", "minLength": 1 },
+                "x_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+                "y_percent": { "type": "number", "minimum": 0, "maximum": 100 }
+              }
+            }
+          },
+          "evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["connector_id", "display_name", "pin_count", "pins", "evidence_refs"],
+        "properties": {
+          "connector_id": { "type": "string", "minLength": 1 },
+          "display_name": { "type": "string", "minLength": 1 },
+          "pin_count": { "type": "integer", "minimum": 1 },
+          "pins": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["number", "signal_name", "aliases", "functions", "electrical_role", "evidence_refs"],
+              "properties": {
+                "number": { "type": "integer", "minimum": 1 },
+                "signal_name": { "type": "string", "minLength": 1 },
+                "aliases": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                "functions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                "electrical_role": { "enum": ["ground", "power_rail", "power_input", "reset", "analog", "gpio", "bus", "clock", "not_connected", "other"] },
+                "evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+              }
+            }
+          },
+          "evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_digest"],
+      "properties": { "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+    }
+  }
+}

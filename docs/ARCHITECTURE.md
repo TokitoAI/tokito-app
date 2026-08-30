@@ -66,9 +66,16 @@ flowchart TB
     Audio --> Board
 ```
 
-## Planned deployable artifacts
+The 3D renderer consumes a digest-verified GLB whose metric origin and axes are
+bound to the same immutable assembly context used by tools and observations.
+The CAD/Gerber converter is replaceable tooling; it cannot be called from the
+shipping Android hot path. Camera calibration and a fresh board pose compose
+the asset into the camera frame. Invalid assets or registration loss suppress
+3D content instead of retaining the last transform.
 
-The repository will eventually produce:
+## Deployable artifacts
+
+The repository produces, or is converging on, these artifacts:
 
 1. a standalone camera-first Android AR application;
 2. an Android AAR exposing reusable Kotlin APIs and lifecycle integration;
@@ -79,8 +86,16 @@ The repository will eventually produce:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-No artifact exists at bootstrap. File names and package coordinates become
-normative only through the runtime-foundation epic and an accepted ADR.
+The `app` module is the sole user-facing Android application. Its camera-first
+activity composes `voice-runtime`, `measurement-runtime`, `dialogue-runtime`,
+and `android/ar-runtime` in-process so AR, speech, dialogue, and typed tools
+share one lifecycle and one interaction surface. `android/ar-demo` is only the
+manual-registration conformance host and is not a second product. Their package coordinates remain
+development coordinates until the runtime-foundation epic accepts the public
+ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
+app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.
+Automatic vision and remaining physical-tool artifacts remain gated work
+rather than stubbed capabilities.
 
 ## Runtime layers
 
@@ -109,6 +124,12 @@ Runs wake-word detection, voice activity detection, streaming English STT,
 deterministic measurement parsing, and interruptible English TTS. Raw audio is
 ephemeral unless the user explicitly enables a diagnostic capture.
 
+Only final STT segments enter `MeasurementVoiceSession`. The session delegates
+numeric and unit handling to `measurement-runtime`, speaks correction or
+confirmation prompts through the same local TTS runtime, and accepts either a
+bounded spoken yes/no response or an explicit touch decision. Partial STT
+hypotheses cannot mutate measurement state.
+
 ### 5. Local dialogue and reasoning layer
 
 Runs a quantized local text LLM with bounded context and schema-constrained
@@ -129,6 +150,14 @@ Renders board acquisition, tracking quality, component targets, regions,
 warnings, confidence, and step guidance over the live camera view. Rendering
 consumes the canonical coordinate-frame graph and never invents independent
 pixel transforms. Touch and speech are equal local interaction paths.
+
+The renderer consumes immutable, sequence-ordered scenes through a bounded
+single-slot mailbox. Every primitive carries a coordinate frame, transform
+revision, observation time, expiry, and uncertainty. Scene projection is
+suppressed when any required edge is missing, expired, non-invertible, or from
+a different revision. Lifecycle suspension invalidates both registration and
+pending scenes. See [AR_RUNTIME.md](AR_RUNTIME.md) and
+[DIGITAL_TWIN_AR.md](DIGITAL_TWIN_AR.md).
 
 ### 8. Evidence layer
 

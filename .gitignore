@@ -4,9 +4,13 @@ build/
 dist/
 .gradle/
 .kotlin/
+.cxx/
+**/.cxx/
+**/build/
 __pycache__/
 *.py[cod]
 .venv/
+.playwright-cli/
 
 # IDE and operating system state
 .idea/
@@ -29,6 +33,7 @@ datasets/local/
 models/local/
 reports/generated/
 device-logs/
+device-profiles/
 
 # Secrets and local configuration
 .env

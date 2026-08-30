@@ -1,0 +1,15 @@
+[package]
+name = "tokito-physical-runtime-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Fail-closed native core for Tokito physical runtime sessions and bounded vision work"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+sha2 = "0.10.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

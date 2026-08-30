@@ -4,6 +4,10 @@ This document defines the future external contract independently of programming
 language or serialization. Concrete Kotlin/Rust/Python types must be generated
 or tested against one canonical schema once implementation begins.
 
+The canonical schema and neutral conformance fixtures are in
+[`contracts/`](../contracts/). They describe structure only; they do not enable
+an operation or select a model, backend, device profile, or resource limit.
+
 ## Capability handshake
 
 A client opens the runtime and receives:
@@ -45,6 +49,21 @@ formats, but runtime control flow cannot branch on a particular board name.
 Missing or conflicting placement/evidence fields produce a typed import error
 or an unsupported capability; they are never filled with model guesses.
 
+## Digital-twin asset package
+
+The optional 3D package consists of one GLB 2 file and a manifest conforming to
+`schemas/digital-twin.asset-manifest.schema.json`. Its board identity/revision
+and `assemblyContextRevision` must match the active verified assembly context.
+Units are metres and axes are right-handed Y-up; asset X/Z map to assembly-board
+X/Y and asset Y is physical height. A component node is addressable only when
+its name begins with the manifest's `componentNodePrefix` and the remaining
+reference designator exists in the assembly context.
+
+Asset acceptance is atomic and bounded. Size, container structure, digest,
+finite geometry, decoded bounds, schema major and context revision are checked
+before activation. Missing or rejected assets leave the 3D capability absent;
+they do not produce a placeholder model.
+
 ## Tool call envelope
 
 ```json
@@ -80,6 +99,14 @@ IDs and revision strings are examples of shape, not hardcoded values.
   "kind": "component_inspection",
   "source": "camera",
   "captured_monotonic_ms": 123456000,
+  "captured_wall_time_unix_ms": 1788021000000,
+  "design_identity": {
+    "binding": "registered",
+    "project_id": "opaque-project-id",
+    "board_id": "opaque-board-id",
+    "reference_designator": "U7"
+  },
+  "status": "completed",
   "confidence": 0.997,
   "calibration": {
     "method": "held-out-temperature-scaling",
@@ -100,7 +127,9 @@ IDs and revision strings are examples of shape, not hardcoded values.
     {
       "kind": "roi_crop",
       "digest": "sha256",
-      "retention": "session"
+      "retention": {
+        "scope": "session"
+      }
     }
   ],
   "provenance": {
@@ -199,11 +228,41 @@ Stable families:
 Every error includes retryability and safe recovery guidance. Internal paths,
 stack traces, raw transcripts, and model internals are not exposed by default.
 
+Evidence availability is explicit. An observation declares `available`,
+`redacted`, or `unavailable`; only `available` may carry evidence references.
+Redacted or unavailable evidence is not silently represented as a successful
+empty list.
+
+Evidence retention is independent from inference success. Every available
+evidence reference declares `ephemeral`, `session`, or `persisted`; persisted
+evidence also declares an absolute expiry later than the observation capture
+time. Unbound observations carry no hidden design identifiers. Registered
+observations require explicit project and board identities and may add a
+reference designator.
+
 ## Compatibility
 
 - Major schema/tool version changes are incompatible and rejected.
 - Minor versions are additive; unknown optional fields are preserved or ignored
   according to generated conformance tests.
+- Observation JSON is deterministic for identical typed input and bounded by a
+  caller-supplied byte ceiling on both serialization and parsing.
 - Capability discovery precedes tool use.
 - A context revision mismatch is a conflict, not an implicit upgrade.
 - Tool-call IDs make retries idempotent within the documented retention window.
+  The same ID may return a pending or completed outcome only when session,
+  context revision, and tool identity match the admitted call. A different
+  identity using the same ID is rejected and never observes another session's
+  result.
+
+The idempotency ledger has a versioned deterministic snapshot. A production
+integration must persist those bytes atomically in app-private storage and
+restore them before admitting reconnect retries after process recreation.
+Unknown, malformed, or identity-inconsistent snapshots fail closed. Session
+sensor state is not restored after process death; a new session must reacquire
+permissions, calibration, and registration.
+
+One execution guard carries the caller deadline and cancellation signal through
+camera, audio, preprocessing, and inference adapters. Every stage checks the
+same guard before work; cancellation and deadline expiry are terminal typed
+outcomes, never advisory flags.

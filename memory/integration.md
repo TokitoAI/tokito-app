@@ -21,3 +21,9 @@ silently replace authored design truth.
 The FRDM-MCXN236 is the first standalone reference-board validation. Its values
 must be imported into the generic bundle schema and kept out of runtime control
 flow.
+
+Reviewed printed-guide identities and electrical pin tables enter through the
+generic board-reference manifest. Guide target percentages are evidence-review
+coordinates only; they remain unbound until an authored-design source supplies
+the board coordinate frame. Pending-license guide media stays local and is
+non-redistributable even when its reviewed facts are tracked.

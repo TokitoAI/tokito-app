@@ -85,6 +85,10 @@ policy together through a separately reviewed PR.
   heavyweight inference is explicit, event-driven, bounded, and cancellable.
 - **On-device by default.** Raw camera frames and audio do not leave the phone.
   Core inference, reasoning, speech, and AR operation also remain on-device.
+- Spoken measurements are normalized only by `measurement-runtime`; never use
+  an LLM to parse decimal separators, SI prefixes, units, ranges, or board
+  relationships. Partial STT hypotheses cannot mutate measurement state, and
+  an unconfirmed draft is never evidence.
   Any future off-device mode requires a new ADR and explicit user consent.
 - **Abstain over guessing.** Identity-sensitive output must carry confidence and
   evidence; below threshold, return a typed abstention.
@@ -102,6 +106,11 @@ policy together through a separately reviewed PR.
   Companion's read/review product boundary.
 - **No hardcoded device assumptions.** Hardware features are discovered through
   a capability profile and unsupported paths fail closed.
+- **AR is registered presentation, not an independent geometry system.** Every
+  positional primitive uses the canonical frame graph with a current revision,
+  timestamp, expiry, and uncertainty. Missing or stale registration clears the
+  geometry. Call this product AR; `XR` is an umbrella term and is not used for
+  modules, APIs, issues, or capability names.
 - **Every release is reproducible.** Model digest, preprocessing, runtime,
   device profile, benchmark corpus revision, and results are recorded together.
 
@@ -117,6 +126,7 @@ Read, in full:
 | Audio work | `docs/TECHNICAL_BIBLE.md` voice section, `docs/EVALUATION.md` |
 | Camera/audio persistence or telemetry | `docs/SECURITY_AND_PRIVACY.md` |
 | Android packaging/backend work | ADR 0003, `memory/device-runtime.md` |
+| AR presentation or camera transforms | `docs/AR_RUNTIME.md`, `memory/device-runtime.md` |
 
 ## Repository hygiene
 

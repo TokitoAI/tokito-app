@@ -19,14 +19,17 @@ The product owns:
 
 - lightweight continuous camera tracking and board registration;
 - event-driven region-of-interest capture and specialized visual inference;
-- an entirely local text LLM and bounded local vision-language inference;
-- wake word, English speech-to-text, measurement parsing, and English
+- an entirely local text LLM and lightweight board-pose inference;
+- push-to-talk English speech-to-text, measurement parsing, and English
   text-to-speech, all on-device;
 - a standalone camera-first AR interface with registered overlays and local
   conversational state;
+- a digest-verified metric GLB digital twin rendered over a calibrated board
+  pose, with a real calibration object for conformance before project assets
+  are available;
 - typed physical observations with confidence, provenance, and evidence;
-- bench tools such as component location, inspection, LED-state reading,
-  measurement requests, assembly verification, and change verification;
+- grounded FRDM reference queries, component guidance, and deterministic
+  measurement requests;
 - model packaging, hardware capability detection, thermal scheduling, and
   reproducible on-device evaluation.
 
@@ -46,11 +49,29 @@ flowchart LR
 
 ## Current status
 
-The main branch contains the architecture baseline and executable,
-standard-library-only corpus governance tooling. It does not yet claim a model,
-shipping Android runtime, or device-qualified capability. Runtime implementation
-continues through tracked issues on the
-[Tokito project board](https://github.com/orgs/TokitoAI/projects/1).
+The repository contains one landscape, camera-first Android product. Its single
+activity composes CameraX, local board-pose detection, registered 2D/3D
+presentation, push-to-talk voice, deterministic measurement parsing, grounded
+board retrieval, and local dialogue. Transcripts and model reasoning stay out
+of the product UI.
+
+The verified device profile uses Sherpa ONNX 1.13.6 for streaming English STT
+and local VITS TTS, Qualcomm Qwen3 1.7B QAIRT w4a16 through GenieX 0.3.1 for
+NPU dialogue, and a manifest-bound YOLO11n pose model through LiteRT 2.2.0 for
+the FRDM-MCXN236 board quad. A digest-bound GLB follows the live quad and is
+cleared when tracking expires. Manual registration and unregistered 3D preview
+remain explicit recovery tools. No runtime path has network permission or a
+cloud fallback.
+
+Model binaries and board assets are not committed to Git. They are provisioned
+to app-private storage and admitted only when their manifests, sizes, digests,
+runtime constraints, and context revisions match. The current YOLO manifest is
+experimental (`release_eligible_evidence: false`); it is shipped for this FRDM
+product slice without claiming the broader calibrated vision gates are done.
+
+The repository also contains the fail-closed native core, Android lifecycle and
+capability API, device-profile evidence, and executable corpus-governance
+tooling merged on the runtime-foundation path.
 
 ## Documentation
 
@@ -59,6 +80,10 @@ continues through tracked issues on the
 - [Product scope](docs/PRODUCT_SCOPE.md) - user outcomes and non-goals
 - [Runtime contract](docs/RUNTIME_CONTRACT.md) - tools and observation envelope
 - [Model strategy](docs/MODEL_STRATEGY.md) - composed pipeline and deployment policy
+- [Offline voice runtime](docs/VOICE_RUNTIME.md) - executable STT/TTS slice and verification
+- [Local dialogue runtime](docs/DIALOGUE_RUNTIME.md) - executable LLM and constrained planner slice
+- [Measurement runtime](docs/MEASUREMENT_RUNTIME.md) - deterministic parsing and confirmation contract
+- [AR runtime](docs/AR_RUNTIME.md) - coordinate, scene, lifecycle, and conformance contract
 - [Evaluation](docs/EVALUATION.md) - datasets, metrics, and release gates
 - [Corpus governance](docs/CORPUS_GOVERNANCE.md) - immutable manifests, leakage audits, and revisions
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md) - camera/audio trust boundary
@@ -67,7 +92,22 @@ continues through tracked issues on the
 - [CI/CD](docs/CI_CD.md) - pull request flow, current CI checks, and branch-policy status
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
-## Planned implementation shape
+## Build and verify
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleRelease
+```
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+Release builds accept signing values only through the four
+`TOKITO_RELEASE_*` environment variables documented in
+[`docs/RELEASE.md`](docs/RELEASE.md); credentials and model binaries never
+belong in the repository.
+The test application initializes only admitted, verified local model bundles;
+recognition, dialogue, and synthesis never fetch models at runtime.
+
+## Implementation shape
 
 Python is reserved for dataset preparation, training, export, evaluation, and a
 reference harness. The shipping phone hot path will be an Android-native
