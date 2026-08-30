@@ -5,11 +5,16 @@
 //! inference backend, threshold, queue size, or thermal cutoff.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuntimeError {
     InvalidArgument,
     InvalidTransition,
@@ -32,6 +37,7 @@ pub enum RuntimeError {
     IncompatibleSchema,
     DuplicateReference,
     ConflictingDesignTruth,
+    SessionExpired,
 }
 
 impl RuntimeError {
@@ -59,6 +65,7 @@ impl RuntimeError {
             Self::ModelUnavailable => "install a verified compatible local model bundle",
             Self::DeadlineExceeded | Self::Cancelled => "submit a new request if work is still needed",
             Self::BackendFailure => "record backend evidence and use an accepted fallback only",
+            Self::SessionExpired => "open a new session; an expired session cannot be extended or reused",
             _ => "correct the request or report the runtime failure without exposing sensitive diagnostics",
         }
     }
@@ -90,18 +97,37 @@ pub enum LifecycleSignal {
 
 #[derive(Debug, Clone)]
 pub struct Session {
+    owner_id: String,
+    expires_at: Option<Instant>,
     state: SessionState,
     execution_return_state: Option<SessionState>,
     generation: u64,
 }
 
 impl Session {
-    pub fn new() -> Self {
-        Self {
+    /// `owner_id` must be non-blank: session ownership is explicit, not
+    /// inferred. `expires_at` is `None` for a session with no fixed expiry;
+    /// callers that require bounded lifetime supply an explicit deadline
+    /// rather than relying on an implicit default.
+    pub fn new(
+        owner_id: impl Into<String>,
+        expires_at: Option<Instant>,
+    ) -> Result<Self, RuntimeError> {
+        let owner_id = owner_id.into();
+        if owner_id.trim().is_empty() {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        Ok(Self {
+            owner_id,
+            expires_at,
             state: SessionState::Created,
             execution_return_state: None,
             generation: 0,
-        }
+        })
+    }
+
+    pub fn owner_id(&self) -> &str {
+        &self.owner_id
     }
 
     pub fn state(&self) -> SessionState {
@@ -110,6 +136,24 @@ impl Session {
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Explicit ownership and expiry gate. A caller must pass this before
+    /// `transition` or tool-call admission is authorized on this session:
+    /// a mismatched owner is a permission failure, and an elapsed deadline
+    /// is a distinct, non-retryable expiry rather than a generic lifecycle
+    /// failure. Expiry is caller-timed (`now` is explicit, never sampled
+    /// internally) so authorization stays deterministic and testable.
+    pub fn authorize(&self, caller_id: &str, now: Instant) -> Result<(), RuntimeError> {
+        if caller_id != self.owner_id {
+            return Err(RuntimeError::PermissionDenied);
+        }
+        if let Some(expires_at) = self.expires_at {
+            if now >= expires_at {
+                return Err(RuntimeError::SessionExpired);
+            }
+        }
+        Ok(())
     }
 
     pub fn transition(&mut self, signal: LifecycleSignal) -> Result<SessionState, RuntimeError> {
@@ -160,13 +204,7 @@ impl Session {
     }
 }
 
-impl Default for Session {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolId(pub String);
 
 #[derive(Debug, Clone)]
@@ -208,21 +246,21 @@ impl ToolCall {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceReference {
     pub digest: String,
     pub kind: String,
     pub retention: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EvidenceAvailability {
     Available,
     Redacted,
     Unavailable,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Provenance {
     pub runtime_revision: String,
     pub model_bundle_digest: String,
@@ -231,7 +269,7 @@ pub struct Provenance {
     pub device_profile: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
     pub observation_id: String,
     pub tool_call_id: String,
@@ -245,13 +283,13 @@ pub struct Observation {
     pub provenance: Provenance,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Abstention {
     pub reason: RuntimeError,
     pub recoverable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TerminalOutcome {
     Observation(Observation),
     Abstained(Abstention),
@@ -259,17 +297,34 @@ pub enum TerminalOutcome {
     Error(RuntimeError),
 }
 
-#[derive(Debug, Default)]
+const CALL_LEDGER_SNAPSHOT_VERSION: u16 = 1;
+
+#[derive(Debug)]
 pub struct CallLedger {
+    capacity: usize,
     admitted: HashMap<String, CallIdentity>,
     terminal: HashMap<String, TerminalOutcome>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CallIdentity {
+    schema_version: String,
     session_id: String,
     context_revision: String,
     tool: ToolId,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CallLedgerSnapshot {
+    version: u16,
+    entries: Vec<CallLedgerSnapshotEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CallLedgerSnapshotEntry {
+    tool_call_id: String,
+    identity: CallIdentity,
+    terminal: Option<TerminalOutcome>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -280,8 +335,20 @@ pub enum CallAdmission {
 }
 
 impl CallLedger {
+    pub fn new(capacity: usize) -> Result<Self, RuntimeError> {
+        if capacity == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        Ok(Self {
+            capacity,
+            admitted: HashMap::new(),
+            terminal: HashMap::new(),
+        })
+    }
+
     pub fn admit(&mut self, call: &ToolCall) -> Result<CallAdmission, RuntimeError> {
         let identity = CallIdentity {
+            schema_version: call.schema_version.clone(),
             session_id: call.session_id.clone(),
             context_revision: call.context_revision.clone(),
             tool: call.tool.clone(),
@@ -296,6 +363,9 @@ impl CallLedger {
                 .cloned()
                 .map(CallAdmission::Completed)
                 .unwrap_or(CallAdmission::Pending));
+        }
+        if self.admitted.len() >= self.capacity {
+            return Err(RuntimeError::ResourceExhausted);
         }
         self.admitted.insert(call.tool_call_id.clone(), identity);
         Ok(CallAdmission::Accepted)
@@ -312,47 +382,194 @@ impl CallLedger {
         let Some(identity) = self.admitted.get(&call.tool_call_id) else {
             return Err(RuntimeError::InvalidConfiguration);
         };
-        if identity.session_id != call.session_id
+        if identity.schema_version != call.schema_version
+            || identity.session_id != call.session_id
             || identity.context_revision != call.context_revision
             || identity.tool != call.tool
         {
             return Err(RuntimeError::ContextRevisionMismatch);
         }
-        if let TerminalOutcome::Observation(observation) = &outcome {
-            if observation.tool_call_id != call.tool_call_id
-                || observation.session_id != call.session_id
-                || observation.context_revision != call.context_revision
-                || observation.observation_id.trim().is_empty()
-                || observation
-                    .confidence
-                    .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
-                || observation.coordinate_frame_id.is_some()
-                    != observation.registration_revision.is_some()
-                || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
-                || (observation.evidence_availability == EvidenceAvailability::Available
-                    && observation.evidence.is_empty())
-                || (observation.evidence_availability != EvidenceAvailability::Available
-                    && !observation.evidence.is_empty())
-                || observation.evidence.iter().any(|evidence| {
-                    !is_canonical_sha256(&evidence.digest)
-                        || evidence.kind.trim().is_empty()
-                        || evidence.retention.trim().is_empty()
-                })
-                || observation.provenance.runtime_revision.trim().is_empty()
-                || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
-                || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
-                || observation.provenance.backend.trim().is_empty()
-                || observation.provenance.device_profile.trim().is_empty()
-            {
-                return Err(RuntimeError::InvalidConfiguration);
-            }
-        }
+        validate_terminal_outcome(
+            &CallIdentity {
+                schema_version: call.schema_version.clone(),
+                session_id: call.session_id.clone(),
+                context_revision: call.context_revision.clone(),
+                tool: call.tool.clone(),
+            },
+            &call.tool_call_id,
+            &outcome,
+        )?;
         self.terminal.insert(call.tool_call_id.clone(), outcome);
         Ok(())
     }
 
+    /// Produces a versioned, deterministic snapshot suitable for an
+    /// app-private atomic persistence layer. Entries are sorted by call ID so
+    /// identical ledger state always yields identical bytes.
+    pub fn snapshot_json(&self, max_snapshot_bytes: usize) -> Result<Vec<u8>, RuntimeError> {
+        if max_snapshot_bytes == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        let mut call_ids: Vec<_> = self.admitted.keys().collect();
+        call_ids.sort();
+        let entries = call_ids
+            .into_iter()
+            .map(|tool_call_id| CallLedgerSnapshotEntry {
+                tool_call_id: tool_call_id.clone(),
+                identity: self.admitted[tool_call_id].clone(),
+                terminal: self.terminal.get(tool_call_id).cloned(),
+            })
+            .collect();
+        let snapshot = serde_json::to_vec(&CallLedgerSnapshot {
+            version: CALL_LEDGER_SNAPSHOT_VERSION,
+            entries,
+        })
+        .map_err(|_| RuntimeError::InternalInvariantViolation)?;
+        if snapshot.len() > max_snapshot_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        Ok(snapshot)
+    }
+
+    /// Restores only validated idempotency state. Unknown versions, duplicate
+    /// IDs, malformed identities, and terminal outcomes that do not match the
+    /// admitted call fail closed before any state is returned.
+    pub fn restore_json(
+        snapshot: &[u8],
+        max_snapshot_bytes: usize,
+        capacity: usize,
+    ) -> Result<Self, RuntimeError> {
+        if max_snapshot_bytes == 0 || capacity == 0 {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+        if snapshot.len() > max_snapshot_bytes {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let snapshot: CallLedgerSnapshot =
+            serde_json::from_slice(snapshot).map_err(|_| RuntimeError::InvalidConfiguration)?;
+        if snapshot.version != CALL_LEDGER_SNAPSHOT_VERSION {
+            return Err(RuntimeError::IncompatibleSchema);
+        }
+        if snapshot.entries.len() > capacity {
+            return Err(RuntimeError::ResourceExhausted);
+        }
+        let mut ledger = Self::new(capacity)?;
+        for entry in snapshot.entries {
+            if entry.tool_call_id.trim().is_empty()
+                || entry.identity.schema_version.trim().is_empty()
+                || entry.identity.session_id.trim().is_empty()
+                || entry.identity.context_revision.trim().is_empty()
+                || entry.identity.tool.0.trim().is_empty()
+                || ledger.admitted.contains_key(&entry.tool_call_id)
+            {
+                return Err(RuntimeError::InvalidConfiguration);
+            }
+            if let Some(outcome) = &entry.terminal {
+                validate_terminal_outcome(&entry.identity, &entry.tool_call_id, outcome)?;
+            }
+            ledger
+                .admitted
+                .insert(entry.tool_call_id.clone(), entry.identity);
+            if let Some(outcome) = entry.terminal {
+                ledger.terminal.insert(entry.tool_call_id, outcome);
+            }
+        }
+        Ok(ledger)
+    }
+
     pub fn terminal(&self, tool_call_id: &str) -> Option<&TerminalOutcome> {
         self.terminal.get(tool_call_id)
+    }
+}
+
+fn validate_terminal_outcome(
+    identity: &CallIdentity,
+    tool_call_id: &str,
+    outcome: &TerminalOutcome,
+) -> Result<(), RuntimeError> {
+    if let TerminalOutcome::Observation(observation) = outcome {
+        if observation.tool_call_id != tool_call_id
+            || observation.session_id != identity.session_id
+            || observation.context_revision != identity.context_revision
+            || observation.observation_id.trim().is_empty()
+            || observation
+                .confidence
+                .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+            || observation.coordinate_frame_id.is_some()
+                != observation.registration_revision.is_some()
+            || (observation.coordinate_frame_id.is_some() && observation.confidence.is_none())
+            || (observation.evidence_availability == EvidenceAvailability::Available
+                && observation.evidence.is_empty())
+            || (observation.evidence_availability != EvidenceAvailability::Available
+                && !observation.evidence.is_empty())
+            || observation.evidence.iter().any(|evidence| {
+                !is_canonical_sha256(&evidence.digest)
+                    || evidence.kind.trim().is_empty()
+                    || evidence.retention.trim().is_empty()
+            })
+            || observation.provenance.runtime_revision.trim().is_empty()
+            || !is_canonical_sha256(&observation.provenance.model_bundle_digest)
+            || !is_canonical_sha256(&observation.provenance.preprocessing_digest)
+            || observation.provenance.backend.trim().is_empty()
+            || observation.provenance.device_profile.trim().is_empty()
+        {
+            return Err(RuntimeError::InvalidConfiguration);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionStage {
+    Camera,
+    Audio,
+    Preprocessing,
+    Inference,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CancellationSignal(Arc<AtomicBool>);
+
+impl CancellationSignal {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionGuard {
+    deadline: Instant,
+    cancellation: CancellationSignal,
+}
+
+impl ExecutionGuard {
+    pub fn new(deadline: Instant, cancellation: CancellationSignal) -> Self {
+        Self {
+            deadline,
+            cancellation,
+        }
+    }
+
+    /// The same guard is passed through every execution stage. Stage identity
+    /// is explicit for instrumentation while cancellation and deadline
+    /// semantics remain identical across camera, audio, preprocessing, and
+    /// inference implementations.
+    pub fn enter(
+        &self,
+        stage: ExecutionStage,
+        now: Instant,
+    ) -> Result<ExecutionStage, RuntimeError> {
+        if self.cancellation.is_cancelled() {
+            return Err(RuntimeError::Cancelled);
+        }
+        if now >= self.deadline {
+            return Err(RuntimeError::DeadlineExceeded);
+        }
+        Ok(stage)
     }
 }
 
@@ -1087,6 +1304,8 @@ impl ThermalPolicy {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
     use std::time::Duration;
 
     fn request(key: &str, priority: WorkPriority, deadline: Instant) -> WorkRequest {
@@ -1204,8 +1423,38 @@ mod tests {
     }
 
     #[test]
+    fn session_ownership_is_explicit_and_rejects_other_callers() {
+        let session = Session::new("owner-a", None).unwrap();
+        assert_eq!(session.authorize("owner-a", Instant::now()), Ok(()));
+        assert_eq!(
+            session.authorize("owner-b", Instant::now()),
+            Err(RuntimeError::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn session_expiry_is_explicit_and_caller_timed() {
+        let now = Instant::now();
+        let session = Session::new("owner", Some(now + Duration::from_secs(60))).unwrap();
+        assert_eq!(session.authorize("owner", now), Ok(()));
+        assert_eq!(
+            session.authorize("owner", now + Duration::from_secs(60)),
+            Err(RuntimeError::SessionExpired)
+        );
+        assert!(!RuntimeError::SessionExpired.retryable());
+    }
+
+    #[test]
+    fn a_blank_owner_id_is_rejected_at_construction() {
+        assert_eq!(
+            Session::new("   ", None).err(),
+            Some(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
     fn suspend_invalidates_work_and_resume_requires_calibration() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1222,7 +1471,7 @@ mod tests {
 
     #[test]
     fn execution_returns_to_the_prior_degraded_state() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1238,7 +1487,7 @@ mod tests {
 
     #[test]
     fn active_work_can_stop_without_a_terminal_observation() {
-        let mut session = Session::new();
+        let mut session = Session::new("owner", None).unwrap();
         session
             .transition(LifecycleSignal::StartCalibration)
             .unwrap();
@@ -1268,6 +1517,58 @@ mod tests {
         assert_eq!(
             manifest.require(&ToolId("locate".into())),
             Err(RuntimeError::UnsupportedCapability)
+        );
+    }
+
+    #[test]
+    fn a_different_contract_version_is_rejected_not_silently_upgraded() {
+        // Additive/minor contract changes never bump `contract_version` (see
+        // RUNTIME_CONTRACT.md's Compatibility section), so any observed
+        // mismatch here is a genuine major/incompatible change and must be
+        // rejected rather than treated as an implicit upgrade.
+        let now = Instant::now();
+        let manifest = CapabilityManifest::new("contract.v1", [ToolId("inspect".into())]).unwrap();
+        let call = ToolCall {
+            schema_version: "contract.v2".into(),
+            tool_call_id: "call-version".into(),
+            session_id: "session-version".into(),
+            context_revision: "context-version".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        assert_eq!(
+            call.validate(&manifest, "context-version", now),
+            Err(RuntimeError::InvalidConfiguration)
+        );
+    }
+
+    #[test]
+    fn failure_categories_stay_distinct_across_the_contract() {
+        // #22 requires that "unsupported capability" is never confused with
+        // unavailable model, invalid input, overload, or inference failure.
+        // Each comes from an independent code path; assert they cannot
+        // collapse onto the same variant.
+        let categories = [
+            RuntimeError::UnsupportedCapability,
+            RuntimeError::ModelUnavailable,
+            RuntimeError::InvalidArgument,
+            RuntimeError::ResourceExhausted,
+            RuntimeError::BackendFailure,
+        ];
+        for (i, a) in categories.iter().enumerate() {
+            for (j, b) in categories.iter().enumerate() {
+                assert_eq!(i == j, a == b, "{a:?} vs {b:?} distinctness mismatch");
+            }
+        }
+
+        let manifest = CapabilityManifest::new("contract.v1", []).unwrap();
+        assert_eq!(
+            manifest.require(&ToolId("inspect".into())),
+            Err(RuntimeError::UnsupportedCapability)
+        );
+        assert_eq!(
+            select_measured_backend(&["candidate".into()], &[], "profile", "abi"),
+            Err(RuntimeError::ModelUnavailable)
         );
     }
 
@@ -1310,7 +1611,7 @@ mod tests {
                 device_profile: "profile-revision".into(),
             },
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
             ledger.finish(&call, TerminalOutcome::Observation(observation.clone())),
@@ -1356,7 +1657,7 @@ mod tests {
                 device_profile: "profile-revision".into(),
             },
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(
             ledger.finish(&call, TerminalOutcome::Observation(invalid)),
@@ -1374,7 +1675,7 @@ mod tests {
             tool: ToolId("inspect".into()),
             deadline: Instant::now() + Duration::from_secs(1),
         };
-        let mut ledger = CallLedger::default();
+        let mut ledger = CallLedger::new(8).unwrap();
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Accepted));
         assert_eq!(ledger.admit(&call), Ok(CallAdmission::Pending));
 
@@ -1384,6 +1685,158 @@ mod tests {
             ledger.admit(&conflicting_retry),
             Err(RuntimeError::ContextRevisionMismatch)
         );
+    }
+
+    #[test]
+    fn concurrent_duplicate_admission_never_races_into_a_second_execution() {
+        // Simulates concurrent retries/reconnects racing the same idempotency
+        // key: only one admission may win Accepted, and every other caller
+        // observes Pending or the eventual single terminal outcome, never a
+        // second independent execution.
+        let call = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "call-race".into(),
+            session_id: "session-race".into(),
+            context_revision: "context-race".into(),
+            tool: ToolId("inspect".into()),
+            deadline: Instant::now() + Duration::from_secs(5),
+        };
+        let ledger = Arc::new(Mutex::new(CallLedger::new(8).unwrap()));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let ledger = Arc::clone(&ledger);
+                let call = call.clone();
+                thread::spawn(move || ledger.lock().unwrap().admit(&call))
+            })
+            .collect();
+        let outcomes: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let accepted = outcomes
+            .iter()
+            .filter(|outcome| **outcome == Ok(CallAdmission::Accepted))
+            .count();
+        assert_eq!(accepted, 1, "exactly one caller must win admission");
+        assert!(
+            outcomes.iter().all(|outcome| matches!(
+                outcome,
+                Ok(CallAdmission::Accepted | CallAdmission::Pending)
+            )),
+            "every other caller must observe Pending, never a distinct execution: {outcomes:?}"
+        );
+    }
+
+    #[test]
+    fn reconnect_and_process_restart_preserve_idempotency_state() {
+        let now = Instant::now();
+        let completed = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "completed-call".into(),
+            session_id: "session".into(),
+            context_revision: "context".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        let mut pending = completed.clone();
+        pending.tool_call_id = "pending-call".into();
+
+        let mut ledger = CallLedger::new(8).unwrap();
+        assert_eq!(ledger.admit(&pending), Ok(CallAdmission::Accepted));
+        assert_eq!(ledger.admit(&completed), Ok(CallAdmission::Accepted));
+        assert_eq!(
+            ledger.finish(
+                &completed,
+                TerminalOutcome::Error(RuntimeError::BackendFailure)
+            ),
+            Ok(())
+        );
+
+        let snapshot = ledger.snapshot_json(16_384).unwrap();
+        assert_eq!(snapshot, ledger.snapshot_json(16_384).unwrap());
+        let mut restored = CallLedger::restore_json(&snapshot, 16_384, 8).unwrap();
+        assert_eq!(restored.admit(&pending), Ok(CallAdmission::Pending));
+        assert_eq!(
+            restored.admit(&completed),
+            Ok(CallAdmission::Completed(TerminalOutcome::Error(
+                RuntimeError::BackendFailure
+            )))
+        );
+
+        let mut conflicting = completed;
+        conflicting.session_id = "other-session".into();
+        assert_eq!(
+            restored.admit(&conflicting),
+            Err(RuntimeError::ContextRevisionMismatch)
+        );
+    }
+
+    #[test]
+    fn malformed_or_unknown_ledger_snapshots_fail_closed() {
+        assert_eq!(
+            CallLedger::restore_json(br#"{"version":2,"entries":[]}"#, 16_384, 8).unwrap_err(),
+            RuntimeError::IncompatibleSchema
+        );
+        assert_eq!(
+            CallLedger::restore_json(br#"{"version":1,"entries":[{"tool_call_id":"","identity":{"schema_version":"contract.v1","session_id":"session","context_revision":"context","tool":"inspect"},"terminal":null}]}"#, 16_384, 8).unwrap_err(),
+            RuntimeError::InvalidConfiguration
+        );
+        assert_eq!(
+            CallLedger::restore_json(b"not-json", 16_384, 8).unwrap_err(),
+            RuntimeError::InvalidConfiguration
+        );
+    }
+
+    #[test]
+    fn ledger_capacity_and_snapshot_size_are_caller_bounded() {
+        let now = Instant::now();
+        let mut first = ToolCall {
+            schema_version: "contract.v1".into(),
+            tool_call_id: "first".into(),
+            session_id: "session".into(),
+            context_revision: "context".into(),
+            tool: ToolId("inspect".into()),
+            deadline: now + Duration::from_secs(1),
+        };
+        let mut ledger = CallLedger::new(1).unwrap();
+        assert_eq!(ledger.admit(&first), Ok(CallAdmission::Accepted));
+        first.tool_call_id = "second".into();
+        assert_eq!(ledger.admit(&first), Err(RuntimeError::ResourceExhausted));
+        assert_eq!(
+            ledger.snapshot_json(1),
+            Err(RuntimeError::ResourceExhausted)
+        );
+        assert!(matches!(
+            CallLedger::restore_json(br#"{"version":1,"entries":[]}"#, 1, 1),
+            Err(RuntimeError::ResourceExhausted)
+        ));
+    }
+
+    #[test]
+    fn cancellation_and_deadline_gate_every_execution_stage() {
+        let now = Instant::now();
+        let stages = [
+            ExecutionStage::Camera,
+            ExecutionStage::Audio,
+            ExecutionStage::Preprocessing,
+            ExecutionStage::Inference,
+        ];
+        let cancellation = CancellationSignal::default();
+        let active = ExecutionGuard::new(now + Duration::from_secs(1), cancellation.clone());
+        for stage in stages {
+            assert_eq!(active.enter(stage, now), Ok(stage));
+        }
+
+        cancellation.cancel();
+        for stage in stages {
+            assert_eq!(active.enter(stage, now), Err(RuntimeError::Cancelled));
+        }
+
+        let expired = ExecutionGuard::new(now, CancellationSignal::default());
+        for stage in stages {
+            assert_eq!(
+                expired.enter(stage, now),
+                Err(RuntimeError::DeadlineExceeded)
+            );
+        }
     }
 
     #[test]

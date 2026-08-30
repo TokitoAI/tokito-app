@@ -1,10 +1,9 @@
 # CI/CD and branch policy
 
 Tokito Physical Runtime uses pull requests as the only merge path into `main`.
-The repository is documentation and contract-first at bootstrap, so CI currently
-checks governance, evidence contracts, examples, pull-request hygiene, and
-tracked artifact hygiene. Runtime, Android, model, and device jobs must be
-added when those artifacts land.
+CI checks governance, evidence contracts, pull-request hygiene, tracked
+artifact hygiene, Android unit tests, lint, and debug APK assembly. Physical
+device acceptance and release signing remain explicit operator gates.
 
 ## Required flow
 
@@ -36,6 +35,11 @@ repository is explicitly authorized in the restricted Tokito VPS runner group;
 the job uses the runner's system `python3` and does not depend on GitHub-hosted
 runner billing capacity.
 
+The `Android` workflow checks out submodules, installs the declared Android and
+native toolchains, then runs `testDebugUnitTest`, `lintDebug`, and
+`assembleDebug`. It retains the APK and test/lint reports as short-lived build
+evidence. Pull-request CI never receives release-signing credentials.
+
 ## Runner invariant
 
 Every job in every file under `.github/workflows/` must select the full runner
@@ -66,13 +70,12 @@ silently switching workflow jobs back to GitHub-hosted runners.
 - Runs governance regression tests and rejects any workflow that violates the
   Tokito VPS runner invariant.
 
-## Next jobs
+## Remaining jobs
 
-These jobs are intentionally absent until the corresponding implementation
-artifacts exist:
+These jobs still require their corresponding implementation or controlled
+hardware environment:
 
-- Android build, unit, and instrumented conformance tests for #30.
-- Standalone Android AR app build and UI smoke tests for #37.
+- Instrumented Android conformance tests for #30 and #37.
 - Model export and numerical conformance tests for #27.
 - Evaluation and target-device benchmark report generation for #28.
 - Calibration and abstention report generation for #29.

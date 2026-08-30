@@ -49,6 +49,21 @@ formats, but runtime control flow cannot branch on a particular board name.
 Missing or conflicting placement/evidence fields produce a typed import error
 or an unsupported capability; they are never filled with model guesses.
 
+## Digital-twin asset package
+
+The optional 3D package consists of one GLB 2 file and a manifest conforming to
+`schemas/digital-twin.asset-manifest.schema.json`. Its board identity/revision
+and `assemblyContextRevision` must match the active verified assembly context.
+Units are metres and axes are right-handed Y-up; asset X/Z map to assembly-board
+X/Y and asset Y is physical height. A component node is addressable only when
+its name begins with the manifest's `componentNodePrefix` and the remaining
+reference designator exists in the assembly context.
+
+Asset acceptance is atomic and bounded. Size, container structure, digest,
+finite geometry, decoded bounds, schema major and context revision are checked
+before activation. Missing or rejected assets leave the 3D capability absent;
+they do not produce a placeholder model.
+
 ## Tool call envelope
 
 ```json
@@ -220,3 +235,15 @@ empty list.
   context revision, and tool identity match the admitted call. A different
   identity using the same ID is rejected and never observes another session's
   result.
+
+The idempotency ledger has a versioned deterministic snapshot. A production
+integration must persist those bytes atomically in app-private storage and
+restore them before admitting reconnect retries after process recreation.
+Unknown, malformed, or identity-inconsistent snapshots fail closed. Session
+sensor state is not restored after process death; a new session must reacquire
+permissions, calibration, and registration.
+
+One execution guard carries the caller deadline and cancellation signal through
+camera, audio, preprocessing, and inference adapters. Every stage checks the
+same guard before work; cancellation and deadline expiry are terminal typed
+outcomes, never advisory flags.
