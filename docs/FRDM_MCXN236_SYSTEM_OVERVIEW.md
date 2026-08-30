@@ -226,11 +226,31 @@ checks it.
 
 The remaining gap for a live demo is the **YOLO pose bundle**: the app
 requires `model.tflite` whose graph takes `[1, 3, S, S]` and returns
-`[1, 17, 8400]` (YOLOv8-pose, four keypoints = the board corners), plus a
+`[1, 17, 8400]` (four keypoints = the board corners), plus a
 `manifest.json` whose `model_sha256` matches the file.
 `tools/verify_vision_bundle.py` checks a candidate bundle against every
 one of those rules on the host, so a handover can be validated before it
 is pushed to a phone.
+
+A trained checkpoint exists -- release `yolo-frdm-mcxn236-pose-smoke-v1`,
+a fine-tuned `yolo11n-pose` with the four board-corner keypoints at 640 px,
+whose structure matches the runtime's tensor contract. Two things stand
+between it and a device run, and neither is a shortcut worth taking:
+
+- it is a **PyTorch checkpoint, not TFLite**, and no export has been
+  performed. An export whose preprocessing disagrees with
+  `LocalPoseVisionRuntime`'s letterboxing and normalization yields
+  plausible corners that are subtly wrong, and a wrong corner set produces
+  a *confident* wrong pose -- components would be highlighted in the wrong
+  place with no error anywhere;
+- its own training manifest records `release_eligible: false`,
+  `evaluation_valid: false`, and metrics that are training-session smoke
+  only, over a dataset mixing physical captures with printed-guide
+  imagery. It can demonstrate that the pipeline runs; it cannot support a
+  claim about detection quality on a real board.
+
+So a device run using it would be an **integration smoke test**, and must
+be reported as one.
 
 ## Open coordination
 

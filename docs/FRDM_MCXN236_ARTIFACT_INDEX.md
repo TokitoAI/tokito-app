@@ -32,6 +32,31 @@ gitignored).
 | `component_model_resolution.json` | Per-component model path, registration method and evidence. |
 | `manual_model_overrides.json`, `frdm_mcxn236_package_records.json` | Datasheet-sourced dimension records and the overrides they generate. |
 
+## Artifacts owned by other lanes
+
+These are published by teammates and consumed by this lane; they are listed
+here so nobody hunts for them in the wrong release.
+
+| Release | Asset | Status |
+|---|---|---|
+| `v0.1.0` | `tokito-physical-v0.1.0-production.apk`, `tokito-physical-v0.1.0-iqoo-tested-debug.apk` | The working application build. **Do not overwrite** -- rebuild under a new tag. |
+| `yolo-frdm-mcxn236-pose-smoke-v1` | `tokito-frdm-mcxn236-yolo11n-pose-smoke-v1.pt` + `training-manifest.json` | Fine-tuned `yolo11n-pose`, 4 board-corner keypoints, 640 px. Its own manifest records `release_eligible: false`, `evaluation_valid: false` and metrics that are *training-session smoke only*, so it proves the pipeline, not detection quality. |
+
+The pose checkpoint is a PyTorch `.pt`. The Android runtime loads a **TFLite**
+bundle (`models/vision/model.tflite` + `manifest.json`), so an export step
+sits between the two and has not been performed. The checkpoint's structure
+does match the runtime contract -- `kpt_shape` is 4 keypoints x 3 and the
+training image size is 640, which yields the required `[1, 17, 8400]` output
+(4 box + 1 class + 4 keypoints x 3, over 80^2+40^2+20^2 anchors). What is
+still needed from the vision lane is the exported bundle itself plus the
+decode parameters the export assumes (normalization and whether keypoint
+coordinates are normalized), because an export whose preprocessing disagrees
+with `LocalPoseVisionRuntime` produces plausible but wrong corners, and a
+wrong corner set yields a confident, wrong board pose.
+
+`tools/verify_vision_bundle.py` checks a candidate bundle against every rule
+in `LocalPoseVisionRuntime.load()` before it is pushed to a device.
+
 ## Not part of the pipeline
 
 | File | Why |
