@@ -232,25 +232,29 @@ requires `model.tflite` whose graph takes `[1, 3, S, S]` and returns
 one of those rules on the host, so a handover can be validated before it
 is pushed to a phone.
 
-A trained checkpoint exists -- release `yolo-frdm-mcxn236-pose-smoke-v1`,
-a fine-tuned `yolo11n-pose` with the four board-corner keypoints at 640 px,
-whose structure matches the runtime's tensor contract. Two things stand
-between it and a device run, and neither is a shortcut worth taking:
+That bundle exists: release `frdm-mcxn236-litert-runtime-v1` publishes
+`tokito-frdm-mcxn236-yolo11n-pose-smoke-v1.tflite` plus its `manifest.json`,
+exported with `ultralytics-8.4.134` for `litert-2.2.0-cpu` at 640 px, with
+`coordinates_normalized: true` and the corner order stated explicitly
+(`top_left, top_right, bottom_right, bottom_left`). All twelve release
+assets verify against the release's own `SHA256SUMS.txt`, the bundle passes
+`tools/verify_vision_bundle.py`, and its `source_checkpoint_sha256` ties it
+back to the published training checkpoint.
 
-- it is a **PyTorch checkpoint, not TFLite**, and no export has been
-  performed. An export whose preprocessing disagrees with
-  `LocalPoseVisionRuntime`'s letterboxing and normalization yields
-  plausible corners that are subtly wrong, and a wrong corner set produces
-  a *confident* wrong pose -- components would be highlighted in the wrong
-  place with no error anywhere;
-- its own training manifest records `release_eligible: false`,
-  `evaluation_valid: false`, and metrics that are training-session smoke
-  only, over a dataset mixing physical captures with printed-guide
-  imagery. It can demonstrate that the pipeline runs; it cannot support a
-  claim about detection quality on a real board.
+Because it is operator-provisioned rather than committed, the export is not
+reproduced here: a re-export would be a different binary from the one that
+passed device instrumentation, and an export whose preprocessing disagreed
+with `LocalPoseVisionRuntime`'s letterboxing would yield plausible-but-wrong
+corners -- and a wrong corner set produces a *confident* wrong pose, placing
+highlights incorrectly with no error raised.
 
-So a device run using it would be an **integration smoke test**, and must
-be reported as one.
+**Evaluation standing:** the bundle manifest records
+`release_eligible_evidence: false`, and the training manifest records
+`evaluation_valid: false` with training-session-smoke-only metrics over media
+that mixes physical captures with printed-guide imagery. A device run using
+it is therefore an **integration test** -- it demonstrates that camera to
+pose to highlight works -- and must not be reported as evidence of detection
+quality. That claim requires the held-out capture set (#45).
 
 ## Open coordination
 

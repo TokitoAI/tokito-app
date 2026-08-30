@@ -40,22 +40,36 @@ here so nobody hunts for them in the wrong release.
 | Release | Asset | Status |
 |---|---|---|
 | `v0.1.0` | `tokito-physical-v0.1.0-production.apk`, `tokito-physical-v0.1.0-iqoo-tested-debug.apk` | The working application build. **Do not overwrite** -- rebuild under a new tag. |
-| `yolo-frdm-mcxn236-pose-smoke-v1` | `tokito-frdm-mcxn236-yolo11n-pose-smoke-v1.pt` + `training-manifest.json` | Fine-tuned `yolo11n-pose`, 4 board-corner keypoints, 640 px. Its own manifest records `release_eligible: false`, `evaluation_valid: false` and metrics that are *training-session smoke only*, so it proves the pipeline, not detection quality. |
+| `frdm-mcxn236-litert-runtime-v1` | `tokito-frdm-mcxn236-yolo11n-pose-smoke-v1.tflite` + `manifest.json` | **The vision bundle the runtime loads.** Exported with `ultralytics-8.4.134` for `litert-2.2.0-cpu`, 640 px, `coordinates_normalized: true`, corner order `top_left, top_right, bottom_right, bottom_left`. Passes `tools/verify_vision_bundle.py`. |
+| `frdm-mcxn236-litert-runtime-v1` | `frdm-mcxn236.board-reference.json` | The **current** reviewed board reference. Its digest sets the context revision the app expects; it differs from the copy on `main`, so the digital-twin manifest must be bound to whichever one is provisioned. |
+| `yolo-frdm-mcxn236-pose-smoke-v1` | `...-v1.pt` + `training-manifest.json` | The training checkpoint the TFLite was exported from (`source_checkpoint_sha256` in the bundle manifest ties them together). |
 
-The pose checkpoint is a PyTorch `.pt`. The Android runtime loads a **TFLite**
-bundle (`models/vision/model.tflite` + `manifest.json`), so an export step
-sits between the two and has not been performed. The checkpoint's structure
-does match the runtime contract -- `kpt_shape` is 4 keypoints x 3 and the
-training image size is 640, which yields the required `[1, 17, 8400]` output
-(4 box + 1 class + 4 keypoints x 3, over 80^2+40^2+20^2 anchors). What is
-still needed from the vision lane is the exported bundle itself plus the
-decode parameters the export assumes (normalization and whether keypoint
-coordinates are normalized), because an export whose preprocessing disagrees
-with `LocalPoseVisionRuntime` produces plausible but wrong corners, and a
-wrong corner set yields a confident, wrong board pose.
+Model binaries are **operator-provisioned, never committed** (see
+`docs/RELEASE.md`). Use `tools/provision_device_assets.py`, which runs the
+runtime's acceptance rules, pushes to the app-private paths, and verifies the
+SHA-256 computed *on the device* against the local file.
 
-`tools/verify_vision_bundle.py` checks a candidate bundle against every rule
-in `LocalPoseVisionRuntime.load()` before it is pushed to a device.
+**Evaluation status:** the vision manifest records
+`release_eligible_evidence: false` and the training manifest records
+`evaluation_valid: false` with training-session-smoke-only metrics over media
+mixing physical captures with printed-guide imagery. The bundle is therefore
+sound for **integration** -- it proves the camera-to-pose path runs -- and
+must not be cited as evidence of detection quality on a real board. That
+claim needs the held-out capture set.
+
+### Known mismatch between the shipping app and this lane's asset
+
+Release `v0.1.0` ships GLB `750f52fb...` (4.9 MB, 681 nodes, 337 meshes) and
+that file contains **zero `ref:`-prefixed nodes and no per-node metadata**, so
+per-component highlighting cannot work against it: the runtime selects by
+`componentNodePrefix + reference` and no such node exists. It is also the
+earlier 336-component build, predating the `J1`/`J3`/`J7` orientation
+corrections and the 18 additional component bodies.
+
+The current asset (`frdm_mcxn236_ar_annotated.glb`, `0c7edae7...`) carries 354
+`ref:` nodes with `extras` metadata and passes 354/354 independent
+highlightability. Pointing provisioning at it is a file change, not new work,
+and is the single largest quality gain available to the AR lane.
 
 ## Not part of the pipeline
 

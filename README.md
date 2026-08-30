@@ -92,6 +92,14 @@ tooling merged on the runtime-foundation path.
 - [CI/CD](docs/CI_CD.md) - pull request flow, current CI checks, and branch-policy status
 - [Architecture decisions](docs/decisions/) - durable decisions and rationale
 
+### FRDM-MCXN236 reference board
+
+- [System overview](docs/FRDM_MCXN236_SYSTEM_OVERVIEW.md) - how the vision, dialogue, board-data and AR lanes join into one product, with worked request flows
+- [Artifact index](docs/FRDM_MCXN236_ARTIFACT_INDEX.md) - which 3D file is the AR asset, the visual master and the CAD master, and what is operator-provisioned rather than committed
+- [3D pipeline](docs/FRDM_MCXN236_3D_PIPELINE_README.md) - the stage-by-stage tool sequence from vendor CAD to the AR package
+- [Populated model](docs/FRDM_MCXN236_POPULATED_MODEL.md) - component resolution, registration and the honest limits of each body
+- [Capture intake](docs/FRDM_CAPTURE_INTAKE.md) - local capture, labelling scaffold and dataset boundaries
+
 ## Build and verify
 
 ```powershell
