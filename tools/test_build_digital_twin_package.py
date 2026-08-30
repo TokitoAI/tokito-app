@@ -201,3 +201,34 @@ class BuildComponentMapTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CornerOrderTest(unittest.TestCase):
+    BOARD_PLANE = {"minimum": {"x": 0.0, "y": 0.0, "z": -0.052}, "maximum": {"x": 0.115, "y": 0.0015, "z": 0.003}}
+
+    def test_calibrated_order_emits_points_in_model_convention(self) -> None:
+        from build_digital_twin_package import corner_points_from_order
+
+        points = corner_points_from_order(self.BOARD_PLANE, "minx_maxz,minx_minz,maxx_minz,maxx_maxz")
+        self.assertEqual([(p["x"], p["z"]) for p in points], [(0.0, 0.003), (0.0, -0.052), (0.115, -0.052), (0.115, 0.003)])
+        # plane height comes from the authored board plane, not a literal
+        self.assertTrue(all(p["y"] == 0.0 for p in points))
+
+    def test_malformed_orders_are_rejected(self) -> None:
+        from build_digital_twin_package import corner_points_from_order
+
+        for bad in ("minx_maxz,minx_minz,maxx_minz", "minx_maxz,minx_maxz,maxx_minz,maxx_maxz", "topleft,a,b,c"):
+            with self.assertRaises(ValueError):
+                corner_points_from_order(self.BOARD_PLANE, bad)
+
+    def test_manifest_includes_points_only_when_order_given(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "t.glb"
+            write_test_glb(path)
+            without = build_manifest(path, make_reference_package(), "a", "c", "ref:", 0.42)
+            with_order = build_manifest(
+                path, make_reference_package(), "a", "c", "ref:", 0.42,
+                corner_order="minx_maxz,minx_minz,maxx_minz,maxx_maxz",
+            )
+        self.assertNotIn("boardPlaneCornerPointsMetres", without)
+        self.assertEqual(len(with_order["boardPlaneCornerPointsMetres"]), 4)

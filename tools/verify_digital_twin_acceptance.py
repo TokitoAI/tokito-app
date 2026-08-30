@@ -153,6 +153,28 @@ def check_package(
     for problem in geometry_problems:
         reject("INVALID_GEOMETRY", problem)
 
+    corner_points = manifest.get("boardPlaneCornerPointsMetres")
+    if corner_points is not None:
+        bounds_ok = _bounds_valid(bounds)
+        corners_valid = (
+            isinstance(corner_points, list)
+            and len(corner_points) == 4
+            and all(
+                _finite(point)
+                and (
+                    not bounds_ok
+                    or (
+                        bounds["minimum"]["x"] <= point["x"] <= bounds["maximum"]["x"]
+                        and bounds["minimum"]["y"] <= point["y"] <= bounds["maximum"]["y"]
+                        and bounds["minimum"]["z"] <= point["z"] <= bounds["maximum"]["z"]
+                    )
+                )
+                for point in corner_points
+            )
+        )
+        if not corners_valid:
+            reject("INVALID_GEOMETRY", "board plane corner points are not four finite in-bounds landmarks")
+
     if not is_glb_v2(glb):
         reject("INVALID_GLB", "asset is not a complete GLB 2 container")
 

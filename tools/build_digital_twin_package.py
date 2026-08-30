@@ -75,6 +75,32 @@ def asset_bounds_metres(gltf: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     return overall, board_plane
 
 
+def corner_points_from_order(board_plane: dict[str, Any], corner_order: str) -> list[dict[str, float]]:
+    """Explicit registration landmarks in the vision model's keypoint order.
+
+    The detector owns the semantics of its four corners (which physical
+    corner is "top_left"), so the manifest must state the board-plane
+    corners in that convention rather than a bounds-derived default. The
+    order string names four corners as `<minx|maxx>_<minz|maxz>` tokens,
+    e.g. `minx_maxz,minx_minz,maxx_minz,maxx_maxz` -- established from a
+    calibration observation of the actual model, never guessed. Values come
+    from the authored board plane; only the ordering is model-specific."""
+    tokens = [token.strip() for token in corner_order.split(",")]
+    if len(tokens) != 4 or len(set(tokens)) != 4:
+        raise ValueError(f"corner order must name four distinct corners, got {corner_order!r}")
+    lo, hi = board_plane["minimum"], board_plane["maximum"]
+    points = []
+    for token in tokens:
+        try:
+            x_part, z_part = token.split("_")
+            x = {"minx": lo["x"], "maxx": hi["x"]}[x_part]
+            z = {"minz": lo["z"], "maxz": hi["z"]}[z_part]
+        except (ValueError, KeyError):
+            raise ValueError(f"corner token {token!r} must be <minx|maxx>_<minz|maxz>") from None
+        points.append(_vector(x, lo["y"], z))
+    return points
+
+
 def build_manifest(
     glb_path: Path,
     reference_package: dict[str, Any],
@@ -82,6 +108,7 @@ def build_manifest(
     assembly_context_revision: str,
     node_prefix: str,
     default_opacity: float,
+    corner_order: str | None = None,
 ) -> dict[str, Any]:
     glb_bytes = glb_path.read_bytes()
     gltf = load_gltf_json(glb_path)
@@ -92,7 +119,7 @@ def build_manifest(
     if not board_id or not revision:
         raise ValueError("reference package is missing board.board_id or board.revision")
 
-    return {
+    manifest = {
         "schemaVersion": SCHEMA_VERSION,
         "assetId": asset_id,
         "boardIdentity": board_id,
@@ -110,6 +137,9 @@ def build_manifest(
         "defaultOpacity": default_opacity,
         "componentNodePrefix": node_prefix,
     }
+    if corner_order:
+        manifest["boardPlaneCornerPointsMetres"] = corner_points_from_order(board_plane, corner_order)
+    return manifest
 
 
 def build_component_map(
@@ -172,13 +202,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--assembly-context-revision", required=True, help="revision of the assembly context this asset is bound to")
     parser.add_argument("--node-prefix", default=DEFAULT_NODE_PREFIX)
     parser.add_argument("--default-opacity", type=float, default=0.42)
+    parser.add_argument(
+        "--corner-order",
+        help="emit explicit registration landmarks in the vision model's keypoint order, as four <minx|maxx>_<minz|maxz> tokens (e.g. minx_maxz,minx_minz,maxx_minz,maxx_maxz); establish from a calibration observation, never guess",
+    )
     parser.add_argument("--output-manifest", required=True, type=Path)
     parser.add_argument("--output-component-map", required=True, type=Path)
     args = parser.parse_args(argv)
 
     reference_package = json.loads(args.reference_package.read_text(encoding="utf-8"))
     manifest = build_manifest(
-        args.glb, reference_package, args.asset_id, args.assembly_context_revision, args.node_prefix, args.default_opacity
+        args.glb, reference_package, args.asset_id, args.assembly_context_revision, args.node_prefix, args.default_opacity, args.corner_order
     )
     component_map = build_component_map(
         json.loads(args.index_json.read_text(encoding="utf-8")),
