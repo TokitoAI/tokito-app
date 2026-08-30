@@ -76,7 +76,22 @@ def component_extras(component: dict[str, Any], coverage_row: dict[str, Any] | N
     }
 
 
-def embed_metadata(glb_in: Path, glb_out: Path, index: dict[str, Any], resolution: dict[str, Any]) -> dict[str, Any]:
+def embed_metadata(
+    glb_in: Path,
+    glb_out: Path,
+    index: dict[str, Any],
+    resolution: dict[str, Any],
+    node_prefix: str = "",
+) -> dict[str, Any]:
+    """Annotates component nodes with `extras` and, when `node_prefix` is
+    given, renames them to `<prefix><reference>`.
+
+    The prefix exists because the Android AR runtime's digital-twin manifest
+    declares `componentNodePrefix` (default "ref:") and selects component
+    nodes by that exact name; an unprefixed GLB loads but nothing can be
+    selected. The prefix is applied here, not in the exporter, so the plain
+    KiCad export stays untouched and the same GLB can be republished under a
+    different prefix if the runtime contract changes."""
     gltf, other_chunks = read_glb(glb_in)
     resolution_by_reference = {row["reference"]: row for row in resolution["components"]}
     coverage_by_reference = {
@@ -94,6 +109,7 @@ def embed_metadata(glb_in: Path, glb_out: Path, index: dict[str, Any], resolutio
         row["model_quality"] = model_quality(resolution_by_reference[reference])
 
     annotated = 0
+    renamed = 0
     for node in gltf.get("nodes", []):
         name = node.get("name")
         component = index["components"].get(name) if name else None
@@ -101,16 +117,26 @@ def embed_metadata(glb_in: Path, glb_out: Path, index: dict[str, Any], resolutio
             continue
         node["extras"] = component_extras(component, coverage_by_reference.get(name))
         annotated += 1
+        if node_prefix:
+            node["name"] = f"{node_prefix}{name}"
+            renamed += 1
 
     gltf.setdefault("asset", {}).setdefault("extras", {})["tokito_board"] = {
         "board_id": index.get("board_id"),
         "board_revision": index.get("board_revision"),
         "component_count": index.get("component_count"),
         "node_metadata_key": "tokito_component",
+        "component_node_prefix": node_prefix,
     }
 
     write_glb(glb_out, gltf, other_chunks)
-    return {"input": str(glb_in), "output": str(glb_out), "nodes_annotated": annotated}
+    return {
+        "input": str(glb_in),
+        "output": str(glb_out),
+        "nodes_annotated": annotated,
+        "nodes_renamed": renamed,
+        "component_node_prefix": node_prefix,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--index-json", required=True, type=Path)
     parser.add_argument("--resolution-json", required=True, type=Path)
     parser.add_argument("--output-glb", required=True, type=Path)
+    parser.add_argument(
+        "--node-prefix",
+        default="",
+        help="rename component nodes to <prefix><reference>; must match the digital-twin manifest's componentNodePrefix (the Android AR runtime defaults to 'ref:')",
+    )
     args = parser.parse_args(argv)
 
     result = embed_metadata(
@@ -126,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output_glb,
         json.loads(args.index_json.read_text(encoding="utf-8")),
         json.loads(args.resolution_json.read_text(encoding="utf-8")),
+        args.node_prefix,
     )
     print(json.dumps(result, indent=2))
     return 0
