@@ -242,34 +242,53 @@ class LocalPoseVisionRuntime private constructor(
             value.toDouble() * if (config.coordinatesNormalized) config.inputSize else 1
     }
 
-    private class PoseStabilizer(private val config: Manifest) {
-        private val history = ArrayDeque<PoseVisionObservation>()
+}
 
-        fun reject(): PoseVisionObservation? {
+internal class PoseStabilizer(private val config: LocalPoseVisionRuntime.Manifest) {
+    private val history = ArrayDeque<PoseVisionObservation>()
+
+    fun reject(): PoseVisionObservation? {
+        // A single sub-threshold frame is not evidence that the board
+        // moved, so the accumulated stability window survives it. The
+        // manifest's freshness bound still governs: entries older than
+        // maximum_observation_age are evicted, so a real detection gap
+        // drains the window and stable_frame_count fresh accepted frames
+        // are required again. Nothing is emitted for the rejected frame.
+        evictStale(System.nanoTime())
+        return null
+    }
+
+    fun accept(candidate: PoseVisionObservation): PoseVisionObservation? {
+        evictStale(candidate.timestampNanos)
+        val diagonal = hypot(
+            candidate.corners[2].x - candidate.corners[0].x,
+            candidate.corners[2].y - candidate.corners[0].y,
+        ).coerceAtLeast(1.0)
+        val previous = history.lastOrNull()
+        if (previous != null && previous.corners.indices.any { i ->
+                hypot(candidate.corners[i].x - previous.corners[i].x, candidate.corners[i].y - previous.corners[i].y) / diagonal > config.maximumCornerJitterRatio
+            }) history.clear()
+        history.addLast(candidate)
+        while (history.size > config.stableFrameCount) history.removeFirst()
+        if (history.size < config.stableFrameCount) return null
+        val now = System.nanoTime()
+        if (now - candidate.timestampNanos > config.maximumObservationAgeNanos) {
             history.clear()
             return null
         }
+        return candidate.copy(
+            corners = candidate.corners.indices.map { index ->
+                Point2(history.map { it.corners[index].x }.average(), history.map { it.corners[index].y }.average())
+            },
+            confidence = history.minOf { it.confidence },
+        )
+    }
 
-        fun accept(candidate: PoseVisionObservation): PoseVisionObservation? {
-            val diagonal = hypot(
-                candidate.corners[2].x - candidate.corners[0].x,
-                candidate.corners[2].y - candidate.corners[0].y,
-            ).coerceAtLeast(1.0)
-            val previous = history.lastOrNull()
-            if (previous != null && previous.corners.indices.any { i ->
-                    hypot(candidate.corners[i].x - previous.corners[i].x, candidate.corners[i].y - previous.corners[i].y) / diagonal > config.maximumCornerJitterRatio
-                }) history.clear()
-            history.addLast(candidate)
-            while (history.size > config.stableFrameCount) history.removeFirst()
-            if (history.size < config.stableFrameCount) return null
-            val now = System.nanoTime()
-            if (now - candidate.timestampNanos > config.maximumObservationAgeNanos) return reject()
-            return candidate.copy(
-                corners = candidate.corners.indices.map { index ->
-                    Point2(history.map { it.corners[index].x }.average(), history.map { it.corners[index].y }.average())
-                },
-                confidence = history.minOf { it.confidence },
-            )
+    private fun evictStale(nowNanos: Long) {
+        while (history.isNotEmpty() &&
+            nowNanos - history.first().timestampNanos > config.maximumObservationAgeNanos
+        ) {
+            history.removeFirst()
         }
     }
 }
