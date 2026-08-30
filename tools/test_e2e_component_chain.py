@@ -36,7 +36,9 @@ from verify_component_highlightability import verify_highlightability
 GENERATED = Path(__file__).resolve().parent.parent / "build" / "ar-assets" / "frdm-mcxn236" / "generated"
 COMPONENT_MAP = GENERATED / "frdm_mcxn236_component_map.json"
 INDEX = GENERATED / "board_component_index.json"
-AR_GLB = GENERATED / "frdm_mcxn236_ar_annotated.glb"
+# the lean export is the AR production asset: the heavier pads+soldermask
+# variant crashes Filament's render thread on-device (Adreno allocation abort)
+AR_GLB = GENERATED / "frdm_mcxn236_ar_lean_annotated.glb"
 MANIFEST = GENERATED / "frdm_mcxn236_digital_twin_manifest.json"
 BOARD_REFERENCE = Path(__file__).resolve().parent.parent / "reference" / "boards" / "frdm-mcxn236.board-reference.json"
 
