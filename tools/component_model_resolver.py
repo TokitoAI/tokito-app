@@ -324,6 +324,44 @@ def resolve_all(
     return results
 
 
+_BOX_DIMS_IN_FILENAME = __import__("re").compile(r"(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)mm")
+
+
+def _elongation_axis(width: float, height: float) -> str | None:
+    if width >= height * ELONGATION_THRESHOLD:
+        return "X"
+    if height >= width * ELONGATION_THRESHOLD:
+        return "Y"
+    return None
+
+
+def centered_box_rotation(model_path: str, geometry: dict[str, Any]) -> float:
+    """Aligns a generated box's long axis with the footprint's real long
+    axis. The box's authored dimensions travel in its provenance file name
+    (LxWxHmm). The footprint's axis comes from its pad-field bbox first
+    (pads are electrical truth -- a 2-pad diode's axis is its pad axis even
+    when fab band markings skew the outline bbox), then from the
+    fab/courtyard outline. Near-square evidence asserts nothing."""
+    match = _BOX_DIMS_IN_FILENAME.search(Path(model_path).name)
+    if not match:
+        return 0.0
+    box_l, box_w = float(match.group(1)), float(match.group(2))
+    box_axis = _elongation_axis(box_l, box_w)
+    if box_axis is None:
+        return 0.0
+    footprint_axis = None
+    pads = geometry.get("pads") or {}
+    if len(pads) >= 2:
+        xs = [p[0] for p in pads.values()]
+        ys = [p[1] for p in pads.values()]
+        footprint_axis = _elongation_axis(max(xs) - min(xs), max(ys) - min(ys))
+    if footprint_axis is None and geometry.get("body_bbox") is not None:
+        footprint_axis = _elongation_axis(geometry["body_bbox"]["width"], geometry["body_bbox"]["height"])
+    if footprint_axis is None:
+        return 0.0
+    return 0.0 if box_axis == footprint_axis else 90.0
+
+
 def apply_manual_overrides(
     rows: list[dict[str, Any]],
     override_rows: list[dict[str, Any]],
@@ -354,13 +392,24 @@ def apply_manual_overrides(
             merged["model_offset_x_mm"] = round(registration["offset_x_mm"], 4)
             merged["model_offset_y_mm"] = round(registration["offset_y_mm"], 4)
             merged["model_registration"] = registration
-        elif geometry and geometry["pad_field_center"] is not None:
-            merged["model_rotate_z_deg"] = 0.0
-            merged["model_offset_x_mm"] = round(geometry["pad_field_center"][0], 4)
-            merged["model_offset_y_mm"] = round(geometry["pad_field_center"][1], 4)
+        elif geometry and (geometry.get("body_bbox") or geometry["pad_field_center"] is not None):
+            # A centred box is anchored to the footprint's own fab/courtyard
+            # outline centre when the import provides one (the authored body
+            # location -- essential for bodies that extend beyond their pins,
+            # like right-angle jacks), falling back to the pad-field centre.
+            body_bbox = geometry.get("body_bbox")
+            if body_bbox is not None:
+                anchor = body_bbox["center"]
+                anchor_source = f"footprint {body_bbox['layer']} outline centre"
+            else:
+                anchor = geometry["pad_field_center"]
+                anchor_source = "pad-field bbox centre (no body outline in import)"
+            merged["model_rotate_z_deg"] = centered_box_rotation(override["model_path"], geometry)
+            merged["model_offset_x_mm"] = round(anchor[0], 4)
+            merged["model_offset_y_mm"] = round(anchor[1], 4)
             merged["model_registration"] = {
-                "method": "centered_model_at_pad_field_center",
-                "reason": "model authored centred at its origin; anchored to the footprint's real pad-field bbox centre",
+                "method": "centered_model_at_body_outline",
+                "reason": f"model authored centred at its origin; anchored to the {anchor_source}",
             }
         else:
             merged.setdefault("model_rotate_z_deg", 0.0)

@@ -329,6 +329,69 @@ stdlib). Result: 336/336 within tolerance, max deviation **0.05 mm**
 seated, Pmod opening outward, USB bodies on their footprints at the
 board edge.
 
+## Seventh pass: 100% physical-component coverage, systematic classification
+
+Goal restated honestly: not "391 references -> 391 meshes" but *every real
+physical component gets a verified body; everything else gets an explicit
+classification*. `tools/model_coverage_report.py` now derives that split
+from the vendor BOM's own text: 37 of the 391 references say **"NO PART TO
+ORDER"** in NXP's BOM (28 test-point pads, 5 solder-blob jumpers, 4
+non-plated mounting holes) -- bare copper and drill features that cannot
+have a body because no part is mounted. That leaves **354 physical
+components**, and after this pass all 354 have a model:
+
+- **306 exact package geometry** (KiCad official library, disk-verified,
+  pad-registered), including two new datasheet-gated library matches:
+  `U12` (Winbond W25Q64JVSSIQ -> `SOIC-8_5.3x5.3mm`; the earlier claim
+  that no 208-mil SOIC-8 exists in the library was wrong -- corrected;
+  registration residual 0.045 mm, Winbond outline table 5.28 x 5.28 x
+  1.95 mm) and `U11` (NXP TJA1057GTK/3Z HVSON8/SOT782-1 ->
+  `DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm`, matching body/pitch/EP,
+  residual 0.075 mm; classified an approximation since HVSON8 is not
+  literally DFN-8).
+- **25 verified package approximations** (socket/header family models
+  matched by rows/cols/pitch, plus U11).
+- **23 dimension-accurate placeholders**, of which 16 are new: every
+  dimension came from a manufacturer document fetched and quoted this
+  pass (Vishay MicroSMP DO-219AD for D1/D2/D4; Meihua MHPA2525 PLCC4 for
+  D13; Everlight ALS-PT19 1.7x0.8 mm -- explicitly NOT 0805, killing a
+  registration false-positive -- for Q2; Tensility 54-00174 jack drawing
+  for J14/J21; Wurth WE-LQS 2512 for L2; Torex SOT-89-5 outline for U2,
+  where KiCad only ships SOT-89-3 with the wrong lead count and was
+  deliberately not substituted; NXP SOT1390-5/SOT1355-1/SOT1615-3 for
+  U4/U41/U10; Semtech SLP1616P6 for U5/U9; Renesas DA7212 CSP34 for U6;
+  Knowles SPK0641HT4H for U7). `tools/package_3d_generator.py` turns
+  those records into one parametric body per PACKAGE (never per
+  reference), each record requiring `source` + `evidence`; boxes are
+  anchored to the footprint's own fab-outline centre and axis-aligned by
+  pad-field elongation (electrical truth outranks fab-marking skew).
+
+Registration candidates were tested geometrically, and the gate caught
+real traps: a DFN-10 2x3 mm P0.5 candidate *registered* against U10's
+pads at 0.2 mm residual but was rejected because the FXLS8974CF datasheet
+says 2x2 mm P0.4; the SMP/DO-220AA diode model was rejected because
+Vishay's MicroSMP is the smaller DO-219AD. Registration proves layout
+compatibility; the datasheet proves identity; both are required.
+
+Validation extended beyond centre position
+(`tools/verify_populated_glb.py` -> `3d_model_validation.json`): per
+component PASS/WARN/FAIL for position, body extent (catches rotation and
+scale errors together), board side, board contact, height sanity, and GLB
+node-name uniqueness. Result on the rebuilt board: **353 PASS, 1
+explainable WARN** (U12: measured extent includes the SOIC's 7.9 mm lead
+span vs the 5.3 mm fab body -- real lead overhang; its height 2.155 mm
+matches the datasheet 2.16 max), 0 FAIL, 0 missing nodes. The validation
+layer earned its keep this pass: its first run caught all 18 new models
+being silently dropped by the exporter (a relative-path bug, fixed by
+resolving generator paths absolute).
+
+The AR handoff artifact is now self-describing:
+`tools/glb_embed_metadata.py` writes per-node glTF `extras`
+(reference, class, package, BOM identity, authored position/rotation/
+side, model quality, provenance) into
+`frdm_mcxn236_populated_annotated.glb` -- 354 nodes annotated, binary
+chunk byte-identical, node bounds verified unchanged.
+
 ## Verified results
 
 - `kicad-cli pcb export glb` accepted the spliced file cleanly (same

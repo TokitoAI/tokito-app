@@ -115,7 +115,10 @@ detail: `docs/FRDM_MCXN236_POPULATED_MODEL.md` and
 | `tools/canonical_footprint.py` | our footprint's pads/fab outline + the KiCad-authored `.kicad_mod` for the same model | exact per-footprint model rotation and offset (numbered-pad or pad-geometry registration, body-side disambiguation) |
 | `tools/attach_3d_models_text.py` | `.kicad_pcb` + resolution JSON | populated `.kicad_pcb` (models spliced in, placement untouched) |
 | `kicad-cli pcb export glb/step/vrml` | populated `.kicad_pcb` | the actual 3D/AR assets |
-| `tools/verify_populated_glb.py` (+ `tools/glb_inspect.py`) | resolution JSON + exported GLB | numeric per-component check: predicted body centre vs body centre measured from GLB node bounds (336/336 within tolerance, max 0.05 mm) |
+| `tools/verify_populated_glb.py` (+ `tools/glb_inspect.py`) | resolution JSON + exported GLB | `3d_model_validation.json`: numeric per-component PASS/WARN/FAIL for position, body extent (catches rotation + scale together), board side, board contact, height sanity, and node-name uniqueness |
+| `tools/model_coverage_report.py` | resolution JSON | `3d_model_completeness_report.json`: every reference classified from the vendor BOM's own text (physical vs "NO PART TO ORDER" bare-copper features), model quality per physical component (exact / verified approximation / dimension-accurate placeholder / missing), coverage % of physical parts only |
+| `tools/package_3d_generator.py` | JSON records of datasheet-verified package dimensions (source + evidence required) | one parametric VRML body per PACKAGE (never per reference) + override rows for the resolver; placement still comes only from the imported board |
+| `tools/glb_embed_metadata.py` | GLB + component index + resolution JSON | AR-ready GLB with per-node glTF `extras` (reference, class, package, BOM identity, board position/rotation/side, model quality, provenance) -- the AR runtime answers "what is this node" from the GLB alone |
 | `kicad-cli pcb render` | populated `.kicad_pcb` | top/isometric PNG for visual verification |
 | `tools/component_info.py` | reference package + resolution JSON + xlsx BOM + `.kicad_pcb` | `board_component_index.json`: per-component join of placement, BOM facts, GLB node name, per-pad nets and full net connectivity |
 
