@@ -32,7 +32,16 @@ def draft() -> dict:
             "status": "unbound",
             "reason": "printed evidence is not authored placement truth",
         },
-        "sources": [source],
+        "sources": [
+            source,
+            {
+                **source,
+                "source_id": "datasheet-1",
+                "kind": "datasheet",
+                "locator": "official reference-board datasheet",
+                "license_status": "approved",
+            },
+        ],
         "landmarks": [
             {
                 "landmark_id": "power-header",
@@ -71,6 +80,31 @@ def draft() -> dict:
                 "evidence_refs": ["guide-1"],
             }
         ],
+        "knowledge_graph": {
+            "entities": [
+                {
+                    "entity_id": "reference-board",
+                    "display_name": "Reference Board",
+                    "entity_type": "board",
+                    "aliases": ["test board"],
+                    "identifiers": [],
+                }
+            ],
+            "facts": [
+                {
+                    "fact_id": "board-voltage",
+                    "subject_id": "reference-board",
+                    "predicate": "uses_voltage",
+                    "value": "The board uses a 3.3 V logic rail.",
+                    "spoken_summary": "The board uses 3.3 volt logic.",
+                    "query_aliases": ["logic voltage"],
+                    "related_entity_ids": [],
+                    "evidence": [
+                        {"source_id": "datasheet-1", "page": 1, "locator": "power table"}
+                    ],
+                }
+            ],
+        },
         "integrity": {"manifest_digest": "sha256:" + "0" * 64},
     }
 
@@ -127,6 +161,23 @@ class BoardReferenceTest(unittest.TestCase):
         document = draft()
         document["sources"][0]["redistributable"] = True
         with self.assertRaisesRegex(BoardReferenceError, "cannot be redistributable"):
+            freeze(document)
+
+    def test_rejects_unknown_knowledge_entities_and_sources(self) -> None:
+        document = draft()
+        document["knowledge_graph"]["facts"][0]["subject_id"] = "missing-board"
+        with self.assertRaisesRegex(BoardReferenceError, "unknown subject"):
+            freeze(document)
+
+        document = draft()
+        document["knowledge_graph"]["facts"][0]["evidence"][0]["source_id"] = "missing-source"
+        with self.assertRaisesRegex(BoardReferenceError, "unknown source"):
+            freeze(document)
+
+    def test_rejects_nontechnical_knowledge_evidence(self) -> None:
+        document = draft()
+        document["knowledge_graph"]["facts"][0]["evidence"][0]["source_id"] = "guide-1"
+        with self.assertRaisesRegex(BoardReferenceError, "nontechnical source"):
             freeze(document)
 
 

@@ -12,7 +12,8 @@ See `docs/CORPUS_GOVERNANCE.md` for canonical hashing, cross-manifest binding,
 leakage auditing, asset verification, and correction/removal propagation.
 Example corpus digests are zero-valued draft sentinels, not frozen evidence.
 
-`board.reference-manifest.schema.json` governs provenance-bound board landmark
-and connector pin maps. Its checked-in FRDM instance is validated semantically
-and digest-bound by `tools/board_reference.py`; guide-image targets cannot be
-promoted to authored placement coordinates.
+`board.reference-manifest.schema.json` governs provenance-bound board landmarks,
+connector pin maps, and an optional entity/fact knowledge graph with page-level
+evidence locators. Its checked-in FRDM instance is validated semantically and
+digest-bound by `tools/board_reference.py`; guide-image targets and knowledge
+facts cannot be promoted to authored placement coordinates.
