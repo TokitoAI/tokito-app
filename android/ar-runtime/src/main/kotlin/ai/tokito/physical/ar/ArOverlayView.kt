@@ -86,14 +86,13 @@ class ArOverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
         val scene = renderScene ?: return
         scene.primitives.forEach { drawPrimitive(canvas, it) }
-        drawGuidance(canvas, scene.guidance)
     }
 
     private fun drawPrimitive(canvas: Canvas, rendered: RenderPrimitive) {
         val primitive = rendered.source
         val color = primitive.tone.color()
-        linePaint.color = color
-        fillPaint.color = color.withAlpha(42)
+        linePaint.color = color.withAlpha(85)
+        fillPaint.color = color.withAlpha(14)
         when (primitive) {
             is OverlayPrimitive.Outline, is OverlayPrimitive.Region -> {
                 val path = Path()
@@ -104,7 +103,9 @@ class ArOverlayView @JvmOverloads constructor(
                 if (primitive is OverlayPrimitive.Region || (primitive as OverlayPrimitive.Outline).closed) path.close()
                 canvas.drawPath(path, fillPaint)
                 canvas.drawPath(path, linePaint)
-                rendered.points.firstOrNull()?.let { drawLabel(canvas, primitive.label, it, color) }
+                if (primitive is OverlayPrimitive.Region) {
+                    rendered.points.firstOrNull()?.let { drawLabel(canvas, primitive.label, it, color) }
+                }
             }
             is OverlayPrimitive.Target -> {
                 val center = rendered.points[0]
@@ -157,33 +158,6 @@ class ArOverlayView @JvmOverloads constructor(
         canvas.drawRoundRect(rect, dp(7f), dp(7f), linePaint)
         linePaint.strokeWidth = dp(3f)
         canvas.drawText(display, rect.left + padding, rect.bottom - padding, textPaint)
-    }
-
-    private fun drawGuidance(canvas: Canvas, guidance: Guidance) {
-        val margin = dp(16f)
-        val cardHeight = if (guidance.detail.isBlank()) dp(58f) else dp(82f)
-        val rect = RectF(margin, height - cardHeight - margin, width - margin, height - margin)
-        fillPaint.color = Color.argb(235, 9, 12, 18)
-        canvas.drawRoundRect(rect, dp(16f), dp(16f), fillPaint)
-        val statusColor = if (guidance.abstentionReason == null) OverlayTone.Primary.color() else OverlayTone.Warning.color()
-        fillPaint.color = statusColor
-        canvas.drawRoundRect(RectF(rect.left, rect.top, rect.left + dp(5f), rect.bottom), dp(3f), dp(3f), fillPaint)
-        textPaint.textSize = dp(16f)
-        val progress = guidance.step?.let { "$it / ${guidance.stepCount}" }
-        val progressWidth = progress?.let { textPaint.measureText(it) } ?: 0f
-        val titleWidth = max(dp(24f), rect.width() - dp(44f) - progressWidth)
-        val title = TextUtils.ellipsize(guidance.title, textPaint, titleWidth, TextUtils.TruncateAt.END).toString()
-        canvas.drawText(title, rect.left + dp(18f), rect.top + dp(26f), textPaint)
-        textPaint.textSize = dp(13f)
-        if (guidance.detail.isNotBlank()) {
-            textPaint.color = Color.rgb(184, 194, 211)
-            val detail = TextUtils.ellipsize(guidance.detail, textPaint, rect.width() - dp(36f), TextUtils.TruncateAt.END).toString()
-            canvas.drawText(detail, rect.left + dp(18f), rect.top + dp(52f), textPaint)
-            textPaint.color = Color.WHITE
-        }
-        progress?.let {
-            canvas.drawText(it, rect.right - textPaint.measureText(it) - dp(18f), rect.top + dp(26f), textPaint)
-        }
     }
 
     private fun OverlayTone.color(): Int = when (this) {
