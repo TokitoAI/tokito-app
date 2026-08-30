@@ -11,7 +11,8 @@ gitignored).
 
 | File | Role |
 |---|---|
-| `frdm_mcxn236_ar_annotated.glb` | **The AR production asset.** 15.8 MiB, component nodes named `ref:<designator>`, per-node glTF `extras` metadata, no copper/zone/silkscreen geometry. This is the file the Android runtime loads. |
+| `frdm_mcxn236_ar_lean_annotated.glb` | **The AR production asset.** 4.8 MiB: board substrate + component bodies only, component nodes named `ref:<designator>` with per-node glTF `extras`, 354/354 independently highlightable. Device-proven: renders and auto-registers on the iQOO. |
+| `frdm_mcxn236_ar_annotated.glb` | The previous AR candidate (15.8 MiB, includes pad and soldermask meshes). **Crashes Filament on-device**: the render thread aborts in the Adreno driver during allocation (`scudo::reportMapError` under `calloc`) while uploading its geometry. Kept for desktop inspection only. |
 | `frdm_mcxn236_digital_twin_manifest.json` | **Required alongside it.** Declares units/axes/origin/bounds, the node prefix, and the exact byte length and SHA-256 of the GLB above. The runtime rejects a package whose GLB does not match this digest. |
 | `frdm_mcxn236_component_map.json` | **The canonical identity table.** One `component_id` per reference (`nxp-frdm-mcxn236:C:U1`) with GLB selector, board placement, BOM identity, package and model quality. Shared by the vision, dialogue and AR lanes. |
 | `board_component_index.json` | Per-component placement + BOM + per-pad nets + full net connectivity (379 nets). Backs `get_component_info()` and `get_connection_guidance()`. |
