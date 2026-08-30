@@ -215,7 +215,13 @@ class MainActivity : AppCompatActivity() {
             ?: return "No verified board reference is loaded."
         val grounded = reference.index.groundedAnswer(utterance)
             ?: return "I couldn't match that to verified ${reference.identity.model} data. Please repeat the component name."
-        grounded.boardTarget?.let(ar::highlightBoardTarget)
+        grounded.boardTarget?.let { target ->
+            val accepted = ar.highlightBoardTarget(target)
+            android.util.Log.i(
+                "TokitoDialogue",
+                "grounded board target ${target.label} highlight accepted=$accepted",
+            )
+        }
         val generated = runCatching {
             dialogue.respond(
                 DialogueRequest(
