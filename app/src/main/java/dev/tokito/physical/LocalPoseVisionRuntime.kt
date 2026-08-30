@@ -59,10 +59,18 @@ class LocalPoseVisionRuntime private constructor(
         if (analyzedFrames == 1L || analyzedFrames % DIAGNOSTIC_FRAME_INTERVAL == 0L) {
             val index = output[0][4].indices.maxByOrNull { output[0][4][it] } ?: 0
             val minimumKeypointConfidence = (0 until 4).minOf { output[0][7 + it * 3][index] }
+            // Corner positions are logged so an orientation defect can be
+            // root-caused from evidence: the model's semantic labels
+            // (top_left..bottom_left) versus where those points actually sit
+            // on the physical board. Bounded to one line per interval.
+            val cornerSummary = candidate?.corners?.joinToString(" ") { corner ->
+                "(%.0f,%.0f)".format(corner.x, corner.y)
+            } ?: "-"
             Log.d(
                 TAG,
                 "frame=$analyzedFrames classConfidence=${output[0][4][index]} " +
-                    "keypointConfidence=$minimumKeypointConfidence geometryAccepted=${candidate != null}",
+                    "keypointConfidence=$minimumKeypointConfidence geometryAccepted=${candidate != null} " +
+                    "cornersTL,TR,BR,BL=$cornerSummary",
             )
         }
         candidate ?: return stabilizer.reject()
