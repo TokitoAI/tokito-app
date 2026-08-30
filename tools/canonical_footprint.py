@@ -297,10 +297,23 @@ def load_board_footprint_geometry(kicad_pcb: Path) -> dict[str, dict[str, Any]]:
             xs = [p[0] for p in pads.values()]
             ys = [p[1] for p in pads.values()]
             pad_field_center = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        body_bbox = None
+        boxes = _graphics_bbox(footprint)
+        for layer in _BODY_LAYERS:
+            if layer in boxes:
+                min_x, max_x, min_y, max_y = boxes[layer]
+                body_bbox = {
+                    "center": ((min_x + max_x) / 2, (min_y + max_y) / 2),
+                    "width": max_x - min_x,
+                    "height": max_y - min_y,
+                    "layer": layer,
+                }
+                break
         geometry[placement["reference"]] = {
             "pads": pads,
             "body_overhang": body_overhang_vector(footprint, pads),
             "pad_field_center": pad_field_center,
+            "body_bbox": body_bbox,
         }
     return geometry
 

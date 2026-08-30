@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     kotlin("android")
+    kotlin("plugin.serialization")
 }
 
 android {
@@ -24,5 +25,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.6.1")
     implementation("androidx.camera:camera-view:1.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("com.google.android.filament:filament-android:1.75.1")
+    implementation("com.google.android.filament:gltfio-android:1.75.1")
+    implementation("com.google.android.filament:filament-utils-android:1.75.1")
     testImplementation(kotlin("test"))
 }

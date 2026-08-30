@@ -368,7 +368,53 @@ class ApplyManualOverridesTest(unittest.TestCase):
         self.assertEqual(merged["model_path"], "/build/box.wrl")
         self.assertEqual(merged["model_offset_x_mm"], 1.5)
         self.assertEqual(merged["model_offset_y_mm"], 0.5)
-        self.assertEqual(merged["model_registration"]["method"], "centered_model_at_pad_field_center")
+        self.assertEqual(merged["model_registration"]["method"], "centered_model_at_body_outline")
+
+    def test_body_outline_anchor_preferred_over_pad_field_center(self) -> None:
+        # a right-angle jack's body extends far beyond its pins: the anchor
+        # must be the footprint's own fab outline centre, and the elongated
+        # box must be rotated to align with the elongated body outline
+        rows = [
+            {
+                "reference": "J14",
+                "model_path": None,
+                "model_kind": None,
+                "model_rotate_z_deg": 0.0,
+                "model_offset_x_mm": 0.0,
+                "model_offset_y_mm": 0.0,
+                "model_registration": None,
+                "status": "no_recognized_package_code",
+            }
+        ]
+        overrides = [{"reference": "J14", "model_path": "/build/Jack_12.4x7x6mm_datasheet_box.wrl", "status": "manual_dimension_accurate_placeholder"}]
+        geometry = {
+            "J14": {
+                # near-square pad field: the body outline must decide the axis
+                "pads": {"1": (0.0, 0.0), "2": (2.0, 0.0), "3": (0.0, 2.0), "4": (2.0, 2.0)},
+                "body_overhang": (0.0, 5.0),
+                "pad_field_center": (1.0, 1.0),
+                # body outline elongated along Y while the box's long axis is X
+                "body_bbox": {"center": (1.0, 5.0), "width": 7.0, "height": 12.4, "layer": "F.Fab"},
+            }
+        }
+
+        merged = apply_manual_overrides(rows, overrides, geometry)[0]
+
+        self.assertEqual(merged["model_offset_x_mm"], 1.0)
+        self.assertEqual(merged["model_offset_y_mm"], 5.0)
+        self.assertEqual(merged["model_rotate_z_deg"], 90.0)
+
+    def test_pad_axis_outranks_body_outline_for_box_rotation(self) -> None:
+        # a 2-pad diode's electrical axis is its pad axis, even when band
+        # markings make the fab outline bbox slightly taller than wide
+        from component_model_resolver import centered_box_rotation
+
+        geometry = {
+            "pads": {"A": (-0.95, 0.0), "C": (0.95, 0.0)},
+            "body_bbox": {"center": (0.0, 0.9), "width": 2.7, "height": 3.16, "layer": "F.Fab"},
+        }
+        rotation = centered_box_rotation("/m/MicroSMP_2.2x1.3x0.68mm_datasheet_box.wrl", geometry)
+        self.assertEqual(rotation, 0.0)
 
     def test_override_for_unknown_reference_raises(self) -> None:
         with self.assertRaises(ValueError):

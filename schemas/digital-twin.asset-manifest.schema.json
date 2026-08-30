@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/digital-twin.asset-manifest.schema.json",
+  "title": "Tokito PCB digital-twin asset manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "assetId", "boardIdentity", "boardRevision", "assemblyContextRevision", "glbSha256", "glbBytes", "units", "axes", "boardOriginMetres", "boundsMetres", "defaultOpacity", "componentNodePrefix"],
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "assetId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "boardIdentity": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "boardRevision": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "assemblyContextRevision": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "glbSha256": { "type": "string", "pattern": "^(sha256:)?[a-fA-F0-9]{64}$" },
+    "glbBytes": { "type": "integer", "minimum": 20, "maximum": 67108864 },
+    "units": { "const": "METRE" },
+    "axes": { "const": "RIGHT_HANDED_Y_UP" },
+    "boardOriginMetres": { "$ref": "#/$defs/vector3" },
+    "boundsMetres": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": { "minimum": { "$ref": "#/$defs/vector3" }, "maximum": { "$ref": "#/$defs/vector3" } }
+    },
+    "boardPlaneBoundsMetres": {
+      "$ref": "#/$defs/bounds3"
+    },
+    "defaultOpacity": { "type": "number", "minimum": 0.05, "maximum": 0.85 },
+    "componentNodePrefix": { "type": "string", "minLength": 1, "maxLength": 32 }
+  },
+  "$defs": {
+    "vector3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number", "minimum": -10, "maximum": 10 },
+        "y": { "type": "number", "minimum": -10, "maximum": 10 },
+        "z": { "type": "number", "minimum": -10, "maximum": 10 }
+      }
+    },
+    "bounds3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": { "minimum": { "$ref": "#/$defs/vector3" }, "maximum": { "$ref": "#/$defs/vector3" } }
+    }
+  }
+}

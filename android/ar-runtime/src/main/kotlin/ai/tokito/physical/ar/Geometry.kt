@@ -46,6 +46,8 @@ class Matrix3 private constructor(private val m: DoubleArray) {
     fun approximatelyEquals(other: Matrix3, tolerance: Double = 1e-8): Boolean =
         m.indices.all { abs(m[it] - other.m[it]) <= tolerance }
 
+    fun values(): DoubleArray = m.copyOf()
+
     companion object {
         private const val EPSILON = 1e-10
         val IDENTITY = of(doubleArrayOf(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0))

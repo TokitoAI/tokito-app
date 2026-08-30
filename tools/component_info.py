@@ -151,9 +151,10 @@ def build_component_index(
             "polarity_or_pin_one": _pad_name_polarity(board_nets["pads_by_reference"].get(reference, []))
             or component.get("polarity_or_pin_one"),
         }
+    board = reference_package.get("board") or {}
     return {
-        "board_id": reference_package.get("board_id"),
-        "board_revision": reference_package.get("board_revision"),
+        "board_id": board.get("board_id") or reference_package.get("board_id"),
+        "board_revision": board.get("revision") or reference_package.get("board_revision"),
         "component_count": len(components),
         "components": components,
         "net_connectivity": board_nets["net_connectivity"],
