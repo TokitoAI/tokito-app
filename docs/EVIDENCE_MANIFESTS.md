@@ -21,6 +21,7 @@ verifiable by CI and later release tooling.
 | [#33](https://github.com/TokitoAI/tokito-physical-runtime/issues/33) | `docs/CI_CD.md`, `AGENTS.md`, and `.github/workflows/ci.yml` |
 | [#37](https://github.com/TokitoAI/tokito-physical-runtime/issues/37) | `schemas/android.artifact-manifest.schema.json` and `schemas/release.evidence-manifest.schema.json` |
 | [#38](https://github.com/TokitoAI/tokito-physical-runtime/issues/38) | `schemas/model.bundle-manifest.schema.json`, `schemas/evaluation.run-manifest.schema.json`, and `schemas/calibration.policy.schema.json` |
+| [#79](https://github.com/TokitoAI/tokito-physical-runtime/issues/79) | `schemas/digital-twin.asset-manifest.schema.json`, `schemas/evaluation.run-manifest.schema.json`, and the active assembly-context revision |
 | [#39](https://github.com/TokitoAI/tokito-physical-runtime/issues/39) | `schemas/model.bundle-manifest.schema.json`, `schemas/evaluation.run-manifest.schema.json`, and `schemas/calibration.policy.schema.json` |
 | [#40](https://github.com/TokitoAI/tokito-physical-runtime/issues/40) | `schemas/evaluation.run-manifest.schema.json` and `schemas/release.evidence-manifest.schema.json` |
 | [#44](https://github.com/TokitoAI/tokito-physical-runtime/issues/44) | `schemas/assembly.context-bundle.schema.json` |

@@ -9,6 +9,10 @@ The documentation is split by authority and purpose:
 | [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) | User outcomes, scope, and non-goals |
 | [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) | Typed tools, observations, errors, and versioning |
 | [MODEL_STRATEGY.md](MODEL_STRATEGY.md) | Model composition, export, backend, and lifecycle |
+| [VOICE_RUNTIME.md](VOICE_RUNTIME.md) | Implemented offline STT/TTS boundary and verification path |
+| [DIALOGUE_RUNTIME.md](DIALOGUE_RUNTIME.md) | Implemented local LLM, typed outcomes, and deterministic proposal policy |
+| [RELEASE.md](RELEASE.md) | Android versioning, signing, verification, and publication contract |
+| [DIGITAL_TWIN_AR.md](DIGITAL_TWIN_AR.md) | Validated GLB contract, metric pose, and Android 3D rendering |
 | [EVALUATION.md](EVALUATION.md) | Corpus policy, metrics, benchmarks, and release gates |
 | [CORPUS_GOVERNANCE.md](CORPUS_GOVERNANCE.md) | Executable corpus manifests, hashing, leakage audits, and revision workflow |
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Trust boundary and data-handling policy |

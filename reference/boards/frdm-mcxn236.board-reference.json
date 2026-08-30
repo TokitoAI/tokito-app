@@ -2092,7 +2092,7 @@
     }
   ],
   "integrity": {
-    "manifest_digest": "sha256:da29eb48da0fdedb7a8054beb2ca18ae4c8a5c419c711cdc5e2ba72c2b0c29da"
+    "manifest_digest": "sha256:7427e9a8511ea1f79d3e22a9075665b6084039943d7d3bfa55812bd4b2a02286"
   },
   "landmarks": [
     {
@@ -2294,6 +2294,12 @@
       "landmark_id": "can-transceiver"
     },
     {
+      "board_target": {
+        "reference_designator": "U1",
+        "source_id": "nxp-frdm-mcxn236-real-placements-v0.1",
+        "x_normalized": 0.539737329,
+        "y_normalized": 0.5
+      },
       "category": "processor",
       "display_name": "MCXN236VDFT",
       "evidence_refs": [
@@ -2307,9 +2313,16 @@
         }
       ],
       "identifiers": {
-        "part_number": "MCXN236VDFT"
+        "part_number": "MCXN236VDFT",
+        "reference_designator": "U1"
       },
-      "landmark_id": "mcxn236vdft"
+      "landmark_id": "mcxn236vdft",
+      "query_aliases": [
+        "chip",
+        "main chip",
+        "MCU",
+        "microcontroller"
+      ]
     },
     {
       "category": "header",
@@ -2550,6 +2563,19 @@
         "state": "reviewed"
       },
       "source_id": "guide-callouts-09"
+    },
+    {
+      "kind": "authored_design",
+      "license_status": "pending",
+      "locator": "TokitoAI/tokito-physical-runtime release v0.1-frdm-mcxn236-3d-asset; frdm_mcxn236_real_placements.json",
+      "media_sha256": "sha256:2f3a429d24c544053b4dcee169e832f694164631b85216cfcfd4935b57bb8922",
+      "redistributable": false,
+      "review": {
+        "reviewed_at": "2026-08-30T03:30:00+05:30",
+        "reviewer": "physical-runtime@tokito.local",
+        "state": "reviewed"
+      },
+      "source_id": "nxp-frdm-mcxn236-real-placements-v0.1"
     }
   ]
 }

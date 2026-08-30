@@ -85,6 +85,10 @@ policy together through a separately reviewed PR.
   heavyweight inference is explicit, event-driven, bounded, and cancellable.
 - **On-device by default.** Raw camera frames and audio do not leave the phone.
   Core inference, reasoning, speech, and AR operation also remain on-device.
+- Spoken measurements are normalized only by `measurement-runtime`; never use
+  an LLM to parse decimal separators, SI prefixes, units, ranges, or board
+  relationships. Partial STT hypotheses cannot mutate measurement state, and
+  an unconfirmed draft is never evidence.
   Any future off-device mode requires a new ADR and explicit user consent.
 - **Abstain over guessing.** Identity-sensitive output must carry confidence and
   evidence; below threshold, return a typed abstention.
