@@ -58,6 +58,55 @@ class DigitalTwinAssetTest {
         )
     }
 
+    @Test
+    fun `explicit corner landmarks outrank bounds-derived corners`() {
+        // the detector's corner semantics belong to the vision model, so a
+        // manifest can state authored landmarks (e.g. mounting-hole centres)
+        // in exactly the model's keypoint order
+        val packageData = CalibrationBoardAsset.create()
+        val bounds = packageData.manifest.boundsMetres
+        val holes = listOf(
+            Vector3Contract(bounds.minimum.x + 0.004, 0.0, bounds.minimum.z + 0.004),
+            Vector3Contract(bounds.maximum.x - 0.004, 0.0, bounds.minimum.z + 0.004),
+            Vector3Contract(bounds.maximum.x - 0.004, 0.0, bounds.maximum.z - 0.004),
+            Vector3Contract(bounds.minimum.x + 0.004, 0.0, bounds.maximum.z - 0.004),
+        )
+        val manifest = packageData.manifest.copy(boardPlaneCornerPointsMetres = holes)
+
+        assertEquals(holes.map { Point2(it.x, it.z) }, manifest.boardPlaneCorners())
+        assertIs<DigitalTwinValidation.Accepted>(
+            validator.validate(manifest, packageData.glb, manifest.assemblyContextRevision),
+        )
+    }
+
+    @Test
+    fun `malformed corner landmarks are rejected not silently ignored`() {
+        val packageData = CalibrationBoardAsset.create()
+        val bounds = packageData.manifest.boundsMetres
+        val inBounds = Vector3Contract(bounds.minimum.x + 0.01, 0.0, bounds.minimum.z + 0.01)
+        val outOfBounds = Vector3Contract(bounds.maximum.x + 0.05, 0.0, bounds.minimum.z)
+
+        for (corners in listOf(
+            listOf(inBounds, inBounds, inBounds), // wrong count
+            listOf(inBounds, inBounds, inBounds, outOfBounds), // outside bounds
+        )) {
+            val manifest = packageData.manifest.copy(boardPlaneCornerPointsMetres = corners)
+            assertEquals(
+                DigitalTwinValidation.Code.INVALID_GEOMETRY,
+                assertIs<DigitalTwinValidation.Rejected>(
+                    validator.validate(manifest, packageData.glb, manifest.assemblyContextRevision),
+                ).code,
+            )
+        }
+    }
+
+    @Test
+    fun `manifest without corner landmarks keeps the bounds-derived quad`() {
+        val manifest = CalibrationBoardAsset.create().manifest
+        val board = manifest.boardPlaneBoundsMetres ?: manifest.boundsMetres
+        assertEquals(Point2(board.minimum.x, board.minimum.z), manifest.boardPlaneCorners().first())
+    }
+
     private val validator = DigitalTwinValidator(maximumGlbBytes = 2L * 1024L * 1024L)
 
     @Test fun calibrationAssetIsARealValidatedGlb() {
