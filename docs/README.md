@@ -18,6 +18,7 @@ The documentation is split by authority and purpose:
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | Trust boundary and data-handling policy |
 | [DELIVERY_GATES.md](DELIVERY_GATES.md) | Evidence-gated implementation sequence |
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
+| [PHYSICAL_VISION_FOUNDATION.md](PHYSICAL_VISION_FOUNDATION.md) | Offline reference board-discovery and coordinate-frame pipeline |
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
 | [FRDM_CAPTURE_INTAKE.md](FRDM_CAPTURE_INTAKE.md) | Local iQOO capture intake, YOLO annotation, and AR asset boundary |
 | [YOLO_LOCAL_EXPERIMENTS.md](YOLO_LOCAL_EXPERIMENTS.md) | Provenance-bound local detector smoke training and inference |

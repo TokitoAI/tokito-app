@@ -78,6 +78,11 @@ Development captures cannot appear in the held-out test sessions. Natural
 board landmarks are preferred; an explicit assisted-calibration fallback may
 exist, but its use must be surfaced and scored separately.
 
+The offline reference pipeline in
+[Physical vision foundation](PHYSICAL_VISION_FOUNDATION.md) provides synthetic
+contract tests for board detection, registration, and ROI output. It is not
+FRDM-MCXN236 validation evidence and contains no board-specific runtime branch.
+
 ## Acceptance evidence
 
 - board acquisition success and time-to-stable-track;
