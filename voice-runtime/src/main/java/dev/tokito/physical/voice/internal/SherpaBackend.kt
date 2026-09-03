@@ -279,7 +279,7 @@ private class SherpaSpeechSynthesizer(
         Log.i(TAG, "Local sherpa VITS initialized at ${engine?.sampleRate()} Hz")
     }
 
-    override fun speak(text: String) {
+    override fun speak(text: String, onPlaybackStarted: () -> Unit) {
         check(speaking.compareAndSet(false, true)) { "synthesizer is already speaking" }
         continueSynthesis.set(true)
         val tts = requireEngine()
@@ -291,6 +291,7 @@ private class SherpaSpeechSynthesizer(
             // Sherpa's Android callback JNI can abort the VM before Kotlin can catch it.
             // Generate one bounded utterance, then retain cancellation during playback.
             val generated = tts.generate(text, bundle.ttsSpeakerId, bundle.ttsSpeed)
+            check(generated.samples.isNotEmpty()) { "local TTS produced no audio" }
             check(continueSynthesis.get()) { "local TTS was cancelled" }
             check(SystemClock.elapsedRealtime() < deadline) {
                 "local TTS exceeded its bounded deadline"
@@ -299,6 +300,7 @@ private class SherpaSpeechSynthesizer(
             track.set(output)
             output.play()
             var offset = 0
+            var playbackStarted = false
             while (offset < generated.samples.size && continueSynthesis.get()) {
                 check(SystemClock.elapsedRealtime() < deadline) {
                     "local TTS exceeded its bounded deadline"
@@ -311,6 +313,10 @@ private class SherpaSpeechSynthesizer(
                     AudioTrack.WRITE_BLOCKING,
                 )
                 check(written > 0) { "AudioTrack write failed: $written" }
+                if (!playbackStarted) {
+                    playbackStarted = true
+                    onPlaybackStarted()
+                }
                 offset += written
             }
         } catch (failure: Throwable) {

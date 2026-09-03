@@ -62,9 +62,10 @@ private class BoardReferenceParser(private val raw: String) {
             root,
             setOf(
                 "schema_version", "manifest_id", "board", "placement_binding",
-                "sources", "landmarks", "connectors", "integrity",
+                "sources", "landmarks", "connectors", "knowledge_graph", "integrity",
             ),
             "manifest",
+            optional = setOf("knowledge_graph"),
         )
         require(text(root, "schema_version") == "1.0") { "unsupported board-reference schema" }
         verifyDigest(raw)
@@ -82,6 +83,7 @@ private class BoardReferenceParser(private val raw: String) {
         records += boardRecord(manifestId, manufacturer, model, revision, binding)
         records += parseConnectors(array(root, "connectors"), manufacturer, model, binding)
         records += parseLandmarks(array(root, "landmarks"), manufacturer, model)
+        root.optJSONObject("knowledge_graph")?.let { records += parseKnowledgeGraph(it) }
         require(records.size <= MAX_RECORDS) { "board reference contains too many records" }
 
         val contextRevision = "$manifestId@${text(objectValue(root, "integrity"), "manifest_digest")}"
@@ -353,6 +355,11 @@ private class BoardReferenceParser(private val raw: String) {
                     addAll(identifierValues)
                     addAll(queryAliases)
                 },
+                rankingAliases = buildSet {
+                    add(displayName)
+                    addAll(identifierValues)
+                    addAll(queryAliases)
+                },
                 spokenSummary = buildString {
                     append("$displayName is the $category")
                     boardTarget?.let { append(" at ${it.label}") }
@@ -363,10 +370,109 @@ private class BoardReferenceParser(private val raw: String) {
         }
     }
 
+    private fun parseKnowledgeGraph(value: JSONObject): List<DesignContextRecord> {
+        exactKeys(value, setOf("entities", "facts"), "knowledge graph")
+        val entitiesArray = array(value, "entities")
+        require(entitiesArray.length() <= MAX_KNOWLEDGE_ENTITIES) { "knowledge graph has too many entities" }
+        val entities = linkedMapOf<String, KnowledgeEntity>()
+        for (index in 0 until entitiesArray.length()) {
+            val entity = objectValue(entitiesArray, index, "knowledge entity")
+            exactKeys(
+                entity,
+                setOf("entity_id", "display_name", "entity_type", "aliases", "identifiers"),
+                "knowledge entity",
+            )
+            val id = text(entity, "entity_id")
+            require(ENTITY_ID.matches(id)) { "knowledge entity has an invalid ID: $id" }
+            val type = text(entity, "entity_type")
+            require(type in KNOWLEDGE_ENTITY_TYPES) { "knowledge entity $id has an invalid type" }
+            val parsed = KnowledgeEntity(
+                id = id,
+                displayName = text(entity, "display_name"),
+                aliases = stringArray(entity, "aliases").toSet(),
+                identifiers = stringArray(entity, "identifiers").toSet(),
+            )
+            require(parsed.identifiers.all(KEY::matches)) { "knowledge entity $id has a noncanonical identifier" }
+            require(entities.put(id, parsed) == null) { "duplicate knowledge entity ID: $id" }
+        }
+
+        val facts = array(value, "facts")
+        require(facts.length() <= MAX_KNOWLEDGE_FACTS) { "knowledge graph has too many facts" }
+        val seen = mutableSetOf<String>()
+        return (0 until facts.length()).map { index ->
+            val fact = objectValue(facts, index, "knowledge fact")
+            exactKeys(
+                fact,
+                setOf(
+                    "fact_id", "subject_id", "predicate", "value", "spoken_summary",
+                    "query_aliases", "related_entity_ids", "evidence",
+                ),
+                "knowledge fact",
+            )
+            val id = text(fact, "fact_id")
+            require(ENTITY_ID.matches(id) && seen.add(id)) { "invalid or duplicate knowledge fact ID: $id" }
+            val subjectId = text(fact, "subject_id")
+            val subject = entities[subjectId] ?: throw IllegalArgumentException("knowledge fact $id has an unknown subject")
+            val predicate = text(fact, "predicate")
+            require(PREDICATE.matches(predicate)) { "knowledge fact $id has an invalid predicate" }
+            val related = stringArray(fact, "related_entity_ids").map { relatedId ->
+                entities[relatedId] ?: throw IllegalArgumentException("knowledge fact $id has an unknown related entity")
+            }
+            val citationsArray = array(fact, "evidence")
+            require(citationsArray.length() in 1..MAX_FACT_EVIDENCE) { "knowledge fact $id has invalid evidence" }
+            val citations = (0 until citationsArray.length()).map { evidenceIndex ->
+                val evidence = objectValue(citationsArray, evidenceIndex, "knowledge evidence")
+                exactKeys(evidence, setOf("source_id", "page", "locator"), "knowledge evidence")
+                DesignEvidenceLocator(
+                    sourceId = text(evidence, "source_id"),
+                    page = integer(evidence, "page", 1, MAX_DOCUMENT_PAGES),
+                    locator = text(evidence, "locator"),
+                )
+            }
+            val evidenceIds = citations.mapTo(sortedSetOf()) { it.sourceId }
+            requireTechnicalEvidence(evidenceIds, "knowledge fact $id")
+            val aliases = stringArray(fact, "query_aliases").toSet()
+            require(aliases.isNotEmpty()) { "knowledge fact $id must have query aliases" }
+            val factValue = text(fact, "value")
+            DesignContextRecord(
+                recordId = "knowledge-$id",
+                authority = DesignFactAuthority.DATASHEET,
+                exactKeys = canonicalKeys(
+                    *(
+                        subject.identifiers + related.flatMap { it.identifiers }
+                    ).toTypedArray(),
+                ),
+                text = "${subject.displayName} ${predicate.replace('_', ' ')}: $factValue",
+                sourceIds = evidenceIds,
+                spokenAliases = buildSet {
+                    add(subject.displayName)
+                    addAll(subject.aliases)
+                    addAll(aliases)
+                    related.forEach { entity ->
+                        add(entity.displayName)
+                        addAll(entity.aliases)
+                    }
+                },
+                rankingAliases = aliases,
+                spokenSummary = text(fact, "spoken_summary"),
+                evidenceLocators = citations,
+            )
+        }
+    }
+
     private fun requireReviewed(evidence: Set<String>, label: String) {
         require(evidence.isNotEmpty()) { "$label has no evidence" }
         evidence.forEach { id ->
             require(sources[id]?.reviewState == "reviewed") { "$label cites missing or unreviewed source $id" }
+        }
+    }
+
+    private fun requireTechnicalEvidence(evidence: Set<String>, label: String) {
+        requireReviewed(evidence, label)
+        evidence.forEach { id ->
+            require(sources.getValue(id).kind in TECHNICAL_SOURCE_KINDS) {
+                "$label cites nontechnical source $id"
+            }
         }
     }
 
@@ -446,6 +552,12 @@ private class BoardReferenceParser(private val raw: String) {
 
     private data class Source(val id: String, val kind: String, val reviewState: String)
     private data class Binding(val status: String, val reason: String)
+    private data class KnowledgeEntity(
+        val id: String,
+        val displayName: String,
+        val aliases: Set<String>,
+        val identifiers: Set<String>,
+    )
 
     private companion object {
         const val MAX_SOURCES = 128
@@ -453,11 +565,26 @@ private class BoardReferenceParser(private val raw: String) {
         const val MAX_PINS = 512
         const val MAX_LANDMARKS = 1_024
         const val MAX_RECORDS = 1_200
+        const val MAX_KNOWLEDGE_ENTITIES = 512
+        const val MAX_KNOWLEDGE_FACTS = 1_024
+        const val MAX_FACT_EVIDENCE = 16
+        const val MAX_DOCUMENT_PAGES = 100_000
         const val MAX_TEXT_CHARS = 4_096
         val HUNDRED = BigDecimal("100")
         val SHA256 = Regex("sha256:[0-9a-f]{64}")
         val KEY = Regex("[A-Z][A-Z0-9_.-]{0,63}")
-        val SOURCE_KINDS = setOf("printed_guide_photo", "datasheet", "authored_design")
+        val SOURCE_KINDS = setOf(
+            "printed_guide_photo", "datasheet", "official_manual", "schematic",
+            "sdk_documentation", "authored_design",
+        )
+        val TECHNICAL_SOURCE_KINDS = setOf(
+            "datasheet", "official_manual", "schematic", "sdk_documentation",
+        )
+        val ENTITY_ID = Regex("[a-z0-9][a-z0-9_.-]{0,127}")
+        val PREDICATE = Regex("[a-z][a-z0-9_]{0,63}")
+        val KNOWLEDGE_ENTITY_TYPES = setOf(
+            "board", "mcu", "component", "peripheral", "interface", "connector_group", "capability",
+        )
         val LICENSE_STATES = setOf("approved", "pending", "rejected")
         val REVIEW_STATES = setOf("reviewed", "pending", "rejected")
         val ELECTRICAL_ROLES = setOf(

@@ -80,8 +80,13 @@ class MeasurementVoiceSessionTest {
         override suspend fun initialize() = Unit
         override suspend fun startListening() = Unit
         override suspend fun stopListening() = Unit
-        override suspend fun speak(text: String, policy: SpeechQueuePolicy): String {
+        override suspend fun speak(
+            text: String,
+            policy: SpeechQueuePolicy,
+            onPlaybackStarted: () -> Unit,
+        ): String {
             spoken += text
+            onPlaybackStarted()
             return "test-${spoken.size}"
         }
         override suspend fun interruptSpeech() = Unit

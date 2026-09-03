@@ -61,6 +61,30 @@ class TokitoVoiceRuntimeTest {
     }
 
     @Test
+    fun reportsSynthesizingUntilPlaybackStarts() = runBlocking {
+        val fixture = Fixture(blockSpeech = true, holdBeforePlayback = true)
+        fixture.runtime.initialize()
+        fixture.runtime.startListening()
+        val started = async(start = CoroutineStart.UNDISPATCHED) {
+            fixture.runtime.events.filterIsInstance<VoiceEvent.SpeechStarted>().first()
+        }
+        val speech = async(start = CoroutineStart.UNDISPATCHED) {
+            fixture.runtime.speak("Verified board guidance")
+        }
+        awaitLatch(fixture.synthesizer.entered)
+
+        assertTrue(fixture.runtime.state.value is VoiceRuntimeState.Synthesizing)
+        fixture.synthesizer.releasePlayback.countDown()
+        started.await()
+        assertTrue(fixture.runtime.state.value is VoiceRuntimeState.Speaking)
+
+        fixture.runtime.interruptSpeech()
+        speech.await()
+        assertEquals(VoiceRuntimeState.Listening, fixture.runtime.state.value)
+        fixture.runtime.close()
+    }
+
+    @Test
     fun sustainedInputInterruptsSpeech() = runBlocking {
         val fixture = Fixture(blockSpeech = true)
         fixture.runtime.initialize()
@@ -105,9 +129,12 @@ class TokitoVoiceRuntimeTest {
         fixture.runtime.close()
     }
 
-    private class Fixture(blockSpeech: Boolean = false) {
+    private class Fixture(
+        blockSpeech: Boolean = false,
+        holdBeforePlayback: Boolean = false,
+    ) {
         val recognizer = FakeRecognizer()
-        val synthesizer = FakeSynthesizer(blockSpeech)
+        val synthesizer = FakeSynthesizer(blockSpeech, holdBeforePlayback)
         val audio = FakeAudioInput()
         val runtime = TokitoVoiceRuntime(
             config = VoiceRuntimeConfig(
@@ -157,15 +184,21 @@ class TokitoVoiceRuntimeTest {
         override fun close() = Unit
     }
 
-    private class FakeSynthesizer(private val block: Boolean) : SpeechSynthesizer {
+    private class FakeSynthesizer(
+        private val block: Boolean,
+        private val holdBeforePlayback: Boolean,
+    ) : SpeechSynthesizer {
         val entered = CountDownLatch(1)
+        val releasePlayback = CountDownLatch(1)
         val stopped = CountDownLatch(1)
         @Volatile private var speaking = false
         override val isSpeaking: Boolean get() = speaking
 
-        override fun speak(text: String) {
+        override fun speak(text: String, onPlaybackStarted: () -> Unit) {
             speaking = true
             entered.countDown()
+            if (holdBeforePlayback) releasePlayback.await(3, TimeUnit.SECONDS)
+            onPlaybackStarted()
             if (block) stopped.await(3, TimeUnit.SECONDS)
             speaking = false
         }
