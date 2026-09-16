@@ -17,24 +17,19 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # Linux only, on a GitHub-hosted runner.
+  #
+  # The self-hosted VPS runner is being decommissioned, and the Windows leg was
+  # pointed at `tokito-windows` — the org's only Windows runner, which is
+  # offline, so that half of the matrix has been queuing indefinitely rather
+  # than reporting. Windows is for the desktop app; this crate is the mobile
+  # companion's Rust core and is consumed by Android and iOS, not Windows.
   rust:
-    name: rust (${{ matrix.platform }})
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    name: rust (linux)
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux
-            runs_on: '["self-hosted","linux","x64","tokito-vps"]'
-          - platform: windows
-            runs_on: '["self-hosted","Windows","X64","tokito-windows"]'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Select Git for Windows Bash
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: '"C:\Program Files\Git\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
       - uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
         with:
           components: rustfmt, clippy
@@ -43,12 +38,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --locked
       - name: UniFFI Kotlin generate smoke
-        if: runner.os == 'Linux'
         run: bash scripts/generate-bindings.sh
 
   mobile:
     name: mobile (typescript)
-    runs-on: [self-hosted, linux, x64, tokito-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:

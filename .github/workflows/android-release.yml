@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build-ffi:
     name: UniFFI Android .so + Kotlin
-    runs-on: [self-hosted, Linux, X64, tokito-vps, private-build]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -93,7 +93,7 @@ jobs:
   build-release:
     name: release APK + AAB (upload-signed)
     needs: build-ffi
-    runs-on: [self-hosted, Linux, X64, tokito-vps, private-build]
+    runs-on: ubuntu-latest
     environment: production
     permissions:
       contents: write
