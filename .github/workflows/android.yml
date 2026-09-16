@@ -24,8 +24,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # `packages: ''` is load-bearing. The action's default package set still
+      # asks for `tools`, which Google removed from the SDK repository in favour
+      # of `cmdline-tools`, so sdkmanager exits non-zero:
+      #
+      #   Warning: Failed to find package 'tools'
+      #   Error: The process '.../cmdline-tools/20.0/bin/sdkmanager' failed
+      #
+      # That has broken every run of this workflow since 2026-09-03. Nothing
+      # here needs `tools`; the next step installs exactly what the build uses.
       - name: Set up Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: ''
       - name: Install compile SDK and native toolchain
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
