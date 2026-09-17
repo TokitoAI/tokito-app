@@ -12,11 +12,21 @@ permissions:
 jobs:
   governance:
     name: Governance and evidence contracts
-    runs-on: [self-hosted, Linux, X64, tokito-vps, private-build]
+    # The one workflow allowed on GitHub-hosted capacity, named explicitly by
+    # the policy in tools/validate_governance.py. It runs that validator, which
+    # needs GITHUB_EVENT_PATH to check pull-request bodies and merge hygiene —
+    # data that exists only inside Actions. It compiles nothing, installs no
+    # SDK, and finishes in seconds.
+    #
+    # The Android build has moved to Buildkite (.buildkite/pipeline.yml).
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install tooling dependencies
+        run: python3 -m pip install --disable-pip-version-check -r tools/requirements.txt
 
       - name: Validate repository governance
         env:

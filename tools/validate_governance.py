@@ -18,13 +18,24 @@ EXAMPLE_DIR = ROOT / "examples" / "manifests"
 BOARD_REFERENCE_DIR = ROOT / "reference" / "boards"
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 
-REQUIRED_VPS_RUNNER_LABELS = {
-    "self-hosted",
-    "linux",
-    "x64",
-    "tokito-vps",
-    "private-build",
-}
+# Workflows allowed to run on GitHub-hosted capacity, and why.
+#
+# The original policy (Afnan, #49/#50, 2026-08-29) required every job to run on
+# the `tokito-vps` self-hosted runner "so a pull request cannot silently move CI
+# back to billed GitHub-hosted capacity". That box is being decommissioned, so
+# the label set it mandates is about to name a machine that does not exist.
+#
+# The intent is kept: builds do not run on billed capacity. The Android build
+# moved to Buildkite on our own agent, which is stronger than the original rule
+# — Buildkite pipelines are not GitHub Actions workflows at all, so this check
+# cannot see them and they cannot drift back here.
+#
+# ci.yml is the exception, and only it. It runs this validator, which needs
+# GITHUB_EVENT_PATH to check pull-request bodies and merge hygiene — data that
+# exists only inside Actions. It compiles nothing, installs no SDK, and finishes
+# in seconds.
+GITHUB_HOSTED_ALLOWED_WORKFLOWS = {"ci.yml"}
+
 GITHUB_HOSTED_RUNNER = re.compile(
     r"\b(?:ubuntu|windows|macos)(?:-[a-z0-9.]+)*-latest\b",
     re.IGNORECASE,
@@ -206,14 +217,13 @@ def validate_tracked_artifacts(files: list[str]) -> None:
 def validate_workflow_runner_spec(path: Path, spec: str) -> None:
     normalized = spec.lower()
     hosted = GITHUB_HOSTED_RUNNER.search(normalized)
-    if hosted:
-        fail(f"{path}: GitHub-hosted runner {hosted.group(0)!r} is forbidden")
-    labels = set(re.findall(r"[a-z0-9._-]+", normalized))
-    missing = sorted(
-        label for label in REQUIRED_VPS_RUNNER_LABELS if label not in labels
-    )
-    if missing:
-        fail(f"{path}: runs-on is missing Tokito VPS labels: {', '.join(missing)}")
+    if hosted and path.name not in GITHUB_HOSTED_ALLOWED_WORKFLOWS:
+        fail(
+            f"{path}: GitHub-hosted runner {hosted.group(0)!r} is not allowed here. "
+            "Builds belong on Buildkite; only "
+            f"{', '.join(sorted(GITHUB_HOSTED_ALLOWED_WORKFLOWS))} may run on "
+            "GitHub-hosted capacity, because it needs the Actions event payload."
+        )
 
 
 def validate_workflow_runners() -> None:
