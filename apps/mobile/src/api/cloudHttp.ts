@@ -97,7 +97,7 @@ async function mapError(res: Response): Promise<CompanionError> {
   }
   if (res.status === 404) {
     return CompanionError.unavailable(
-      "Companion API not found on this server (deploy tokito-ai with /v1/companion/*)",
+      "Companion API not found on this server (deploy tokito-api with /v1/companion/*)",
     );
   }
   if (res.status === 403) {

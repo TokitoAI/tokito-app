@@ -10,7 +10,7 @@
 ## Realtime workspace sync
 
 1. The contract is [API_CONTRACT.md](API_CONTRACT.md).
-2. `tokito-ai` owns device registration, versioned materialized resources,
+2. `tokito-api` owns device registration, versioned materialized resources,
    command idempotency, the durable event journal, and resumable SSE.
 3. Both clients register a stable installation id, bootstrap once, then resume
    the ordered SSE journal from their committed cursor.
@@ -33,4 +33,4 @@
 - Do not call `tokito-mcp` directly from Companion for symbol search.
 - Do not duplicate the Rust schematic engine in the app. Mobile renders the
   canonical document as a network-sealed read-only view; desktop owns CAD edits.
-- Do not use `tokito-backend` (legacy); cloud is `tokito-ai`.
+- Do not use `tokito-backend` (legacy); cloud is `tokito-api`.

@@ -1,6 +1,6 @@
 # Auth wire contract
 
-Source of truth: `tokito-ai/docs/API.md` §Auth. Companion fixtures under
+Source of truth: `tokito-api/docs/API.md` §Auth. Companion fixtures under
 `crates/core/tests/fixtures/` are recorded response bodies from that contract.
 
 | Call | Success | Notable errors |

@@ -1,8 +1,8 @@
-//! Tokito Companion core — typed clients for Tokito Cloud (`tokito-ai`).
+//! Tokito Companion core — typed clients for Tokito Cloud (`tokito-api`).
 //!
-//! Auth wire contract matches `tokito-ai/docs/API.md` and the desktop
+//! Auth wire contract matches `tokito-api/docs/API.md` and the desktop
 //! `tokito::services::cloud` client. Companion sync routes (`/v1/companion/*`)
-//! match `docs/API_CONTRACT.md` / `tokito-ai` companion crate.
+//! match `docs/API_CONTRACT.md` / `tokito-api` companion crate.
 
 #![forbid(unsafe_code)]
 

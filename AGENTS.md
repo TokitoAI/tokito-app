@@ -24,7 +24,7 @@ review panes without changing product capabilities.
 
 Companion work is tracked on the org project board. Prefer issues on
 `TokitoAI/tokito-companion` for app work; cross-repo API work may also use
-`TokitoAI/tokito-ai` / `TokitoAI/tokito` issues linked from the Companion
+`TokitoAI/tokito-api` / `TokitoAI/tokito` issues linked from the Companion
 epic. Type labels: `epic`, `feature`, `task`, `bug`, `chore`.
 
 Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
@@ -46,8 +46,8 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
 - **No stub clients or stub HTTP routes.** Device builds must use UniFFI
   (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
   If a `/v1/companion/*` method is not implemented server-side yet, do not
-  ship a fake client — wait for the `tokito-ai` PR.
-- **Auth is shared with desktop.** Call `tokito-ai` `/v1/auth/*` only; mirror
+  ship a fake client — wait for the `tokito-api` PR.
+- **Auth is shared with desktop.** Call `tokito-api` `/v1/auth/*` only; mirror
   error mapping from `tokito::services::cloud` / this crate's `CloudError`.
 - **No large binaries in git.** Artifacts live behind the API, not in the repo.
 - **Small PRs, green CI.** Milestone series M0–M6 — see `memory/milestones.md`.

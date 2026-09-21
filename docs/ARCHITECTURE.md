@@ -4,7 +4,7 @@
 RN TypeScript UI ──UniFFI──▶ tokito-companion-ffi ──▶ tokito-companion-core
                                                          │
                                                          ▼
-                                              https://api.tokito.dev (tokito-ai)
+                                              https://api.tokito.dev (tokito-api)
 ```
 
 Desktop (`tokito-native`) and Companion register independent installations,

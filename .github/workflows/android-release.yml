@@ -253,7 +253,7 @@ jobs:
           ## Tokito Companion \`${TAG}\`
 
           Play-quality **upload-signed** build (same keystore track as Play Console uploads).
-          Cloud: **\`https://api.tokito.dev\`** (tokito-ai) via UniFFI.
+          Cloud: **\`https://api.tokito.dev\`** (tokito-api) via UniFFI.
 
           | Artifact | Use |
           |---|---|

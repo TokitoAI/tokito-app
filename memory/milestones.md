@@ -4,7 +4,7 @@
 |---|---|---|
 | **M0** | Repo bootstrap, CI, core auth client + fixtures, docs, board epic | Done |
 | **M1** | RN+TS auth shell, secure token store, UniFFI bindings | Done |
-| **M2** | `tokito-ai` `/v1/companion/*` + matching core client | Done |
+| **M2** | `tokito-api` `/v1/companion/*` + matching core client | Done |
 | **M3** | Desktop publish/bootstrap compatibility path | Done (tokito) |
 | **M4** | Project list + BOM review UI | Done |
 | **M5** | Proposal approve/reject + desktop apply loop | Done |

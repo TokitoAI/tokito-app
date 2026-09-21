@@ -1,6 +1,6 @@
 //! Tokito Cloud auth client (`/v1/auth/*`).
 //!
-//! Wire contract: `tokito-ai/docs/API.md` §Auth. Behaviour matches desktop
+//! Wire contract: `tokito-api/docs/API.md` §Auth. Behaviour matches desktop
 //! `tokito::services::cloud` so both clients stay interchangeable against
 //! the same gateway.
 

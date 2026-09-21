@@ -1,11 +1,11 @@
-# API contract — Tokito Companion ↔ tokito-ai
+# API contract — Tokito Companion ↔ tokito-api
 
 Auth and billing routes already exist; companion reuses them. Companion sync
-routes are implemented by `tokito-ai`; the durable realtime protocol below is
+routes are implemented by `tokito-api`; the durable realtime protocol below is
 the primary workspace path. Snapshot routes remain a migration/bootstrap
 compatibility surface and are not used for ongoing synchronization.
 
-## Existing (implemented in tokito-ai)
+## Existing (implemented in tokito-api)
 
 | Method | Path | Notes |
 |---|---|---|
@@ -60,7 +60,7 @@ Creation uses a stable UUID assigned by the originating client. Deletion is a
 versioned `deleted: true` tombstone rather than an absent resource, ensuring an
 offline device learns the deletion when it resumes its cursor.
 
-## Companion sync (**implemented** in `tokito-ai` + this client)
+## Companion sync (**implemented** in `tokito-api` + this client)
 
 All routes require `Authorization: Bearer <jwt>` unless noted.
 
@@ -97,7 +97,7 @@ Request body (JSON):
 
 Raw body; `Content-Type` as appropriate. Server verifies size limits and
 optional `X-Content-SHA256` against the manifest. Max size:
-**16 MiB** per artifact (`tokito-ai` `MAX_ARTIFACT_BYTES`).
+**16 MiB** per artifact (`tokito-api` `MAX_ARTIFACT_BYTES`).
 
 ### `GET /v1/companion/projects`
 
@@ -137,4 +137,4 @@ Desktop (or future cloud agent) posts a pending proposal card:
 Legacy desktop clients poll decisions and apply locally. Realtime clients use
 the versioned `suggestions` resource instead.
 
-Canonical server docs: `tokito-ai/docs/API.md`. Keep both documents aligned.
+Canonical server docs: `tokito-api/docs/API.md`. Keep both documents aligned.

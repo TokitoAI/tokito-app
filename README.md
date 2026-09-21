@@ -3,7 +3,7 @@
 Mobile-first realtime review companion for the
 [Tokito](https://github.com/TokitoAI/tokito) schematic studio.
 
-- Sign in with the same Tokito Cloud account (JWT via `tokito-ai`)
+- Sign in with the same Tokito Cloud account (JWT via `tokito-api`)
 - Browse projects and designs; inspect live schematics and BOMs read-only
 - Continue design chat and approve or reject AI proposals
 - Pan, zoom, and inspect canonical schematics without exposing CAD mutation
@@ -56,7 +56,7 @@ CI [android-release](.github/workflows/android-release.yml):
 
 - `assembleRelease` + `bundleRelease` with embedded JS + UniFFI `.so`
 - **Upload keystore** signing (GitHub secrets `ANDROID_UPLOAD_*`) — not Android Debug
-- Cloud: `https://api.tokito.dev` (tokito-ai)
+- Cloud: `https://api.tokito.dev` (tokito-api)
 - Tag: `git tag v0.2.2-pre.N && git push origin v0.2.2-pre.N`
 
 Uninstall any older **debug-signed** Companion before installing upload-signed

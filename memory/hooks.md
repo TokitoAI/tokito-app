@@ -2,7 +2,7 @@
 
 | Peer | Role |
 |---|---|
-| `TokitoAI/tokito-ai` | Auth (live), billing (live), companion sync API (M2) |
+| `TokitoAI/tokito-api` | Auth (live), billing (live), companion sync API (M2) |
 | `TokitoAI/tokito` | Desktop cloud session + publish/poll companion decisions (M3+) |
 | `TokitoAI/tokito-mcp` | Not called from companion — catalog stays desktop/server |
 
@@ -18,6 +18,6 @@ proposal decisions; desktop owns project/design, BOM, and schematic mutation.
 **Desktop publish (M3, Done):** Reuse `project_archive` / export SVG+BOM; push with
 `CloudSettings.cloud_token` to companion routes.
 
-**How to apply:** when changing a wire shape, update `tokito-ai/docs/API.md`
+**How to apply:** when changing a wire shape, update `tokito-api/docs/API.md`
 and this repo's `docs/API_CONTRACT.md` in the same change set (cross-repo PR
 pair), then bump clients.
