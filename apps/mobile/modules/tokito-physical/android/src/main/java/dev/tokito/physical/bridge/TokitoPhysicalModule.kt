@@ -8,6 +8,16 @@ import dev.tokito.physical.MainActivity
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.records.Field
+import expo.modules.kotlin.records.Record
+
+class PhysicalSessionContext : Record {
+  @Field
+  val projectId: String? = null
+
+  @Field
+  val designId: String? = null
+}
 
 /**
  * Thin control-plane boundary for the native Physical experience.
@@ -38,11 +48,16 @@ class TokitoPhysicalModule : Module() {
       )
     }
 
-    AsyncFunction("openSession") {
+    AsyncFunction("openSession") { sessionContext: PhysicalSessionContext? ->
       val context = appContext.currentActivity
         ?: throw CodedException("NoActivity", "Tokito must be visible to open a Physical session", null)
       val session = physicalRuntime.openSession()
-      context.startActivity(Intent(context, MainActivity::class.java))
+      context.startActivity(
+        Intent(context, MainActivity::class.java).apply {
+          sessionContext?.projectId?.let { putExtra(MainActivity.EXTRA_PROJECT_ID, it) }
+          sessionContext?.designId?.let { putExtra(MainActivity.EXTRA_DESIGN_ID, it) }
+        },
+      )
       mapOf("id" to session.id, "state" to "created")
     }
   }

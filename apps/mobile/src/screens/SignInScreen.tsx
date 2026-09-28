@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { EnvelopeSimple, Key } from "phosphor-react-native";
+import { ArrowLeft, EnvelopeSimple, Key } from "phosphor-react-native";
 import type { AuthService } from "../auth/AuthService";
 import { CompanionError } from "../native/types";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
@@ -26,11 +26,13 @@ type Step = "email" | "code";
 export interface SignInScreenProps {
   auth: AuthService;
   onSignedIn: () => void;
+  onBack: () => void;
 }
 
 export function SignInScreen({
   auth,
   onSignedIn,
+  onBack,
 }: SignInScreenProps): JSX.Element {
   const { width } = useWindowDimensions();
   const tablet = width >= TABLET_MIN_WIDTH;
@@ -79,16 +81,17 @@ export function SignInScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.panel, tablet && styles.panelTablet]}>
+          <GhostButton label="Back" icon={<ArrowLeft size={16} color={tokens.accent} />} onPress={onBack} />
           <View style={styles.brandRow}>
             <BrandTile size={48} />
             <View style={styles.brandText}>
               <Text style={styles.brand}>Tokito</Text>
-              <Text style={styles.sub}>Companion</Text>
+              <Text style={styles.sub}>Cloud</Text>
             </View>
           </View>
           <Text style={styles.lede}>
-            Review live projects and schematics, continue design chat, and
-            approve Tokito proposals from your phone.
+            Review synced projects and schematics, continue design chat, and
+            carry project context into a bench session.
           </Text>
 
           {step === "email" ? (

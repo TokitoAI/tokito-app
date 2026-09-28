@@ -1,8 +1,9 @@
-# API contract — Tokito Companion ↔ tokito-api
+# API contract — Tokito mobile ↔ tokito-api
 
-Auth, billing, and Companion resource routes are public `tokito-api` contracts
-used directly by this application. They do not constitute an integration with
-Tokito Desktop. Desktop does not publish to, poll, or apply this state.
+Auth, billing, and mobile resource routes are public `tokito-api` contracts
+used directly by this application. Cloud authentication is not required for a
+local bench session. These routes do not constitute a private integration with
+Tokito Desktop; Desktop does not directly publish to, poll, or apply this state.
 
 ## Existing (implemented in tokito-api)
 
@@ -18,9 +19,9 @@ Default base: `https://api.tokito.dev`.
 
 ## Durable realtime workspace
 
-One signed-in Companion installation registers directly with Cloud.
+One signed-in Tokito mobile installation registers directly with Cloud.
 The client performs a consistent bootstrap once, persists the returned cursor,
-and then consumes ordered SSE events. Permitted local actions enter a SQLite
+and then consumes ordered SSE events. Permitted Cloud actions enter a SQLite
 outbox before network submission and are idempotent by `command_id`. Companion
 commands are restricted by the server's Companion-specific authorization rules.
 
@@ -53,6 +54,7 @@ Resource scopes and payload contracts:
 
 Payloads are whole versioned resources, capped at 2 MiB. Transporting a resource
 does not grant every client write authority. Pick-and-place is not synchronized.
+Local physical sessions remain usable while signed out or offline.
 
 Creation uses a stable UUID assigned by the originating client. Deletion is a
 versioned `deleted: true` tombstone rather than an absent resource, ensuring an

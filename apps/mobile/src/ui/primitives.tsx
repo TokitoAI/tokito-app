@@ -46,6 +46,7 @@ export function PrimaryButton({
   disabled,
   danger,
   style,
+  icon,
 }: {
   label: string;
   onPress: () => void;
@@ -53,6 +54,7 @@ export function PrimaryButton({
   disabled?: boolean;
   danger?: boolean;
   style?: StyleProp<ViewStyle> | undefined;
+  icon?: ReactNode;
 }): JSX.Element {
   return (
     <Pressable
@@ -70,14 +72,17 @@ export function PrimaryButton({
       {busy === true ? (
         <ActivityIndicator color={danger === true ? tokens.text : tokens.accentInk} />
       ) : (
-        <Text
-          style={[
-            styles.btnText,
-            { color: danger === true ? tokens.text : tokens.accentInk },
-          ]}
-        >
-          {label}
-        </Text>
+        <View style={styles.btnContent}>
+          {icon}
+          <Text
+            style={[
+              styles.btnText,
+              { color: danger === true ? tokens.text : tokens.accentInk },
+            ]}
+          >
+            {label}
+          </Text>
+        </View>
       )}
     </Pressable>
   );
@@ -87,10 +92,12 @@ export function GhostButton({
   label,
   onPress,
   disabled,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  icon?: ReactNode;
 }): JSX.Element {
   return (
     <Pressable
@@ -99,6 +106,7 @@ export function GhostButton({
       onPress={onPress}
       style={({ pressed }) => [styles.ghost, pressed && { opacity: 0.7 }]}
     >
+      {icon}
       <Text style={styles.link}>{label}</Text>
     </Pressable>
   );
@@ -172,7 +180,8 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.55 },
   btnPressed: { opacity: 0.88 },
   btnText: { fontWeight: "600", fontSize: 15, letterSpacing: 0.2 },
-  ghost: { paddingVertical: tokens.space2 },
+  btnContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: tokens.space2 },
+  ghost: { minHeight: 44, paddingVertical: tokens.space2, flexDirection: "row", alignItems: "center", gap: tokens.space2, alignSelf: "flex-start" },
   link: { color: tokens.accent, fontSize: 14, fontWeight: "500" },
   field: { gap: tokens.space2 },
   label: {

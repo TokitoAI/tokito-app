@@ -5,6 +5,11 @@ export type PhysicalSession = {
   state: "created";
 };
 
+export type PhysicalSessionContext = {
+  projectId?: string;
+  designId?: string;
+};
+
 export type PhysicalCapabilities = {
   contractVersion: string;
   deviceProfile: string;
@@ -13,7 +18,7 @@ export type PhysicalCapabilities = {
 
 type TokitoPhysicalNative = {
   capabilities(): Promise<PhysicalCapabilities>;
-  openSession(): Promise<PhysicalSession>;
+  openSession(context?: PhysicalSessionContext): Promise<PhysicalSession>;
 };
 
 export const TokitoPhysical = requireNativeModule<TokitoPhysicalNative>("TokitoPhysical");

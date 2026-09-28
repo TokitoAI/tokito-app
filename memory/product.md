@@ -7,3 +7,7 @@ assistance. Users do not select between Companion and Physical products.
 same physical-session model. Authentication is optional for local bench work.
 Mobile does not become a CAD editor.
 
+The signed-out root is the Tokito home surface, not an authentication wall.
+Cloud restore failures may be shown there but must not disable the local bench.
+There is no Companion/Physical mode chooser or alternate launcher.
+
