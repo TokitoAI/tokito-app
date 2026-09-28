@@ -110,12 +110,13 @@ export function ProjectListScreen({
         <View style={styles.headerActions}>
           <Pressable
             accessibilityLabel="Refresh projects"
+            accessibilityRole="button"
             onPress={() => void reload()}
             style={styles.iconBtn}
           >
             <ArrowClockwise size={20} color={tokens.accent} weight="regular" />
           </Pressable>
-          <Pressable accessibilityLabel="Sign out" onPress={onSignOut} style={styles.iconBtn}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} style={styles.iconBtn}>
             <SignOut size={20} color={tokens.text2} weight="regular" />
           </Pressable>
         </View>

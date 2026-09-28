@@ -20,6 +20,8 @@ const markSource: ImageSourcePropType = markPng;
 export function BrandTile({ size = 36 }: { size?: number }): JSX.Element {
   return (
     <View
+      accessible={false}
+      accessibilityElementsHidden
       style={{
         width: size,
         height: size,
@@ -58,7 +60,9 @@ export function PrimaryButton({
 }): JSX.Element {
   return (
     <Pressable
+      accessibilityLabel={busy === true ? `${label}, in progress` : label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: disabled === true || busy === true, busy: busy === true }}
       disabled={disabled === true || busy === true}
       onPress={onPress}
       style={({ pressed }) => [
@@ -101,7 +105,9 @@ export function GhostButton({
 }): JSX.Element {
   return (
     <Pressable
+      accessibilityLabel={label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: disabled === true }}
       disabled={disabled === true}
       onPress={onPress}
       style={({ pressed }) => [styles.ghost, pressed && { opacity: 0.7 }]}
@@ -120,6 +126,7 @@ export function Field({
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         placeholderTextColor={tokens.text3}
         style={styles.input}
         {...props}
@@ -140,6 +147,7 @@ export function Card({
   if (onPress !== undefined) {
     return (
       <Pressable
+        accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [
           styles.card,
@@ -163,7 +171,7 @@ export function Muted({ children }: { children: ReactNode }): JSX.Element {
 }
 
 export function ErrorText({ children }: { children: string }): JSX.Element {
-  return <Text style={styles.error}>{children}</Text>;
+  return <Text accessibilityRole="alert" style={styles.error}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({

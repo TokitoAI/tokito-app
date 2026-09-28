@@ -70,7 +70,7 @@ export function SchematicViewerScreen({
   return (
     <View style={styles.root}>
       <View style={styles.chrome}>
-        <Pressable onPress={onBack} style={styles.back}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={styles.back}>
           <ArrowLeft size={18} color={tokens.accent} weight="regular" />
           <Text style={styles.link}>Back</Text>
         </Pressable>
