@@ -36,9 +36,9 @@ issue links are identifiers for the work required to substantiate each claim.
 | Typed tools and evidence-bearing observations | [Runtime contract](RUNTIME_CONTRACT.md) | [#22](https://github.com/TokitoAI/tokito-physical-runtime/issues/22), [#23](https://github.com/TokitoAI/tokito-physical-runtime/issues/23), [#24](https://github.com/TokitoAI/tokito-physical-runtime/issues/24) | Gate 5 |
 | On-device operation and private sensor data | [Security and privacy](SECURITY_AND_PRIVACY.md) | [#25](https://github.com/TokitoAI/tokito-physical-runtime/issues/25) | Every gate |
 | Measured model/runtime selection on the iQOO target | [Model strategy](MODEL_STRATEGY.md) and [evaluation](EVALUATION.md) | [#8](https://github.com/TokitoAI/tokito-physical-runtime/issues/8), [#9](https://github.com/TokitoAI/tokito-physical-runtime/issues/9), [#26](https://github.com/TokitoAI/tokito-physical-runtime/issues/26)-[#29](https://github.com/TokitoAI/tokito-physical-runtime/issues/29) | Gates 1, 3, and 4 |
-| Standalone application and reusable Android runtime boundary | [ADR 0001](decisions/0001-separate-physical-runtime.md), [ADR 0003](decisions/0003-python-off-device.md), [ADR 0004](decisions/0004-standalone-fully-local-ar-product.md), and [architecture](ARCHITECTURE.md) | [#30](https://github.com/TokitoAI/tokito-physical-runtime/issues/30), [#37](https://github.com/TokitoAI/tokito-physical-runtime/issues/37) | Gate 6 |
+| Embedded offline workspace and reusable Android runtime boundary | [root unified-app ADR](../../docs/decisions/0001-unified-mobile-application.md), [ADR 0003](decisions/0003-python-off-device.md), [ADR 0004](decisions/0004-standalone-fully-local-ar-product.md), and [architecture](ARCHITECTURE.md) | [#33](https://github.com/TokitoAI/tokito-app/issues/33), [#30](https://github.com/TokitoAI/tokito-app/issues/30) | Gate 6 |
 | End-to-end hackathon scenarios | [Delivery gates](DELIVERY_GATES.md) | [#31](https://github.com/TokitoAI/tokito-physical-runtime/issues/31) | Gate 7 |
-| Future Companion consumption | [Architecture: integration policy](ARCHITECTURE.md#integration-policy) and [ADR 0001](decisions/0001-separate-physical-runtime.md) | [#32](https://github.com/TokitoAI/tokito-physical-runtime/issues/32) | Blocked until Gate 6 |
+| Unified mobile-shell consumption | [Architecture: integration policy](ARCHITECTURE.md#integration-policy) and [root unified-app ADR](../../docs/decisions/0001-unified-mobile-application.md) | [#31](https://github.com/TokitoAI/tokito-app/issues/31) | Embedded; exact-device evidence remains gated |
 | Tokito + DS-ViRe assembly-context boundary and FRDM reference validation | [Architecture: integration policy](ARCHITECTURE.md#integration-policy), [runtime contract](RUNTIME_CONTRACT.md#assembly-context-bundle), and [FRDM validation](FRDM_MCXN236_VALIDATION.md) | [#44](https://github.com/TokitoAI/tokito-physical-runtime/issues/44), [#45](https://github.com/TokitoAI/tokito-physical-runtime/issues/45) | Gates 2, 3, and 5 |
 | PR-only delivery and branch protection | [CI/CD policy](CI_CD.md) and [AGENTS.md](../AGENTS.md#main-branch-policy) | [#33](https://github.com/TokitoAI/tokito-physical-runtime/issues/33) | Required before protected release merge |
 
@@ -64,8 +64,7 @@ Unknown hardware capabilities remain unknown until captured by
 must not encode an assumed iQOO SoC, accelerator, memory budget, or Android API
 level before that evidence exists.
 
-Standalone operation is the primary release path. Companion integration remains
-intentionally dormant. Issue
-[#32](https://github.com/TokitoAI/tokito-physical-runtime/issues/32) cannot start
-until the standalone Android application, reusable package, and conformance
-evidence satisfy Gate 6.
+Offline operation is a required capability inside the single Tokito application.
+The mobile-shell integration is complete; exact-device capability claims remain
+blocked until their corresponding evidence gates pass. No evidence gate may be
+used to justify resurrecting a separate Companion or Physical product.

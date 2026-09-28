@@ -44,17 +44,16 @@ The board is the roadmap. The consolidation epic is
 - Capability discovery precedes use. Missing capability means unavailable.
 - Mobile is not a schematic or PCB CAD editor.
 
-## Repository shape during consolidation
+## Repository shape
 
 - `apps/mobile/` - unified Expo/React Native shell.
 - `crates/` - Cloud core and UniFFI boundary.
-- `physical-runtime/` - history-preserved Physical source during migration.
+- `physical-runtime/` - embedded native physical workspace and preserved design history.
 - `docs/decisions/` - accepted architecture decisions.
 - `memory/` - verified agent facts.
 
-The Physical subtree is not a second product. Remove duplicate launchers and
-obsolete standalone packaging only after capabilities are consumed and verified
-by the unified application.
+The Physical subtree is not a second product. Duplicate launchers and obsolete
+standalone packaging must not be restored.
 
 ## Verification
 

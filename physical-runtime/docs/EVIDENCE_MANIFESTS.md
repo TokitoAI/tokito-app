@@ -17,8 +17,8 @@ verifiable by CI and later release tooling.
 | [#29](https://github.com/TokitoAI/tokito-physical-runtime/issues/29) | `schemas/calibration.policy.schema.json` |
 | [#30](https://github.com/TokitoAI/tokito-physical-runtime/issues/30) | `schemas/android.artifact-manifest.schema.json` |
 | [#31](https://github.com/TokitoAI/tokito-physical-runtime/issues/31) | `schemas/release.evidence-manifest.schema.json` |
-| [#32](https://github.com/TokitoAI/tokito-physical-runtime/issues/32) | `schemas/release.evidence-manifest.schema.json` blocks Companion integration until Gate 6 is accepted |
-| [#33](https://github.com/TokitoAI/tokito-physical-runtime/issues/33) | `docs/CI_CD.md`, `AGENTS.md`, and `.github/workflows/ci.yml` |
+| [unified integration #31](https://github.com/TokitoAI/tokito-app/issues/31) (transferred from historical #32) | `schemas/release.evidence-manifest.schema.json` records Gate 6 evidence; integration is complete and exact-device claims remain independently gated |
+| [unified CI #8](https://github.com/TokitoAI/tokito-app/issues/8) (supersedes historical #33) | root `docs/CI_CD.md`, `AGENTS.md`, and `.buildkite/pipeline.yml` |
 | [#37](https://github.com/TokitoAI/tokito-physical-runtime/issues/37) | `schemas/android.artifact-manifest.schema.json` and `schemas/release.evidence-manifest.schema.json` |
 | [#38](https://github.com/TokitoAI/tokito-physical-runtime/issues/38) | `schemas/model.bundle-manifest.schema.json`, `schemas/evaluation.run-manifest.schema.json`, and `schemas/calibration.policy.schema.json` |
 | [#79](https://github.com/TokitoAI/tokito-physical-runtime/issues/79) | `schemas/digital-twin.asset-manifest.schema.json`, `schemas/evaluation.run-manifest.schema.json`, and the active assembly-context revision |
