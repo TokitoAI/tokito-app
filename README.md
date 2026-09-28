@@ -1,78 +1,50 @@
-# Tokito Companion
+# Tokito
 
-Independent mobile client in the Tokito ecosystem. It has its own release,
-runtime, storage, and Cloud client; it is not a remote control or replication
-layer for [Tokito Desktop](https://github.com/TokitoAI/tokito).
+Tokito is one mobile workspace for electronics projects and physical bench
+work. It combines Cloud-backed project, schematic, BOM, chat, and suggestion
+review with a private, offline-first camera and AR assistant.
 
-- Sign in through Tokito Cloud (JWT via `tokito-api`)
-- Browse and review Cloud-owned resources exposed to this client
-- Keep mobile state in Companion's own cache and outbox
-- Pan, zoom, and inspect supported immutable documents
+## Product flow
 
-Desktop does not publish to, poll, import, or apply state from this application.
-Phone and tablet are first-class responsive layouts: compact tabs on phone;
-master/detail and wide review panes on tablet.
+- Open a project and choose **Inspect physical board** to carry its versioned
+  design context into a bench session.
+- Or choose **Start bench session** without an account or project, discover a
+  board locally, and attach context later.
+- Camera, audio, local reasoning, visual inference, and AR guidance execute on
+  the Android device. Raw camera and microphone streams are not uploaded.
+- Structured observations may be synchronized only through explicit actions.
 
-**Stack:** React Native + TypeScript shell, Rust core (`tokito-companion-core`)
-exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
+## Architecture
+
+```text
+React Native product shell
+  |-- authentication, projects, review, chat, settings
+  |-- navigation and physical-session entry
+  +-- typed native boundary
+        |-- CameraX and registration
+        |-- AR presentation
+        |-- local voice and measurement parsing
+        |-- local LLM/VLM and physical tools
+        +-- evidence, capability, thermal and model governance
+```
+
+The native boundary transports commands and typed low-rate state. Frames,
+audio buffers, tensors, and high-rate tracking data stay native.
 
 ## Workspace
 
-```
-crates/core/     # typed cloud clients, SSE resume, SQLite cache/outbox
-crates/ffi/      # UniFFI CompanionClient (cdylib/staticlib) for RN
-apps/mobile/     # React Native + TypeScript mobile review surface
-docs/            # architecture, API contract, hooks
-memory/          # agent notebook
-scripts/generate-bindings.sh   # Kotlin UniFFI smoke (gitignored output)
-scripts/build-android-ffi.sh   # NDK .so + Kotlin into Expo module (APK CI)
-```
+- `apps/mobile` - Expo/React Native TypeScript application shell
+- `crates/core` - Cloud contracts, cache, outbox, and realtime journal
+- `crates/ffi` - UniFFI bridge for the Cloud core
+- `physical-runtime` - history-preserved native runtime during migration
+- `docs` - product, API, migration, and architecture decisions
 
-## Development
+The consolidation is tracked by
+[TokitoAI/tokito-app#1](https://github.com/TokitoAI/tokito-app/issues/1).
 
-```bash
-# Rust (required)
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --locked
-bash scripts/generate-bindings.sh   # Linux: proves UniFFI surface
+Companion history is the repository base and Physical Runtime history is
+preserved in `physical-runtime/`. The merge is complete only when one launcher
+consumes the native runtime, duplicate packaging is removed, CI produces one
+signed APK/AAB, migrations are verified, and the retirement gate in
+[ADR 0001](docs/decisions/0001-unified-mobile-application.md) passes.
 
-# TypeScript / Expo shell
-cd apps/mobile && npm ci && npm run forbid-js && npm run typecheck && npm run lint && npm test
-cd apps/mobile && npx expo start
-```
-
-Default cloud base: `https://api.tokito.dev` (override with `TOKITO_CLOUD_BASE_URL`
-or `app.json` → `expo.extra.cloudBaseUrl`).
-
-## Android release (Play-quality signing, live API)
-
-**Current install / Play upload:** latest GitHub release asset
-`TokitoCompanion-<tag>.apk` / `.aab` on
-[Releases](https://github.com/TokitoAI/tokito-companion/releases).
-
-CI [android-release](.github/workflows/android-release.yml):
-
-- `assembleRelease` + `bundleRelease` with embedded JS + UniFFI `.so`
-- **Upload keystore** signing (GitHub secrets `ANDROID_UPLOAD_*`) — not Android Debug
-- Cloud: `https://api.tokito.dev` (tokito-api)
-- Tag: `git tag v0.2.2-pre.N && git push origin v0.2.2-pre.N`
-
-Uninstall any older **debug-signed** Companion before installing upload-signed
-builds (signature mismatch).
-
-Package id: `dev.tokito.companion`. Companion owns its mobile dark palette
-(mint accent, brand tile, Phosphor icons). Phone controls use 44dp+
-targets; tablets ≥768dp use a dedicated master/detail composition.
-
-## Docs
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/API_CONTRACT.md](docs/API_CONTRACT.md)
-- [docs/HOOKS.md](docs/HOOKS.md)
-- [docs/PRODUCT_BOUNDARY.md](docs/PRODUCT_BOUNDARY.md)
-- [AGENTS.md](AGENTS.md) — for AI coding assistants
-
-## License
-
-MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "change_id": "example-removal",
+  "dataset_id": "tokito-example-corpus",
+  "base_revision": "example-r1",
+  "base_dataset_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "target_revision": "example-r2",
+  "created_at": "2026-08-29T00:00:00Z",
+  "reason": "Demonstrate an auditable removal request.",
+  "operations": [{ "operation": "remove", "item_id": "board-a-session-1-frame-1", "reason": "Consent withdrawn." }],
+  "integrity": { "manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "frame": {
+    "frame_id": "synthetic-frame-001",
+    "coordinate_frame": "upright-image-pixels",
+    "width": 10,
+    "height": 8,
+    "captured_monotonic_ms": 1000,
+    "pixels": [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 200, 200, 200, 200, 200, 200, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+  },
+  "board_profile": {
+    "profile_id": "synthetic-board-profile",
+    "board_frame_id": "synthetic-board-mm",
+    "width": 80.0,
+    "height": 50.0,
+    "units": "mm",
+    "coordinate_system": "board-mm-right-handed"
+  },
+  "detector": {
+    "threshold": 128,
+    "minimum_area_ratio": 0.05,
+    "minimum_confidence": 0.5
+  }
+}

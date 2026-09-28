@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "policy_id": "tokito-example-calibration",
+  "policy_revision": "not-yet-fit",
+  "capability": "component_inspection",
+  "fit": {
+    "split": "calibration",
+    "method": "not-yet-selected"
+  },
+  "evaluation": {
+    "held_out_split": "test",
+    "expected_calibration_error": 0,
+    "coverage_curve_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "risk_coverage_curve_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "thresholds": {
+    "automation_precision_floor": "not-yet-set"
+  },
+  "abstention_cases": ["out-of-distribution", "occlusion", "low-light", "repeated-package"]
+}

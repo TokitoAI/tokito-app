@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/corpus.inventory-manifest.schema.json",
+  "title": "Tokito Corpus Inventory Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "dataset_revision", "created_at", "items", "integrity"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_revision": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["item_id", "board_id", "board_revision", "session_id", "leakage_group_id", "source_id", "media", "origin_class", "fingerprints", "lineage", "status"],
+        "properties": {
+          "item_id": { "type": "string", "minLength": 1 },
+          "board_id": { "type": "string", "minLength": 1 },
+          "board_revision": { "type": "string", "minLength": 1 },
+          "session_id": { "type": "string", "minLength": 1 },
+          "leakage_group_id": { "type": "string", "minLength": 1 },
+          "source_id": { "type": "string", "minLength": 1 },
+          "media": {
+            "type": "object", "additionalProperties": false,
+            "required": ["uri", "sha256", "size_bytes", "mime_type"],
+            "properties": {
+              "uri": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+              "size_bytes": { "type": "integer", "minimum": 0 },
+              "mime_type": { "type": "string", "minLength": 1 }
+            }
+          },
+          "origin_class": { "enum": ["public", "contributed", "synthetic", "private"] },
+          "capture": {
+            "type": "object", "additionalProperties": false,
+            "required": ["device_id", "lens", "width", "height", "lighting", "distance", "angle", "occlusion", "motion"],
+            "properties": {
+              "device_id": { "type": "string", "minLength": 1 }, "lens": { "type": "string", "minLength": 1 },
+              "width": { "type": "integer", "minimum": 1 }, "height": { "type": "integer", "minimum": 1 },
+              "lighting": { "type": "string", "minLength": 1 }, "distance": { "type": "string", "minLength": 1 },
+              "angle": { "type": "string", "minLength": 1 }, "occlusion": { "type": "string", "minLength": 1 },
+              "motion": { "type": "string", "minLength": 1 }
+            }
+          },
+          "fingerprints": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": false, "required": ["algorithm", "value"], "properties": { "algorithm": { "type": "string", "minLength": 1 }, "value": { "type": "string", "pattern": "^[0-9a-f]+$" } } }
+          },
+          "lineage": { "type": "object", "additionalProperties": false, "required": ["parent_item_ids", "transform"], "properties": { "parent_item_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }, "transform": { "type": "string", "minLength": 1 } } },
+          "status": { "enum": ["active", "excluded"] },
+          "exclusion_reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "integrity": { "type": "object", "additionalProperties": false, "required": ["manifest_digest"], "properties": { "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } }
+  }
+}

@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Reference implementation. Every repo carries its own copy at
+# .buildkite/steps/run-in-image.sh, because no-command-eval requires the script
+# to live in the checkout being built.
+#
+# Usage:  .buildkite/steps/run-in-image.sh ci-linux
+#
+# Runs a just recipe inside the pinned CI image against the current checkout.
+set -euo pipefail
+
+: "${CI_IMAGE:?pipeline.yml must set CI_IMAGE to a digest-pinned image}"
+
+recipe="${1:?a just recipe is required}"
+shift || true
+
+# --user 0:0 is load-bearing under ROOTLESS Docker, and is the opposite of what
+# it looks like.
+#
+# Rootless Docker maps container uid 0 to the host user running the daemon
+# (bkagent). So "root" in the container writes files owned by bkagent on the
+# host — exactly what we want for a bind-mounted checkout. Running as a non-zero
+# container uid instead maps to a *subuid* (165536+), leaving files in the
+# Buildkite checkout owned by a uid that does not exist on the host, which
+# breaks the next build's `git clean`.
+#
+# It grants no privilege on the host: the whole daemon is unprivileged.
+docker_args=(
+  --rm
+  --user 0:0
+  --volume "$PWD:/work"
+  --workdir /work
+)
+
+# Persist the cargo registry and the target directory across jobs. Without this
+# every build recompiles every dependency from scratch — sccache is not wired up
+# yet (it needs the Azure Blob backend from Part 1; SCCACHE_GHA_ENABLED was a
+# GitHub-Actions-only thing and does not exist here).
+docker_args+=(
+  --volume "tokito-cargo-registry:/usr/local/cargo/registry"
+  --volume "tokito-cargo-git:/usr/local/cargo/git"
+  --volume "tokito-target-${BUILDKITE_PIPELINE_SLUG:-local}:/work/target"
+)
+
+# Gradle keeps its downloaded dependencies and the Gradle distribution itself in
+# GRADLE_USER_HOME. Without persisting it, every Android build re-downloads the
+# whole graph — the same reason the cargo registry is a volume.
+if [ -n "${CI_GRADLE_CACHE:-}" ]; then
+  docker_args+=(--volume "tokito-gradle-${BUILDKITE_PIPELINE_SLUG:-local}:/opt/gradle")
+fi
+
+# Forwarded because the decision is made *inside* the container, by the script
+# below. Setting it only on the host does nothing — which cost an hour.
+if [ -n "${CI_RUN_AS_ROOT:-}" ]; then
+  docker_args+=(--env CI_RUN_AS_ROOT)
+fi
+
+# Optional: join a user-defined Docker network, for steps that need a service
+# container (tokito-api's test suite needs PostgreSQL).
+#
+# This is deliberately NOT `--network host`. Host networking would put the build
+# container on the host's loopback, where Infisical (127.0.0.1:8080) and
+# Windmill (127.0.0.1:8000) are listening — and "those bind to loopback on the
+# host, unreachable from a container" is the entire isolation argument for
+# co-locating the build agent with the secrets stack. A user-defined network
+# reaches the service by container name and reaches nothing else.
+if [ -n "${CI_NETWORK:-}" ]; then
+  docker_args+=(--network "$CI_NETWORK")
+fi
+
+# Optional: forward named environment variables into the container, for things
+# like a service container's connection URL. Names only — values come from the
+# caller's environment, so they never appear in a process listing.
+for _var in ${CI_PASS_ENV:-}; do
+  docker_args+=(--env "$_var")
+done
+
+# Private TokitoAI git dependencies (ui, catalog, schematic-core) need a
+# credential. Mint a one-hour GitHub App installation token rather than baking
+# in a long-lived PAT — this is what replaces VTRON_DEPS_TOKEN.
+if [ -x /usr/local/bin/tokito-gh-token ]; then
+  GH_TOKEN="$(/usr/local/bin/tokito-gh-token)"
+  export GH_TOKEN
+  docker_args+=(--env GH_TOKEN)
+fi
+
+exec docker run "${docker_args[@]}" "$CI_IMAGE" bash -euo pipefail -c '
+  # The container starts as root for the reason above, then drops to an
+  # unprivileged uid for the build itself — because PostgreSQL refuses to run
+  # as uid 0, and pg-embed starts one for the DB integration tests:
+  #
+  #   embedded PostgreSQL failed after retries
+  #   Caused by: PostgreSQL could not be initialized.
+  #
+  # So: root sets up ownership on the cache volumes, then hands off. Everything
+  # the build writes goes to those volumes or /tmp, never into the bind-mounted
+  # checkout, so the host copy stays owned by the agent user.
+  # Dropping privileges exists for exactly one reason: PostgreSQL refuses to run
+  # as uid 0, and pg-embed starts one for the DB integration tests. Builds with
+  # no such constraint should not pay for it — Gradle writes `.gradle/` and
+  # `build/` directories *inside* the project tree, which an unprivileged uid
+  # cannot do in a bind-mounted checkout:
+  #
+  #   Cannot create directory /work/.gradle/8.13/fileHashes
+  #
+  # Container root is the unprivileged host agent under rootless Docker, so
+  # staying root keeps the checkout writable and agent-owned.
+  if [ -n "${CI_RUN_AS_ROOT:-}" ]; then
+    exec just "$@"
+  fi
+
+  BUILD_UID=5000
+  useradd -m -u "$BUILD_UID" build 2>/dev/null || true
+
+  # Some repos (ui) deliberately gitignore Cargo.lock, the usual library
+  # convention. Cargo then wants to create one beside Cargo.toml — inside the
+  # bind-mounted checkout, which the unprivileged build user cannot write:
+  #
+  #   failed to create file `Cargo.lock`: Permission denied (os error 13)
+  #
+  # Generating it here, while still root, leaves it owned by the host agent user
+  # and up to date, so the build only ever reads it.
+  #
+  # This is a workaround for a missing lockfile, not a substitute for one: it
+  # resolves dependencies afresh each run, so those builds are not reproducible.
+  # Committing Cargo.lock would fix that properly.
+  if [ -f /work/Cargo.toml ] && [ ! -f /work/Cargo.lock ]; then
+    cargo generate-lockfile --manifest-path /work/Cargo.toml
+  fi
+
+  chown -R "$BUILD_UID" /work/target /usr/local/cargo/registry /usr/local/cargo/git 2>/dev/null || true
+  [ -d /opt/gradle ] && chown -R "$BUILD_UID" /opt/gradle 2>/dev/null || true
+
+  # --system, not --global: the build runs as a different user than the one
+  # writing this config, so it has to land somewhere both can read.
+  git config --system --add safe.directory /work
+
+  if [ -n "${GH_TOKEN:-}" ]; then
+    git config --system \
+      url."https://x-access-token:${GH_TOKEN}@github.com/TokitoAI/".insteadOf \
+      "https://github.com/TokitoAI/"
+  fi
+
+  exec setpriv --reuid="$BUILD_UID" --regid="$BUILD_UID" --clear-groups \
+    env HOME=/home/build \
+        PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        CARGO_HOME=/usr/local/cargo \
+        RUSTUP_HOME=/usr/local/rustup \
+        CARGO_TERM_COLOR=always \
+        RUST_BACKTRACE=1 \
+    just "$@"
+' bash "$recipe" "$@"

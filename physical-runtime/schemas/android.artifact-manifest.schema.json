@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/android.artifact-manifest.schema.json",
+  "title": "Tokito Android Artifact Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "artifact_revision",
+    "contract_version",
+    "aar",
+    "abi_splits",
+    "license_notices",
+    "conformance",
+    "capability_surface"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "artifact_revision": { "type": "string", "minLength": 1 },
+    "contract_version": { "type": "string", "minLength": 1 },
+    "aar": { "type": "object", "required": ["digest", "size_bytes"], "properties": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, "size_bytes": { "type": "integer", "minimum": 1 } } },
+    "abi_splits": { "type": "array", "items": { "type": "string" } },
+    "license_notices": { "type": "object", "required": ["digest"], "properties": { "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } },
+    "conformance": { "type": "object", "required": ["harness_revision", "results_digest"], "properties": { "harness_revision": { "type": "string", "minLength": 1 }, "results_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } },
+    "capability_surface": { "type": "array", "items": { "type": "string" } }
+  }
+}

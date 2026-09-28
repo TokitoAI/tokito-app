@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "artifact_id": "tokito-runtime-aar",
+  "artifact_revision": "not-yet-built",
+  "contract_version": "not-yet-released",
+  "aar": {
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "size_bytes": 1
+  },
+  "abi_splits": ["not-yet-built"],
+  "license_notices": {
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "conformance": {
+    "harness_revision": "not-yet-built",
+    "results_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "capability_surface": []
+}

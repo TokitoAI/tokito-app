@@ -1,67 +1,76 @@
 # AGENTS.md
 
-**For AI coding assistants working in this repo.** Read this first, then the
-`memory/` files relevant to your task. Check the org board:
-<https://github.com/orgs/TokitoAI/projects/1>.
+Read this file first, then relevant `memory/` and `docs/` files. Inspect the
+Tokito organization board before starting work.
 
 ## Product
 
-Tokito Companion is an **independent mobile application** in the Tokito
-ecosystem. It owns its runtime, release, local storage, and Cloud client.
-Tokito Desktop neither supplies nor consumes its project state. Phone and
-tablet are both first-class: phone uses a compact flow; tablet uses
-master/detail and wide review panes without changing product capabilities.
+`tokito-app` is the single Tokito mobile application. It combines Cloud-backed
+project review with an offline-first native physical-intelligence workspace.
+There is one application identity, navigation system, release train, and user
+experience.
 
-## How this notebook works
+The application shell is React Native/TypeScript. CameraX, AR, audio, local
+models, physical tools, and latency-sensitive lifecycle work remain native
+Android components. Raw camera frames and microphone buffers never cross the
+React Native bridge. The bridge carries bounded commands, capability state,
+typed observations, and lifecycle events only.
 
-- **`AGENTS.md`** — instructions + memory index.
-- **`memory/`** — project facts. Update in the same commit as the code that
-  made a fact true. Style: `**Why:**` / `**How to apply:**` when non-obvious.
+Local bench workflows work without authentication or networking. Cloud
+projects and synchronization use public, versioned `tokito-api` contracts.
+Unsupported capabilities are absent; never ship a stub or fake success.
 
-## Board
+## Board and pull requests
 
-Companion work is tracked on the org project board. Prefer issues on
-`TokitoAI/tokito-companion` for app work; cross-repo API work may also use
-`TokitoAI/tokito-api` / `TokitoAI/tokito` issues linked from the Companion
-epic. Type labels: `epic`, `feature`, `task`, `bug`, `chore`.
+The board is the roadmap. The consolidation epic is
+<https://github.com/TokitoAI/tokito-app/issues/1>.
 
-Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
+- Every change has an issue and board card.
+- Move work through In progress -> In review -> Done.
+- PR descriptions use `Closes #N` or `Fixes #N`.
+- Merge only when required checks pass and conversations are resolved.
+- Record unavailable exact-device checks as deferred; never mark them passed.
 
-## Rules
+## Architecture rules
 
-- **No JavaScript app sources** under `apps/mobile/src` (TypeScript only). CI
-  `forbid-js` enforces this. Expo tooling may use root configs
-  (`babel.config.js`, etc.) and `.mjs` under `apps/mobile/scripts/`.
-- **Android release** is built by `.github/workflows/android-release.yml`:
-  **`assembleRelease` + `bundleRelease`**, UniFFI
-  `libtokito_companion_ffi.so`, **upload keystore** signing (GitHub secrets
-  `ANDROID_UPLOAD_*` — Play-quality, not debug). Cloud stays
-  `https://api.tokito.dev`. UI tokens/icons mirror `tokito_ui`.
-- **Android UniFFI artifacts are an inseparable pair.** Before any local APK,
-  run `scripts/build-android-ffi.ps1` on Windows or
-  `scripts/build-android-ffi.sh` on Linux. Gradle verifies the generated
-  manifest and refuses to package stale Kotlin bindings with a different `.so`.
-- **No stub clients or stub HTTP routes.** Device builds must use UniFFI
-  (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
-  If a `/v1/companion/*` method is not implemented server-side yet, do not
-  ship a fake client — wait for the `tokito-api` PR.
-- **Cloud auth is a public service contract, not Desktop coupling.** Call
-  `tokito-api` `/v1/auth/*` only and maintain this client's own error mapping.
-- **Desktop and Companion are fully detached.** Never add a dependency on the
-  Desktop repository, its local database, workspace folders, internal event
-  types, or editor mutation paths. Do not ask Desktop to publish/poll/apply
-  Companion state. See `docs/PRODUCT_BOUNDARY.md`; the core regression test is
-  review-blocking.
-- **No large binaries in git.** Artifacts live behind the API, not in the repo.
-- **Small PRs, green CI.** Milestone series M0–M6 — see `memory/milestones.md`.
+- One launcher and final package/signing lineage.
+- React Native owns ordinary navigation and Cloud/product surfaces.
+- Native Android owns camera, AR, audio, local inference, and physical-session lifecycle.
+- Never stream frames, PCM, tensors, or high-rate tracking over JS/UniFFI boundaries.
+- Physical use cannot require sign-in or silently fall back to remote models.
+- Raw media stays on-device and ephemeral by default.
+- Cloud sync is limited to explicitly authorized structured data.
+- Context and observations are revision-bound; mismatch is a conflict.
+- Capability discovery precedes use. Missing capability means unavailable.
+- Mobile is not a schematic or PCB CAD editor.
+
+## Repository shape during consolidation
+
+- `apps/mobile/` - unified Expo/React Native shell.
+- `crates/` - Cloud core and UniFFI boundary.
+- `physical-runtime/` - history-preserved Physical source during migration.
+- `docs/decisions/` - accepted architecture decisions.
+- `memory/` - verified agent facts.
+
+The Physical subtree is not a second product. Remove duplicate launchers and
+obsolete standalone packaging only after capabilities are consumed and verified
+by the unified application.
+
+## Verification
+
+Run all checks relevant to changed layers: Rust formatting/clippy/tests,
+TypeScript lint/typecheck/tests, Android unit/emulator tests, Gradle lint and
+assembly, contract tests, package/signature checks, and security audits.
+Hardware-only iQOO evidence remains explicit but may be deferred while the
+device is unavailable.
 
 ## Memory index
 
 | File | Contents |
 |---|---|
-| [memory/product.md](memory/product.md) | Companion product framing |
-| [memory/architecture.md](memory/architecture.md) | Workspace shape, RN+UniFFI, deps |
-| [memory/hooks.md](memory/hooks.md) | Cross-repo hook points |
-| [memory/milestones.md](memory/milestones.md) | M0–M6 PR series |
-| [memory/auth-contract.md](memory/auth-contract.md) | Auth wire contract facts |
-| [memory/signing.md](memory/signing.md) | Android upload keystore / Play signing |
+| [memory/product.md](memory/product.md) | Unified product framing |
+| [memory/architecture.md](memory/architecture.md) | Shell/native/data boundaries |
+| [memory/migration.md](memory/migration.md) | Consolidation and retirement gates |
+| [memory/auth-contract.md](memory/auth-contract.md) | Cloud authentication |
+| [memory/signing.md](memory/signing.md) | Android signing lineage |
+
