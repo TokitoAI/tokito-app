@@ -9,6 +9,23 @@ English synthesis. The runtime still uses a composed pipeline instead of
 forcing one VLM to handle tracking, component identity, LED state, speech, and
 guidance.
 
+## Signed bundle production
+
+Release engineering builds the exact offline ZIP consumed by Android with
+`tools/build_model_bundle.py`. The tool inventories every artifact, writes
+canonical manifest bytes, signs those bytes with the Tokito P-256 release key
+through OpenSSL, and emits no private material:
+
+```sh
+python tools/build_model_bundle.py ./dialogue-payload ./tokito-dialogue.zip \
+  --signing-key /secure/tokito-model-signing-p256.pem \
+  --capability dialogue --model-id tokito-dialogue --model-revision 2026.09
+```
+
+The signing key belongs only in the release secret store. It must never enter
+Git, an APK, a model bundle, logs, or CI artifacts. The app embeds only the
+corresponding public verification key.
+
 ## Planned capability families
 
 | Layer | Candidate approach | Activation |
