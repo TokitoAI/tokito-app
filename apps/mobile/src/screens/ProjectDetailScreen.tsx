@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { ArrowLeft, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
+import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
 import type { BomLine, ProjectDetail, Proposal } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
 import { CompanionError } from "../native/types";
@@ -19,11 +19,12 @@ export interface ProjectDetailScreenProps {
   onBack: () => void;
   onOpenSvg: (artifactName: string) => void;
   onOpenLiveSchematic: (designId: string) => void;
+  onStartBench: (designId: string | null) => void;
   /** Back is hidden only in the optional tablet master/detail enhancement. */
   showBack?: boolean;
 }
 
-export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSvg, onOpenLiveSchematic, showBack = true }: ProjectDetailScreenProps): JSX.Element {
+export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSvg, onOpenLiveSchematic, onStartBench, showBack = true }: ProjectDetailScreenProps): JSX.Element {
   const { width } = useWindowDimensions();
   const tablet = width >= TABLET_MIN_WIDTH;
   const realtime = useRealtimeWorkspace();
@@ -111,7 +112,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
         <View style={styles.identity}><Text style={styles.eyebrow}>PROJECT</Text><Text style={styles.title} numberOfLines={1}>{projectName}</Text><Text style={styles.subtitle} numberOfLines={1}>{activeDesignName}</Text></View>
         <View accessibilityLabel={`Sync ${realtime.status}`} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{realtime.status === "live" ? "Live" : "Syncing"}</Text></View>
       </View>
-      {designs.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.designRail} contentContainerStyle={styles.designTabs}>{designs.map((design) => <Pressable key={design.id} accessibilityState={{ selected: activeDesignId === design.id }} onPress={() => setSelectedDesignId(design.id)} style={[styles.designTab, activeDesignId === design.id && styles.designTabActive]}><Text style={[styles.designTabText, activeDesignId === design.id && styles.designTabTextActive]}>{design.name}</Text></Pressable>)}</ScrollView> : null}
+      {designs.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.designRail} contentContainerStyle={styles.designTabs}>{designs.map((design) => <Pressable key={design.id} accessibilityRole="tab" accessibilityState={{ selected: activeDesignId === design.id }} onPress={() => setSelectedDesignId(design.id)} style={[styles.designTab, activeDesignId === design.id && styles.designTabActive]}><Text style={[styles.designTabText, activeDesignId === design.id && styles.designTabTextActive]}>{design.name}</Text></Pressable>)}</ScrollView> : null}
       <View accessibilityRole="tablist" style={[styles.nav, tablet && styles.navTablet]}>
         <Tab label="Design" icon={<Circuitry size={20} color={section === "design" ? tokens.text : tokens.text2} />} selected={section === "design"} onPress={() => setSection("design")} />
         <Tab label="Chat" icon={<ChatCircleDots size={20} color={section === "chat" ? tokens.text : tokens.text2} />} selected={section === "chat"} onPress={() => setSection("chat")} />
@@ -124,6 +125,11 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
         {section === "design" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
           <View style={[styles.designColumns, tablet && styles.designColumnsTablet]}>
             <View style={styles.designPrimary}>
+              <Card style={styles.benchCard}>
+                <View style={styles.schematicIcon}><Camera size={28} color={tokens.accent} /></View>
+                <View style={styles.flex}><Text style={styles.cardTitle}>Continue at the bench</Text><Muted>Open a private, on-device session with this project and design attached.</Muted></View>
+                <PrimaryButton label="Start" onPress={() => onStartBench(activeDesignId)} style={styles.benchAction} />
+              </Card>
               <Card onPress={hasLiveSchematic && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasLiveSchematic && styles.cardDisabled]}>
                 <View style={styles.schematicIcon}><Circuitry size={30} color={tokens.accent} /></View>
                 <View style={styles.flex}><Text style={styles.cardTitle}>{hasLiveSchematic ? "View schematic" : "No schematic available"}</Text><Muted>{hasLiveSchematic ? "Pan, zoom, and inspect this Cloud document." : "This Cloud workspace does not currently contain a schematic."}</Muted></View>
@@ -172,6 +178,8 @@ const styles = StyleSheet.create({
   nav: { minHeight: 58, flexDirection: "row", padding: 6, gap: 4, borderBottomWidth: 1, borderBottomColor: tokens.border, backgroundColor: tokens.bgChrome }, navTablet: { paddingHorizontal: 24 }, navItem: { flex: 1, minHeight: 46, borderRadius: tokens.radiusSm, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }, navItemActive: { backgroundColor: tokens.cardHover }, navText: { color: tokens.text2, fontSize: 12, fontWeight: "500" }, navTextActive: { color: tokens.text, fontWeight: "700" },
   content: { padding: 16, paddingBottom: 48, gap: 12 }, contentTablet: { padding: 24 }, panel: { width: "100%", maxWidth: 760, alignSelf: "center", gap: 12 }, panelTablet: { maxWidth: 1400 }, chatPanelTablet: { maxWidth: 960 }, designColumns: { gap: 16 }, designColumnsTablet: { flexDirection: "row", alignItems: "flex-start", gap: 20 }, designPrimary: { flex: 1, gap: 12 }, bomPane: { flex: 1.12, gap: 12, minWidth: 0 }, sectionHead: { minHeight: 30, flexDirection: "row", alignItems: "center", gap: 7 }, help: { color: tokens.text2, fontSize: 13, lineHeight: 19, marginTop: -8 }, count: { marginLeft: "auto", color: tokens.text2, fontSize: 12, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 12, backgroundColor: tokens.card },
   schematicCard: { minHeight: 104, flexDirection: "row", alignItems: "center", gap: 12, borderColor: "rgba(8,201,170,0.35)", backgroundColor: tokens.accentSoft }, schematicCardTablet: { minHeight: 150 }, cardDisabled: { opacity: 0.7, borderColor: tokens.border, backgroundColor: tokens.card }, schematicIcon: { width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center", backgroundColor: tokens.brandTile }, cardTitle: { color: tokens.text, fontSize: 15, fontWeight: "700", marginBottom: 4 }, open: { color: tokens.accent, fontSize: 12, fontWeight: "700" }, flex: { flex: 1, minWidth: 0 },
+  benchCard: { minHeight: 104, gap: 12, borderColor: "rgba(8,201,170,0.35)", backgroundColor: tokens.accentSoft },
+  benchAction: { alignSelf: "flex-start", minWidth: 112 },
   bomRow: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.border }, refBadge: { minWidth: 52, minHeight: 34, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: tokens.radiusSm, backgroundColor: tokens.card }, refText: { color: tokens.accent, fontSize: 12, fontWeight: "700" }, bomValue: { color: tokens.text, fontSize: 14, fontWeight: "600" }, bomFootprint: { color: tokens.text2, fontSize: 11, marginTop: 2 }, qty: { color: tokens.text2, fontSize: 13, fontWeight: "600" },
   previewCard: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 12 }, previewName: { flex: 1, color: tokens.text, fontSize: 13, fontWeight: "600" }, empty: { minHeight: 132, alignItems: "center", justifyContent: "center", gap: 7, padding: 16, borderWidth: 1, borderStyle: "dashed", borderColor: tokens.borderStrong, borderRadius: tokens.radiusMd, backgroundColor: tokens.bgChrome }, emptyTitle: { color: tokens.text, fontSize: 16, fontWeight: "700" },
   chatHistory: { gap: 8 }, chatBubble: { alignSelf: "flex-start", maxWidth: "88%", padding: 12, borderRadius: 14, borderBottomLeftRadius: 4, backgroundColor: tokens.card, borderWidth: 1, borderColor: tokens.border }, chatBubbleUser: { alignSelf: "flex-end", borderBottomLeftRadius: 14, borderBottomRightRadius: 4, borderColor: "rgba(8,201,170,0.4)", backgroundColor: tokens.accentSoft }, chatRole: { color: tokens.text2, fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }, chatText: { color: tokens.text, fontSize: 14, lineHeight: 20 }, composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginTop: 5 }, chatInput: { flex: 1, minHeight: 52, maxHeight: 130, paddingHorizontal: 13, paddingVertical: 11, color: tokens.text, fontSize: 15, textAlignVertical: "top", borderRadius: 15, borderWidth: 1, borderColor: tokens.borderStrong, backgroundColor: tokens.card }, send: { minWidth: 72, minHeight: 52, borderRadius: 15 }, proposalGrid: { gap: 12 }, proposalGridTablet: { flexDirection: "row", flexWrap: "wrap" }, proposalCard: { gap: 4 }, proposalCardTablet: { width: "49%", minHeight: 150 }, actions: { flexDirection: "row", gap: 8, marginTop: 10 }, action: { flex: 1, minHeight: 48 },

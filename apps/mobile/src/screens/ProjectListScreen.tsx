@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import {
   ArrowClockwise,
+  Camera,
   FolderSimple,
   SignOut,
 } from "phosphor-react-native";
@@ -18,7 +19,7 @@ import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
-import { BrandTile, Card, ErrorText, Muted } from "../ui/primitives";
+import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
   client: CloudClient;
@@ -27,6 +28,7 @@ export interface ProjectListScreenProps {
   accountPlan: string;
   selectedId?: string | null;
   onOpenProject: (id: string) => void;
+  onStartBench: () => void;
   onSignOut: () => void;
   /** When embedded as tablet master pane, tighten chrome. */
   embedded?: boolean;
@@ -39,6 +41,7 @@ export function ProjectListScreen({
   accountPlan,
   selectedId = null,
   onOpenProject,
+  onStartBench,
   onSignOut,
   embedded = false,
 }: ProjectListScreenProps): JSX.Element {
@@ -107,12 +110,13 @@ export function ProjectListScreen({
         <View style={styles.headerActions}>
           <Pressable
             accessibilityLabel="Refresh projects"
+            accessibilityRole="button"
             onPress={() => void reload()}
             style={styles.iconBtn}
           >
             <ArrowClockwise size={20} color={tokens.accent} weight="regular" />
           </Pressable>
-          <Pressable accessibilityLabel="Sign out" onPress={onSignOut} style={styles.iconBtn}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={onSignOut} style={styles.iconBtn}>
             <SignOut size={20} color={tokens.text2} weight="regular" />
           </Pressable>
         </View>
@@ -123,6 +127,13 @@ export function ProjectListScreen({
         <Text style={styles.h2}>Projects</Text>
         <Text style={styles.count}>{projects.length}</Text>
       </View>
+
+      <PrimaryButton
+        label="Start bench session"
+        icon={<Camera size={18} color={tokens.accentInk} weight="regular" />}
+        onPress={onStartBench}
+        style={styles.benchButton}
+      />
 
       {loading ? (
         <ActivityIndicator color={tokens.accent} style={{ marginTop: tokens.space5 }} />
@@ -223,6 +234,7 @@ const styles = StyleSheet.create({
   },
   h2: { color: tokens.text, fontSize: 16, fontWeight: "600" },
   count: { color: tokens.text3, fontSize: 11, marginLeft: "auto", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: tokens.card },
+  benchButton: { marginBottom: tokens.space4 },
   cardSelected: {
     borderColor: tokens.accent,
     backgroundColor: tokens.accentSoft,

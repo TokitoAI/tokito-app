@@ -32,3 +32,20 @@ test("realtime authoring is explicitly allowlisted", async () => {
   assert.match(source, /"chat" \| "suggestions"/);
   assert.match(source, /resource !== "chat" && resource !== "suggestions"/);
 });
+
+test("local bench work is available without Cloud authentication", async () => {
+  const [app, home, signIn] = await Promise.all([
+    readFile(new URL("../src/App.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/screens/HomeScreen.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/screens/SignInScreen.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(app, /state\.status === "signed_out"/);
+  assert.match(app, /<HomeScreen/);
+  assert.match(app, /onStartBench=\{\(\) => void startBench\(\)\}/);
+  assert.match(home, /No account or network is required/);
+  assert.match(home, /Sign in to Tokito Cloud/);
+  assert.doesNotMatch(home, /choose (?:a )?mode|Companion mode|Physical mode/i);
+  assert.doesNotMatch(signIn, />\s*Companion\s*</);
+  assert.doesNotMatch(signIn, /Companion mode/i);
+});

@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
+  Alert,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -22,11 +22,13 @@ import { ProjectDetailScreen } from "./screens/ProjectDetailScreen";
 import { ProjectListScreen } from "./screens/ProjectListScreen";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
 import { LiveSchematicViewerScreen } from "./screens/LiveSchematicViewerScreen";
+import { HomeScreen } from "./screens/HomeScreen";
 import { SignInScreen } from "./screens/SignInScreen";
+import { TokitoPhysical } from "../modules/tokito-physical/src";
 import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
-import { BrandTile, PrimaryButton } from "./ui/primitives";
+import { BrandTile } from "./ui/primitives";
 
 type Route =
   | { name: "projects" }
@@ -81,6 +83,7 @@ export default function App({
   const [booting, setBooting] = useState(true);
   const [state, setState] = useState<AuthState>({ status: "signed_out" });
   const [route, setRoute] = useState<Route>({ name: "projects" });
+  const [signedOutView, setSignedOutView] = useState<"home" | "sign_in">("home");
   const [bootError, setBootError] = useState<string | null>(null);
   const [restoreBlocked, setRestoreBlocked] = useState(false);
 
@@ -93,6 +96,7 @@ export default function App({
       setState(next);
       if (next.status === "signed_out") {
         setRoute({ name: "projects" });
+        setSignedOutView("home");
       }
     } catch (err) {
       const message =
@@ -113,6 +117,18 @@ export default function App({
     }
   }, [auth]);
 
+  const startBench = useCallback(async (projectId?: string, designId?: string) => {
+    try {
+      await TokitoPhysical.openSession({
+        ...(projectId === undefined ? {} : { projectId }),
+        ...(designId === undefined ? {} : { designId }),
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Physical session is unavailable on this device.";
+      Alert.alert("Could not start session", message);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -128,41 +144,32 @@ export default function App({
     );
   }
 
-  if (restoreBlocked) {
-    return (
-      <View style={styles.centerPad}>
-        <StatusBar style="light" />
-        <BrandTile size={48} />
-        <Text style={styles.brand}>Tokito</Text>
-        <Text style={styles.error}>{bootError ?? "Could not reach Tokito Cloud"}</Text>
-        <PrimaryButton label="Retry" onPress={() => void refresh()} style={{ marginTop: 8, minWidth: 160 }} />
-        <Pressable
-          onPress={() => {
-            void (async () => {
-              await auth.signOut();
-              setRestoreBlocked(false);
-              setState({ status: "signed_out" });
-              setBootError(null);
-            })();
-          }}
-        >
-          <Text style={styles.link}>Sign in with a different account</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   if (state.status === "signed_out") {
     return (
       <View style={styles.root}>
         <StatusBar style="light" />
-        {bootError !== null ? <Text style={styles.errorPad}>{bootError}</Text> : null}
-        <SignInScreen
-          auth={auth}
-          onSignedIn={() => {
-            void refresh();
-          }}
-        />
+        {signedOutView === "home" ? (
+          <HomeScreen
+            cloudMessage={restoreBlocked ? bootError ?? "Tokito Cloud is unavailable." : null}
+            onStartBench={() => void startBench()}
+            onSignIn={() => {
+              void (async () => {
+                if (restoreBlocked) await auth.signOut();
+                setRestoreBlocked(false);
+                setBootError(null);
+                setSignedOutView("sign_in");
+              })();
+            }}
+          />
+        ) : (
+          <SignInScreen
+            auth={auth}
+            onBack={() => setSignedOutView("home")}
+            onSignedIn={() => {
+              void refresh();
+            }}
+          />
+        )}
       </View>
     );
   }
@@ -219,6 +226,7 @@ export default function App({
             selectedId={selectedId}
             embedded
             onOpenProject={(id) => setRoute({ name: "project", id })}
+            onStartBench={() => void startBench()}
             onSignOut={() => {
               void (async () => {
                 await auth.signOut();
@@ -241,6 +249,7 @@ export default function App({
               onOpenLiveSchematic={(designId) =>
                 setRoute({ name: "live_schematic", projectId: detailId, designId })
               }
+              onStartBench={(designId) => void startBench(detailId, designId ?? undefined)}
             />
           ) : (
             <View style={styles.emptyDetail}>
@@ -272,6 +281,7 @@ export default function App({
           onOpenLiveSchematic={(designId) =>
             setRoute({ name: "live_schematic", projectId: route.id, designId })
           }
+          onStartBench={(designId) => void startBench(route.id, designId ?? undefined)}
         />
       </RealtimeWorkspaceProvider>
     );
@@ -286,6 +296,7 @@ export default function App({
         accountEmail={state.account.email}
         accountPlan={state.account.plan}
         onOpenProject={(id) => setRoute({ name: "project", id })}
+        onStartBench={() => void startBench()}
         onSignOut={() => {
           void (async () => {
             await auth.signOut();
@@ -305,18 +316,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  centerPad: {
-    flex: 1,
-    backgroundColor: tokens.bg,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    gap: 12,
-  },
-  brand: { color: tokens.text, fontSize: 28, fontWeight: "700" },
-  error: { color: tokens.danger, textAlign: "center", marginTop: 8 },
-  errorPad: { color: tokens.danger, padding: 16 },
-  link: { color: tokens.accent, marginTop: 8, fontSize: 14 },
   split: { flex: 1, flexDirection: "row", backgroundColor: tokens.bg },
   master: {},
   detail: { flex: 1 },

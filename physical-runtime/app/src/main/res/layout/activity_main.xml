@@ -156,4 +156,19 @@
                 app:iconTint="@color/tokito_on_primary" />
         </FrameLayout>
     </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/permissionRecoveryButton"
+        style="@style/Widget.Material3.Button"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        android:contentDescription="@string/allow_camera_description"
+        android:text="@string/allow_camera"
+        android:textAllCaps="false"
+        android:visibility="gone"
+        app:cornerRadius="12dp"
+        app:icon="@android:drawable/ic_menu_camera"
+        app:iconGravity="textStart" />
 </FrameLayout>

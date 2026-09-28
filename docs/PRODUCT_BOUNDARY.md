@@ -1,23 +1,24 @@
-# Companion / Desktop product boundary
+# Mobile / Desktop product boundary
 
-Tokito Companion and Tokito Desktop are separate products.
+Tokito mobile is one application. Project review and physical bench assistance
+are connected surfaces in that application, not Companion and Physical modes.
+The home screen always permits a projectless local bench session. Tokito Cloud
+sign-in is optional and gates only Cloud resources; a Cloud project or design
+may provide context when starting the same bench session.
 
-Companion owns its mobile runtime, release train, local SQLite state, outbox,
-and Cloud client. Desktop owns its native editor runtime, embedded database,
-workspace files, and CAD mutation engine. Neither product imports the other's
-source, opens the other's local data, or depends on the other's internal event
-and resource types.
+The mobile application owns its native physical runtime, release train, local
+session/evidence state, Cloud cache, and outbox. Tokito Desktop owns its native
+editor runtime, embedded database, workspace files, and CAD mutation engine.
+Neither product imports the other's source, opens the other's local data, or
+depends on the other's internal event and resource types.
 
-Desktop must not publish projects to Companion, poll Companion decisions, or
-apply Companion state. Companion must not act as a remote control or replication
-layer for Desktop. Both products may independently call public, versioned
-Tokito Cloud contracts; shared authentication is identity, not project sync.
+Desktop must not directly publish into mobile storage, poll mobile decisions,
+or apply mobile state. Mobile must not act as a remote control or hidden
+replication layer for Desktop. Both products may independently call public,
+versioned Tokito Cloud contracts. Any cross-product data exchange must use an
+explicitly versioned Cloud contract with authorization and migration rules.
 
-Any future interoperability requires a tracked cross-repo design, an explicit
-versioned Cloud contract, authorization and migration rules, and end-to-end
-evidence. It must not be introduced as a local import, compatibility fallback,
-or hidden legacy path.
-
-`tokito-companion-core` includes a regression test that rejects direct Desktop
-repository/path dependencies. Tokito Desktop has the reciprocal source gate in
-`services::desktop_mobile_boundary_tests` (TokitoAI/tokito#793).
+Raw camera frames, microphone buffers, tensors, and high-rate tracking never
+cross the JavaScript bridge or upload implicitly. Structured observations sync
+only through an explicit, visible action. There is no compatibility fallback,
+second launcher, mode chooser, or fake-success path.

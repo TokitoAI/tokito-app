@@ -1,8 +1,11 @@
 package dev.tokito.physical
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,19 +43,26 @@ class MainActivity : AppCompatActivity() {
     private var boardReference: BoardReferenceContext? = null
     private var digitalTwinAttempted = false
     private var vision: LocalPoseVisionRuntime? = null
+    private var cameraPermissionRequested = false
+    private var microphonePermissionRequested = false
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) ar.start()
-        else renderArState(ArSessionController.State("Camera blocked", "Camera permission is required for AR guidance"))
+        if (granted) {
+            binding.permissionRecoveryButton.visibility = View.GONE
+            ar.start()
+        } else {
+            binding.permissionRecoveryButton.visibility = View.VISIBLE
+            renderArState(ArSessionController.State("Camera blocked", "Allow camera access to inspect the board"))
+        }
     }
 
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) lifecycleScope.launch { call.start() }
-        else renderCallState(CallState.Unavailable("Microphone permission is required"))
+        else renderCallState(CallState.Unavailable("Allow microphone access to start a call"))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,19 +126,55 @@ class MainActivity : AppCompatActivity() {
     private fun bindActions() {
         binding.callButton.setOnClickListener {
             if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
-                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                requestMicrophonePermission()
             } else {
                 lifecycleScope.launch { call.toggle() }
             }
         }
+        binding.permissionRecoveryButton.setOnClickListener { requestCameraPermission() }
         binding.registerArButton.setOnClickListener { ar.beginRegistration() }
         binding.previewDigitalTwinButton.setOnClickListener { ar.previewDigitalTwin() }
         binding.resetRegistrationButton.setOnClickListener { ar.reset() }
     }
 
     private fun ensureCameraPermission() {
-        if (hasPermission(Manifest.permission.CAMERA)) ar.start()
-        else cameraPermission.launch(Manifest.permission.CAMERA)
+        if (hasPermission(Manifest.permission.CAMERA)) {
+            binding.permissionRecoveryButton.visibility = View.GONE
+            ar.start()
+        } else {
+            requestCameraPermission()
+        }
+    }
+
+    private fun requestCameraPermission() {
+        if (cameraPermissionRequested &&
+            !shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+        ) {
+            openPermissionSettings()
+            return
+        }
+        cameraPermissionRequested = true
+        cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun requestMicrophonePermission() {
+        if (microphonePermissionRequested &&
+            !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)
+        ) {
+            openPermissionSettings()
+            return
+        }
+        microphonePermissionRequested = true
+        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun openPermissionSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null),
+            ),
+        )
     }
 
     private fun observeVoiceEvents() {
@@ -290,7 +336,9 @@ class MainActivity : AppCompatActivity() {
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
-    private companion object {
+    companion object {
+        const val EXTRA_PROJECT_ID = "dev.tokito.physical.extra.PROJECT_ID"
+        const val EXTRA_DESIGN_ID = "dev.tokito.physical.extra.DESIGN_ID"
         val QUALITY_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,63}")
         const val MAX_QUESTION_ECHO_RATIO = 0.80
     }

@@ -1,6 +1,5 @@
 /**
- * Tokito Companion tokens — mirrored from `tokito_ui::Tokens::dark()`
- * Companion-owned mobile tokens with an independent release lifecycle.
+ * Tokito mobile tokens — mirrored from `tokito_ui::Tokens::dark()`.
  */
 
 export const tokens = {
