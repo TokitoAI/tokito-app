@@ -1,8 +1,8 @@
 import java.security.MessageDigest
 
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -37,15 +37,15 @@ kotlin {
 
 dependencies {
     api(project(":measurement-runtime"))
-    api(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation("${libs.sherpa.onnx.get()}@aar")
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx:1.13.6@aar")
 
-    testImplementation(libs.junit)
-    testImplementation(libs.json)
-    testImplementation(libs.kotlinx.coroutines.test)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.rules)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
 }
 
 val sherpaAarVerification by configurations.creating {
@@ -54,7 +54,7 @@ val sherpaAarVerification by configurations.creating {
 }
 
 dependencies {
-    sherpaAarVerification("${libs.sherpa.onnx.get()}@aar")
+    sherpaAarVerification("com.k2fsa.sherpa.onnx:sherpa-onnx:1.13.6@aar")
 }
 
 val verifySherpaAar by tasks.registering {

@@ -26,21 +26,12 @@
         android:name="android.hardware.camera.any"
         android:required="true" />
 
-    <application
-        android:allowBackup="false"
-        android:label="Tokito Physical"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.TokitoPhysical"
-        android:usesCleartextTraffic="false">
+    <application>
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"
-            android:exported="true"
-            android:screenOrientation="sensorLandscape">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.TokitoPhysical" />
     </application>
 </manifest>

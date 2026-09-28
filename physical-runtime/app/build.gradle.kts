@@ -1,77 +1,32 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
 }
 
-val dialogueTurnDeadlineMs = providers.gradleProperty("tokito.dialogue.turnDeadlineMs").get().also {
+val dialogueTurnDeadlineMs = providers.gradleProperty("tokito.dialogue.turnDeadlineMs").orElse("12000").get().also {
     require(it.matches(Regex("[0-9]+")) && it.toLong() in 1_000L..60_000L) {
         "tokito.dialogue.turnDeadlineMs must be an integer from 1000 through 60000"
     }
 }
-val dialogueMaxPredictTokens = providers.gradleProperty("tokito.dialogue.maxPredictTokens").get().also {
+val dialogueMaxPredictTokens = providers.gradleProperty("tokito.dialogue.maxPredictTokens").orElse("192").get().also {
     require(it.matches(Regex("[0-9]+")) && it.toInt() in 32..512) {
         "tokito.dialogue.maxPredictTokens must be an integer from 32 through 512"
     }
 }
-val appVersionCode = providers.gradleProperty("tokito.versionCode").orElse("1").get().also {
-    require(it.matches(Regex("[1-9][0-9]*")) && it.toLong() <= Int.MAX_VALUE) {
-        "tokito.versionCode must be a positive 32-bit integer"
-    }
-}
-val appVersionName = providers.gradleProperty("tokito.versionName").orElse("0.1.0").get().also {
-    require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?"))) {
-        "tokito.versionName must be a semantic version"
-    }
-}
-val releaseSigningValues = mapOf(
-    "storeFile" to providers.gradleProperty("tokito.release.storeFile")
-        .orElse(providers.environmentVariable("TOKITO_RELEASE_STORE_FILE")),
-    "storePassword" to providers.gradleProperty("tokito.release.storePassword")
-        .orElse(providers.environmentVariable("TOKITO_RELEASE_STORE_PASSWORD")),
-    "keyAlias" to providers.gradleProperty("tokito.release.keyAlias")
-        .orElse(providers.environmentVariable("TOKITO_RELEASE_KEY_ALIAS")),
-    "keyPassword" to providers.gradleProperty("tokito.release.keyPassword")
-        .orElse(providers.environmentVariable("TOKITO_RELEASE_KEY_PASSWORD")),
-)
-val configuredSigningValues = releaseSigningValues.values.count { it.isPresent }
-require(configuredSigningValues == 0 || configuredSigningValues == releaseSigningValues.size) {
-    "Release signing must provide store file, store password, key alias, and key password together"
-}
-
 android {
     namespace = "dev.tokito.physical"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.tokito.physical"
         minSdk = 27
-        targetSdk = 35
-        versionCode = appVersionCode.toInt()
-        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("long", "DIALOGUE_TURN_DEADLINE_MS", "${dialogueTurnDeadlineMs}L")
         buildConfigField("int", "DIALOGUE_MAX_PREDICT_TOKENS", dialogueMaxPredictTokens)
     }
 
-    signingConfigs {
-        if (configuredSigningValues == releaseSigningValues.size) {
-            create("release") {
-                storeFile = file(releaseSigningValues.getValue("storeFile").get())
-                storePassword = releaseSigningValues.getValue("storePassword").get()
-                keyAlias = releaseSigningValues.getValue("keyAlias").get()
-                keyPassword = releaseSigningValues.getValue("keyPassword").get()
-                enableV1Signing = true
-                enableV2Signing = true
-                enableV3Signing = true
-            }
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
-            isDebuggable = false
-            signingConfigs.findByName("release")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -104,19 +59,19 @@ dependencies {
     implementation(project(":voice-runtime"))
     implementation(project(":dialogue-runtime"))
     implementation(project(":measurement-runtime"))
-    implementation(project(":android:ar-runtime"))
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.litert)
-    implementation(libs.json)
+    implementation(project(if (rootProject.findProject(":physical-ar-runtime") != null) ":physical-ar-runtime" else ":android:ar-runtime"))
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("com.google.ai.edge.litert:litert:1.4.1")
+    implementation("org.json:json:20250517")
 
-    testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.rules)
-    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
 
 val verifyDebugManifestPolicy by tasks.registering {

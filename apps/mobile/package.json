@@ -2,7 +2,7 @@
   "name": "@tokito/companion-mobile",
   "version": "0.2.2",
   "private": true,
-  "description": "Tokito Companion mobile workspace — production Tokito Cloud auth and realtime sync through the native UniFFI client",
+  "description": "Tokito mobile app — project review, Cloud sync, and fully native physical bench assistance",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -13,7 +13,7 @@
     "audit": "node scripts/audit-gate.mjs",
     "audit:test": "node --test scripts/audit-gate.test.mjs",
     "release:validate": "node scripts/release-identity.mjs",
-    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/product-boundary.test.mjs",
+    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
     "forbid-js": "node scripts/forbid-js.mjs"
   },
   "engines": {
