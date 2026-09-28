@@ -148,4 +148,5 @@ jobs:
           TOKITO_ANDROID_TARGETS: arm64-v8a
         run: ../../scripts/build-android-ffi.sh
       - run: npx expo prebuild --platform android --clean --non-interactive
-      - run: ./android/gradlew -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Assemble unified arm64 APK
+        run: ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
