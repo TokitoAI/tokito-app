@@ -76,7 +76,7 @@ class LocalDialogueDeviceTest {
     fun verifiedNpuBundleReturnsBoundedConversation() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val model = withContext(Dispatchers.IO) {
-            DialogueModelProvisioner.fromAdmittedBundle(File(context.filesDir, "models/dialogue"))
+            DialogueModelProvisioner.fromAdmittedBundle(File(context.filesDir, "models/dialogue/active"))
                 .requireInstalled()
         }
         val runtime = TokitoDialogueRuntime(

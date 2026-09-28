@@ -2,11 +2,14 @@ package dev.tokito.physical.bridge
 
 import android.content.Intent
 import android.os.Build
+import android.net.Uri
 import ai.tokito.physical.runtime.PhysicalRuntime
 import ai.tokito.physical.runtime.RuntimeConfiguration
 import dev.tokito.physical.MainActivity
 import dev.tokito.physical.session.PhysicalSessionContext as StoredSessionContext
 import dev.tokito.physical.session.PhysicalSessionStore
+import dev.tokito.physical.model.ModelBundleRepository
+import dev.tokito.physical.model.ModelCapability
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -105,6 +108,62 @@ class TokitoPhysicalModule : Module() {
       val context = appContext.reactContext
         ?: throw CodedException("NoContext", "Tokito is not ready to update Physical sessions", null)
       PhysicalSessionStore.open(context).use { store -> store.markSyncEnqueued(sessionId) }
+    }
+
+    AsyncFunction("modelBundles") {
+      val context = appContext.reactContext
+        ?: throw CodedException("NoContext", "Tokito is not ready to read installed models", null)
+      val repository = ModelBundleRepository(context)
+      ModelCapability.entries.map { capability ->
+        val bundle = repository.activeBundle(capability)
+        mapOf(
+          "capability" to capability.wireValue,
+          "modelId" to bundle?.modelId,
+          "modelRevision" to bundle?.modelRevision,
+        )
+      }
+    }
+
+    AsyncFunction("installModelBundle") { capabilityValue: String, uriValue: String ->
+      val context = appContext.reactContext
+        ?: throw CodedException("NoContext", "Tokito is not ready to install a model", null)
+      val capability = try {
+        ModelCapability.parse(capabilityValue)
+      } catch (failure: IllegalArgumentException) {
+        throw CodedException("InvalidCapability", failure.message ?: "Unsupported model capability", failure)
+      }
+      val uri = Uri.parse(uriValue)
+      if (uri.scheme != "content") {
+        throw CodedException("InvalidModelUri", "Model bundles must come from Android's document picker", null)
+      }
+      val installed = run {
+        val source = context.contentResolver.openInputStream(uri)
+          ?: throw CodedException("ModelUnavailable", "Android could not open the selected model bundle", null)
+        source.use { ModelBundleRepository(context).install(capability, it) }
+      }
+      mapOf(
+        "capability" to installed.capability.wireValue,
+        "modelId" to installed.modelId,
+        "modelRevision" to installed.modelRevision,
+      )
+    }
+
+    AsyncFunction("rollbackModelBundle") { capabilityValue: String ->
+      val context = appContext.reactContext
+        ?: throw CodedException("NoContext", "Tokito is not ready to roll back a model", null)
+      val capability = try {
+        ModelCapability.parse(capabilityValue)
+      } catch (failure: IllegalArgumentException) {
+        throw CodedException("InvalidCapability", failure.message ?: "Unsupported model capability", failure)
+      }
+      val installed = run {
+        ModelBundleRepository(context).rollback(capability)
+      }
+      mapOf(
+        "capability" to installed.capability.wireValue,
+        "modelId" to installed.modelId,
+        "modelRevision" to installed.modelRevision,
+      )
     }
   }
 }

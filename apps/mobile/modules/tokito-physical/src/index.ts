@@ -25,11 +25,28 @@ export type PhysicalSyncSnapshot = {
   payloadJson: string;
 };
 
+export type ModelCapability = "dialogue" | "vision";
+
+export type InstalledModelBundle = {
+  capability: ModelCapability;
+  modelId: string;
+  modelRevision: string;
+};
+
+export type ModelBundleStatus = {
+  capability: ModelCapability;
+  modelId: string | null;
+  modelRevision: string | null;
+};
+
 type TokitoPhysicalNative = {
   capabilities(): Promise<PhysicalCapabilities>;
   openSession(context?: PhysicalSessionContext): Promise<PhysicalSession>;
   pendingSyncSnapshots(): Promise<PhysicalSyncSnapshot[]>;
   markSyncEnqueued(sessionId: string): Promise<void>;
+  modelBundles(): Promise<ModelBundleStatus[]>;
+  installModelBundle(capability: ModelCapability, uri: string): Promise<InstalledModelBundle>;
+  rollbackModelBundle(capability: ModelCapability): Promise<InstalledModelBundle>;
 };
 
 export const TokitoPhysical = requireNativeModule<TokitoPhysicalNative>("TokitoPhysical");

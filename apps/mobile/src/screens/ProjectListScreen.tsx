@@ -13,6 +13,7 @@ import {
   Camera,
   FolderSimple,
   SignOut,
+  GearSix,
 } from "phosphor-react-native";
 import type { CloudClient } from "../native/bridge";
 import type { ProjectListItem } from "../api/cloudHttp";
@@ -30,6 +31,7 @@ export interface ProjectListScreenProps {
   onOpenProject: (id: string) => void;
   onStartBench: () => void;
   onSignOut: () => void;
+  onManageModels: () => void;
   /** When embedded as tablet master pane, tighten chrome. */
   embedded?: boolean;
 }
@@ -43,6 +45,7 @@ export function ProjectListScreen({
   onOpenProject,
   onStartBench,
   onSignOut,
+  onManageModels,
   embedded = false,
 }: ProjectListScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
@@ -108,6 +111,14 @@ export function ProjectListScreen({
           </View>
         </View>
         <View style={styles.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Manage local models"
+            onPress={onManageModels}
+            style={styles.iconBtn}
+          >
+            <GearSix size={20} color={tokens.text2} weight="regular" />
+          </Pressable>
           <Pressable
             accessibilityLabel="Refresh projects"
             accessibilityRole="button"

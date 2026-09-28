@@ -13,12 +13,17 @@ The core owns only deterministic mechanisms required by the delivery gates:
 - versioned tool-call admission, idempotent retry handling, and exactly-one terminal outcome ledgers;
 - structured observations with linked context, registration, evidence, and provenance;
 - immutable assembly-context validation, digest verification, and atomic quota-bound activation;
-- model-manifest admission with digest, signature, ABI, runtime-revision, and quota checks;
+- model-manifest admission with digest, signature, ABI, runtime-revision, and quota checks, retaining exactly one previously verified rollback bundle;
 - evidence-gated backend selection that rejects missing lifecycle, thermal, conformance, profile/ABI, or fallback evidence;
 - caller-configured registration confidence and homography validation;
 - bounded, deadline-aware, cancellable ROI work scheduling; and
 - latest-frame handoff and caller-configured storage quotas; and
 - caller-configured thermal concurrency policy.
+
+The Android product host also performs a live memory/thermal preflight before
+loading heavyweight dialogue or vision models. Low-memory and severe thermal
+states reject work before allocation; moderate thermal pressure explicitly
+reduces admitted concurrency instead of silently selecting another backend.
 
 Runtime errors are typed and carry only retryability plus safe recovery
 guidance. They distinguish invalid input, unsupported capability, permission or

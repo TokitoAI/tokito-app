@@ -9,6 +9,23 @@ English synthesis. The runtime still uses a composed pipeline instead of
 forcing one VLM to handle tracking, component identity, LED state, speech, and
 guidance.
 
+## Signed bundle production
+
+Release engineering builds the exact offline ZIP consumed by Android with
+`tools/build_model_bundle.py`. The tool inventories every artifact, writes
+canonical manifest bytes, signs those bytes with the Tokito P-256 release key
+through OpenSSL, and emits no private material:
+
+```sh
+python tools/build_model_bundle.py ./dialogue-payload ./tokito-dialogue.zip \
+  --signing-key /secure/tokito-model-signing-p256.pem \
+  --capability dialogue --model-id tokito-dialogue --model-revision 2026.09
+```
+
+The signing key belongs only in the release secret store. It must never enter
+Git, an APK, a model bundle, logs, or CI artifacts. The app embeds only the
+corresponding public verification key.
+
 ## Planned capability families
 
 | Layer | Candidate approach | Activation |
@@ -202,6 +219,16 @@ Bundles are signed and content-addressed. Activation is transactional:
 6. emit activation or rollback evidence.
 
 Model artifacts are never committed to Git.
+
+The unified Android app exposes model provisioning under **Local models**. It
+uses Android's document picker, so the app never gains broad storage access.
+Each ZIP carries `model.manifest.json`, `model.manifest.sig`, and the exact
+manifest inventory. The signature is ECDSA P-256/SHA-256 over the manifest
+bytes. The release public key is embedded in the runtime; its private key is
+kept outside Git. Dialogue and vision activate only from their verified
+`models/<capability>/active` slots. Direct files under `models/dialogue` or
+`models/vision` are deliberately ignored, and rollback swaps only the retained
+previous verified slot.
 
 ## Calibration and abstention
 
