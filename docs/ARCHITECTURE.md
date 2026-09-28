@@ -7,16 +7,13 @@ RN TypeScript UI ──UniFFI──▶ tokito-companion-ffi ──▶ tokito-com
                                               https://api.tokito.dev (tokito-api)
 ```
 
-Desktop (`tokito-native`) and Companion register independent installations,
-bootstrap a materialized workspace once, and then exchange ordered resource
-updates through the same durable SSE journal and idempotent command endpoint.
-Each client keeps a local SQLite cache, committed cursor, and offline outbox.
+Companion registers its own installation with Cloud, bootstraps its own
+Cloud-visible resources, and consumes ordered updates through the public API.
+It keeps a local SQLite cache, committed cursor, and offline outbox.
 
-The server journal is the ordering authority; neither client polls. Companion
-never opens desktop's embedded Postgres or calls `mcp.tokito.dev` directly.
-Resource transport is realtime in both directions, but write capability is not
-symmetrical. Desktop authors project/design metadata, BOM, and canonical
-schematics. Companion receives those resources read-only and authors only chat
-messages and explicit suggestion decisions. Pick-and-place remains desktop-only.
+The server journal is authoritative for resources exposed to Companion.
+Companion never opens Desktop's embedded Postgres/workspaces, imports Desktop
+source, or calls Desktop mutation paths. Desktop does not publish, poll, or
+apply Companion state. See [PRODUCT_BOUNDARY.md](PRODUCT_BOUNDARY.md).
 
 See [../memory/architecture.md](../memory/architecture.md) for crate details.

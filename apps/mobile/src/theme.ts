@@ -1,6 +1,6 @@
 /**
  * Tokito Companion tokens — mirrored from `tokito_ui::Tokens::dark()`
- * (`TokitoAI/ui` `src/tokens.rs`). Keep hexes in lockstep with desktop.
+ * Companion-owned mobile tokens with an independent release lifecycle.
  */
 
 export const tokens = {

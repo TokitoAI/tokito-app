@@ -6,13 +6,11 @@
 
 ## Product
 
-Tokito Companion is Tokito's **mobile-first realtime review surface** — account,
-synced projects/designs, live read-only schematic and BOM inspection, design
-chat, and AI proposal review. It follows the Figma-mobile boundary: desktop is
-the sole author of project structure, BOM, and CAD resources; Companion authors
-only chat messages and explicit approve/reject decisions. Phone and tablet are
-both first-class: phone uses a compact flow; tablet uses master/detail and wide
-review panes without changing product capabilities.
+Tokito Companion is an **independent mobile application** in the Tokito
+ecosystem. It owns its runtime, release, local storage, and Cloud client.
+Tokito Desktop neither supplies nor consumes its project state. Phone and
+tablet are both first-class: phone uses a compact flow; tablet uses
+master/detail and wide review panes without changing product capabilities.
 
 ## How this notebook works
 
@@ -47,8 +45,13 @@ Keep cards honest: In progress → In review → Done; PRs use `Closes #N`.
   (`NativeCompanionClient`). `HttpCloudClient` is for Node unit tests only.
   If a `/v1/companion/*` method is not implemented server-side yet, do not
   ship a fake client — wait for the `tokito-api` PR.
-- **Auth is shared with desktop.** Call `tokito-api` `/v1/auth/*` only; mirror
-  error mapping from `tokito::services::cloud` / this crate's `CloudError`.
+- **Cloud auth is a public service contract, not Desktop coupling.** Call
+  `tokito-api` `/v1/auth/*` only and maintain this client's own error mapping.
+- **Desktop and Companion are fully detached.** Never add a dependency on the
+  Desktop repository, its local database, workspace folders, internal event
+  types, or editor mutation paths. Do not ask Desktop to publish/poll/apply
+  Companion state. See `docs/PRODUCT_BOUNDARY.md`; the core regression test is
+  review-blocking.
 - **No large binaries in git.** Artifacts live behind the API, not in the repo.
 - **Small PRs, green CI.** Milestone series M0–M6 — see `memory/milestones.md`.
 

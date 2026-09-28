@@ -1,9 +1,8 @@
 # API contract — Tokito Companion ↔ tokito-api
 
-Auth and billing routes already exist; companion reuses them. Companion sync
-routes are implemented by `tokito-api`; the durable realtime protocol below is
-the primary workspace path. Snapshot routes remain a migration/bootstrap
-compatibility surface and are not used for ongoing synchronization.
+Auth, billing, and Companion resource routes are public `tokito-api` contracts
+used directly by this application. They do not constitute an integration with
+Tokito Desktop. Desktop does not publish to, poll, or apply this state.
 
 ## Existing (implemented in tokito-api)
 
@@ -19,12 +18,11 @@ Default base: `https://api.tokito.dev`.
 
 ## Durable realtime workspace
 
-One signed-in device registration replaces repeated "Share to Companion".
+One signed-in Companion installation registers directly with Cloud.
 The client performs a consistent bootstrap once, persists the returned cursor,
 and then consumes ordered SSE events. Permitted local actions enter a SQLite
 outbox before network submission and are idempotent by `command_id`. Companion
-commands are restricted to `chat` and `suggestions`; desktop remains the writer
-for project/design metadata, BOM, and schematic resources.
+commands are restricted by the server's Companion-specific authorization rules.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -60,13 +58,17 @@ Creation uses a stable UUID assigned by the originating client. Deletion is a
 versioned `deleted: true` tombstone rather than an absent resource, ensuring an
 offline device learns the deletion when it resumes its cursor.
 
-## Companion sync (**implemented** in `tokito-api` + this client)
+## Legacy Companion resource API
+
+These routes may remain available for existing Cloud-owned data. They are not
+a Desktop bridge and must not be documented or implemented as one. New product
+work should use an explicitly versioned Cloud contract.
 
 All routes require `Authorization: Bearer <jwt>` unless noted.
 
 ### `PUT /v1/companion/projects/{project_id}`
 
-Publish or replace a project review snapshot from desktop.
+Publish or replace a Cloud-owned review snapshot from an authorized service.
 
 Request body (JSON):
 
@@ -91,7 +93,7 @@ Request body (JSON):
 }
 ```
 
-`project_id` is the desktop project UUID (stable across republish).
+`project_id` is the Cloud resource UUID (stable across republish).
 
 ### `PUT /v1/companion/projects/{project_id}/artifacts/{name}`
 
@@ -113,7 +115,7 @@ Artifact bytes.
 
 ### `POST /v1/companion/projects/{project_id}/proposals`
 
-Desktop (or future cloud agent) posts a pending proposal card:
+An authorized Cloud service posts a pending proposal card:
 
 ```json
 {
@@ -134,7 +136,7 @@ Desktop (or future cloud agent) posts a pending proposal card:
 {"decision":"approve"|"reject","note":"optional"}
 ```
 
-Legacy desktop clients poll decisions and apply locally. Realtime clients use
-the versioned `suggestions` resource instead.
+Desktop does not poll or apply these decisions. Companion uses the versioned
+`suggestions` resource within its own Cloud boundary.
 
 Canonical server docs: `tokito-api/docs/API.md`. Keep both documents aligned.

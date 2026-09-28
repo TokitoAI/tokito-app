@@ -1,8 +1,7 @@
 //! Tokito Companion core — typed clients for Tokito Cloud (`tokito-api`).
 //!
-//! Auth wire contract matches `tokito-api/docs/API.md` and the desktop
-//! `tokito::services::cloud` client. Companion sync routes (`/v1/companion/*`)
-//! match `docs/API_CONTRACT.md` / `tokito-api` companion crate.
+//! Wire contracts are owned by `tokito-api/docs/API.md` and
+//! `docs/API_CONTRACT.md`. This crate has no Tokito Desktop dependency.
 
 #![forbid(unsafe_code)]
 
@@ -26,3 +25,53 @@ pub use sync::{
     Proposal,
 };
 pub use sync_state::SyncStateStore;
+
+#[cfg(test)]
+mod product_boundary_tests {
+    use std::{fs, path::Path};
+
+    fn visit(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(path).expect("read workspace tree") {
+            let path = entry.expect("read entry").path();
+            if path.is_dir() {
+                if !matches!(
+                    path.file_name().and_then(|v| v.to_str()),
+                    Some("target" | "node_modules" | ".git")
+                ) {
+                    visit(&path, files);
+                }
+            } else if matches!(
+                path.file_name().and_then(|v| v.to_str()),
+                Some("Cargo.toml" | "package.json")
+            ) {
+                files.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn companion_has_no_direct_desktop_repository_dependency_50() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("workspace root");
+        let mut manifests = Vec::new();
+        visit(root, &mut manifests);
+        let forbidden = [
+            ["TokitoAI", "/tokito.git"].concat(),
+            ["TokitoAI", "/tokito#"].concat(),
+            ["path", " = \"../tokito\""].concat(),
+            ["path", " = \"../../tokito\""].concat(),
+        ];
+        for path in manifests {
+            let text = fs::read_to_string(&path).expect("read manifest");
+            for needle in &forbidden {
+                assert!(
+                    !text.contains(needle),
+                    "{} directly couples Companion to Desktop via {needle:?}",
+                    path.display()
+                );
+            }
+        }
+    }
+}

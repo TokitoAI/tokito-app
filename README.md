@@ -1,18 +1,17 @@
 # Tokito Companion
 
-Mobile-first realtime review companion for the
-[Tokito](https://github.com/TokitoAI/tokito) schematic studio.
+Independent mobile client in the Tokito ecosystem. It has its own release,
+runtime, storage, and Cloud client; it is not a remote control or replication
+layer for [Tokito Desktop](https://github.com/TokitoAI/tokito).
 
-- Sign in with the same Tokito Cloud account (JWT via `tokito-api`)
-- Browse projects and designs; inspect live schematics and BOMs read-only
-- Continue design chat and approve or reject AI proposals
-- Pan, zoom, and inspect canonical schematics without exposing CAD mutation
-- Resume ordered SSE after disconnect without repeating “Share to Companion”
+- Sign in through Tokito Cloud (JWT via `tokito-api`)
+- Browse and review Cloud-owned resources exposed to this client
+- Keep mobile state in Companion's own cache and outbox
+- Pan, zoom, and inspect supported immutable documents
 
-Desktop owns project structure, BOM, schematic, PCB, and pick-and-place edits.
-Realtime transport remains bidirectional for Companion-authored chat and review
-decisions. Phone and tablet are first-class responsive layouts: compact tabs on
-phone; master/detail and wide review panes on tablet.
+Desktop does not publish to, poll, import, or apply state from this application.
+Phone and tablet are first-class responsive layouts: compact tabs on phone;
+master/detail and wide review panes on tablet.
 
 **Stack:** React Native + TypeScript shell, Rust core (`tokito-companion-core`)
 exposed through UniFFI (`tokito-companion-ffi`). No JavaScript app sources.
@@ -62,8 +61,8 @@ CI [android-release](.github/workflows/android-release.yml):
 Uninstall any older **debug-signed** Companion before installing upload-signed
 builds (signature mismatch).
 
-Package id: `dev.tokito.companion`. UI tokens match desktop `tokito_ui` dark
-palette (mint accent, brand tile, Phosphor icons). Phone controls use 44dp+
+Package id: `dev.tokito.companion`. Companion owns its mobile dark palette
+(mint accent, brand tile, Phosphor icons). Phone controls use 44dp+
 targets; tablets ≥768dp use a dedicated master/detail composition.
 
 ## Docs
@@ -71,6 +70,7 @@ targets; tablets ≥768dp use a dedicated master/detail composition.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/API_CONTRACT.md](docs/API_CONTRACT.md)
 - [docs/HOOKS.md](docs/HOOKS.md)
+- [docs/PRODUCT_BOUNDARY.md](docs/PRODUCT_BOUNDARY.md)
 - [AGENTS.md](AGENTS.md) — for AI coding assistants
 
 ## License

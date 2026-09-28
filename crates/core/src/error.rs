@@ -1,7 +1,6 @@
 //! Failure modes for Tokito Cloud auth calls.
 //!
-//! Variants mirror desktop `tokito::services::cloud::CloudError` so UI copy
-//! and retry policy stay aligned across desktop and companion.
+//! Stable Cloud error mapping owned by this client.
 
 use thiserror::Error;
 

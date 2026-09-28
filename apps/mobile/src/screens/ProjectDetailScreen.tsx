@@ -126,7 +126,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
             <View style={styles.designPrimary}>
               <Card onPress={hasLiveSchematic && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasLiveSchematic && styles.cardDisabled]}>
                 <View style={styles.schematicIcon}><Circuitry size={30} color={tokens.accent} /></View>
-                <View style={styles.flex}><Text style={styles.cardTitle}>{hasLiveSchematic ? "View live schematic" : "Waiting for schematic"}</Text><Muted>{hasLiveSchematic ? "Pan, zoom, and inspect. Editing stays on Tokito Desktop." : "Open this design on desktop to publish its live view."}</Muted></View>
+                <View style={styles.flex}><Text style={styles.cardTitle}>{hasLiveSchematic ? "View schematic" : "No schematic available"}</Text><Muted>{hasLiveSchematic ? "Pan, zoom, and inspect this Cloud document." : "This Cloud workspace does not currently contain a schematic."}</Muted></View>
                 {hasLiveSchematic ? <Text style={styles.open}>View</Text> : null}
               </Card>
               {svgArtifacts.length > 0 ? <View style={styles.sectionHead}><SectionLabel>Published previews</SectionLabel></View> : null}
@@ -134,20 +134,20 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
             </View>
             <View style={styles.bomPane}>
               <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel><Text style={styles.count}>{displayedBom.length}</Text></View>
-              <Text style={styles.help}>Read-only here. Component changes appear live after they are made on desktop.</Text>
-              {displayedBom.length === 0 ? <Empty title="No BOM entries" body="Components will appear here as the desktop design is updated." /> : null}
+              <Text style={styles.help}>This Cloud bill of materials is read-only here.</Text>
+              {displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
               {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty ?? line.quantity ?? 1}</Text></View>)}
             </View>
           </View>
         </View> : null}
         {section === "chat" ? <View style={[styles.panel, tablet && styles.chatPanelTablet]}>
           <View style={styles.sectionHead}><ChatCircleDots size={18} color={tokens.text} /><SectionLabel>Design chat</SectionLabel></View>
-          {chatMessages.length === 0 ? <Empty title="Start a design conversation" body="Ask about this design; the same thread stays available on desktop." /> : null}
+          {chatMessages.length === 0 ? <Empty title="Start a design conversation" body="Ask about this Cloud design." /> : null}
           <View style={styles.chatHistory}>{chatMessages.map((item) => <View key={item.id} style={[styles.chatBubble, item.role === "user" && styles.chatBubbleUser]}><Text style={styles.chatRole}>{item.role === "user" ? "You" : "Tokito"}</Text><Text style={styles.chatText}>{item.content}</Text></View>)}</View>
           {activeDesignId !== null ? <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={chatDraft} onChangeText={setChatDraft} placeholder="Ask about this design…" placeholderTextColor={tokens.text3} multiline style={styles.chatInput} /><PrimaryButton label="Send" disabled={chatDraft.trim().length === 0} onPress={() => void sendChat()} style={styles.send} /></View> : null}
         </View> : null}
         {section === "review" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
-          <View style={styles.sectionHead}><Sparkle size={18} color={tokens.text} /><SectionLabel>AI proposals</SectionLabel></View><Text style={styles.help}>Approve or reject changes. Desktop validates and applies the typed operations.</Text>
+          <View style={styles.sectionHead}><Sparkle size={18} color={tokens.text} /><SectionLabel>AI proposals</SectionLabel></View><Text style={styles.help}>Review proposals owned by this Cloud workspace.</Text>
           {displayedProposals.length === 0 && !loading ? <Empty title="All caught up" body="New proposals will appear here for explicit review." /> : null}
           <View style={[styles.proposalGrid, tablet && styles.proposalGridTablet]}>{displayedProposals.map((item) => <Card key={item.id} style={[styles.proposalCard, tablet && styles.proposalCardTablet]}><Text style={styles.cardTitle}>{item.title}</Text><Muted>{item.summary}</Muted><View style={styles.actions}><PrimaryButton label="Approve" busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "approve")} style={styles.action} /><PrimaryButton label="Reject" danger busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "reject")} style={styles.action} /></View></Card>)}</View>
         </View> : null}

@@ -113,7 +113,7 @@ export function SignInScreen({
               />
               <View style={styles.hintRow}>
                 <EnvelopeSimple size={16} color={tokens.text3} weight="regular" />
-                <Text style={styles.hint}>We email a one-time code — same as desktop.</Text>
+                <Text style={styles.hint}>We’ll email you a one-time sign-in code.</Text>
               </View>
             </View>
           ) : (

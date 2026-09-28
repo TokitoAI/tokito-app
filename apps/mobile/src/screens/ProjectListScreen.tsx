@@ -132,7 +132,7 @@ export function ProjectListScreen({
       {!loading && projects.length === 0 && error === null ? (
         <Card style={{ marginTop: tokens.space3 }}>
           <Muted>
-            No projects are available yet. Signed-in desktop projects sync automatically.
+            No Cloud projects are available for this account yet.
           </Muted>
         </Card>
       ) : null}

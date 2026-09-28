@@ -1,4 +1,4 @@
-//! Cloud base URL resolution — same rules as desktop `tokito::services::cloud`.
+//! Cloud base URL resolution for this independent client.
 
 /// Default Tokito Cloud base URL.
 pub const DEFAULT_CLOUD_BASE: &str = "https://api.tokito.dev";

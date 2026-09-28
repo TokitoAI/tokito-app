@@ -15,8 +15,9 @@ Cargo workspace with two members plus a TypeScript React Native shell:
   - **`NativeCompanionClient`** — the only device cloud path.
   - **`HttpCloudClient`** — Node/CI unit tests only.
 
-The native session registers one stable installation id, bootstraps once, and
-runs SSE receive and HTTP outbox workers concurrently with jittered reconnect.
+The native session registers one stable installation id with Cloud, bootstraps
+its own Cloud-visible workspace, and runs SSE receive and HTTP outbox workers
+concurrently with jittered reconnect.
 React Native consumes typed native callbacks; it does not poll. Whole resources
 are independently versioned by project/design. Project/design deletion is a
 replicated tombstone. The WebView schematic surface is network-sealed by CSP
@@ -38,7 +39,8 @@ and exchanges only canonical documents with React Native.
   to agree. The legacy project-detail bridge serializes its nested result to
   one JSON string before crossing Expo; recursive Kotlin maps containing
   UniFFI `Long` values are rejected by Expo even after the Rust call succeeds.
-  The realtime resource journal is authoritative for synced projects, while
+  The realtime resource journal is authoritative for Companion's Cloud
+  resources, while
   legacy detail and proposal endpoints are optional enrichment and must never
   block a journal-backed workspace from opening.
 - CI runs `expo install --check`, `expo-doctor`, and fails dependency audits at
@@ -54,5 +56,6 @@ and exchanges only canonical documents with React Native.
 
 **Versions:** Rust 1.88+, edition 2021, UniFFI 0.29.5, reqwest 0.12 + rustls.
 
-**How to apply:** keep auth error enums aligned with desktop. Device builds must
-not fall back to JavaScript HTTP. Keystore backups stay outside git.
+**How to apply:** treat `tokito-api` as the public contract; never import or
+mirror Desktop internals. Device builds must not fall back to JavaScript HTTP.
+Keystore backups stay outside git. `docs/PRODUCT_BOUNDARY.md` is mandatory.

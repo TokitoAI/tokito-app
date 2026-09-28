@@ -11,9 +11,9 @@ Source of truth: `tokito-api/docs/API.md` §Auth. Companion fixtures under
 | `GET /v1/auth/me` | `200 {email,plan}` | `401 unauthorized`, `503` |
 
 JWT: 30-day HS256; claims include email + plan. Plan for entitlement checks
-must be re-read from the account store on the server (desktop already does
-this for metering); companion should refresh via `/v1/auth/me` or billing
+must be re-read from the account store on the server (the Cloud contract does
+this for metering); Companion should refresh via `/v1/auth/me` or billing
 status when showing plan chrome.
 
-**How to apply:** map status codes in `CloudError` exactly as desktop
-`tokito::services::cloud`. Prefer wiremock + fixtures over live network in CI.
+**How to apply:** map status codes in `CloudError` from the public API contract.
+Prefer wiremock + fixtures over live network in CI.

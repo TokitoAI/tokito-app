@@ -36,7 +36,7 @@ export function LiveSchematicViewerScreen({ projectId, designId, onBack }: { pro
     </View>
     {sheets.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sheetRail} contentContainerStyle={styles.sheetTabs}>{sheets.map((sheet) => <Pressable key={sheet.id} accessibilityState={{ selected: sheet.id === activeSheet }} onPress={() => setActiveSheet(sheet.id)} style={[styles.sheetTab, sheet.id === activeSheet && styles.sheetTabActive]}><Text style={[styles.sheetText, sheet.id === activeSheet && styles.sheetTextActive]}>{sheet.name ?? sheet.id}</Text></Pressable>)}</ScrollView> : null}
     {realtime.error !== null ? <View style={styles.error}><ErrorText>{realtime.error}</ErrorText></View> : null}
-    {document === undefined ? <View style={styles.empty}><View style={styles.emptyIcon}><Circuitry size={32} color={tokens.accent} /></View><Text style={styles.emptyTitle}>Waiting for the schematic</Text><Muted>Keep this screen open. The live desktop view will appear automatically.</Muted></View> : <WebView
+    {document === undefined ? <View style={styles.empty}><View style={styles.emptyIcon}><Circuitry size={32} color={tokens.accent} /></View><Text style={styles.emptyTitle}>No schematic available</Text><Muted>This Cloud workspace does not currently contain a schematic.</Muted></View> : <WebView
       ref={webview}
       originWhitelist={["about:blank"]}
       source={{ html }}

@@ -23,6 +23,8 @@ test("mobile UI cannot regress into a CAD or workspace-management client", async
   }
   assert.doesNotMatch(source, /LiveSchematicEditor/);
   assert.doesNotMatch(source, /Touch-friendly tools|Edit canonical schematics/);
+  const desktopProductName = ["desk", "top"].join("");
+  assert.doesNotMatch(source, new RegExp(desktopProductName, "i"));
 });
 
 test("realtime authoring is explicitly allowlisted", async () => {
