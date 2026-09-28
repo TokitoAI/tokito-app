@@ -1,0 +1,13 @@
+# Python dependencies for the tooling under tools/.
+#
+# This file exists because there wasn't one. The governance workflow ran
+# `unittest discover` over every module here and only ever passed because
+# somebody had pip-installed these on the VPS runner by hand — an undeclared
+# dependency on one machine. On any clean runner it failed with
+# ModuleNotFoundError before validating anything.
+#
+# Verified sufficient: with only these two installed in an empty virtualenv,
+# the full discover run reports OK across all 13 test modules.
+# `referencing` is pulled in by jsonschema and is not listed separately.
+jsonschema==4.25.1
+Pillow==11.3.0

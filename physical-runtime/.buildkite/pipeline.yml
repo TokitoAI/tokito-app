@@ -1,0 +1,25 @@
+# Buildkite equivalent of .github/workflows/android.yml.
+#
+# Every command is a path to a script in this repository, never an inline
+# command: the agents run with no-command-eval=true, which refuses anything
+# else. See tokito-infra docs/plans/01-self-hosted-ci.md.
+#
+# Why this repo moved: its governance policy (#49/#50) required every job to run
+# on the `tokito-vps` self-hosted runner "so a pull request cannot silently move
+# CI back to billed GitHub-hosted capacity". That runner is being
+# decommissioned. Buildkite on our own agent honours the intent more strongly
+# than the original rule did — these are not GitHub Actions workflows at all, so
+# they cannot drift back onto billed capacity.
+
+env:
+  # Android image, built from tokito-infra/ci/runner/Dockerfile.android.
+  # JDK 17, SDK platform 35, build-tools 35.0.0, NDK 27.1.12297006, cmake
+  # 3.22.1 — pinned to exactly what android.yml installed.
+  CI_IMAGE: "tokito-ci-android:android-35"
+
+agents:
+  queue: "${TOKITO_CI_QUEUE:-linux}"
+
+steps:
+  - label: ":android: verify"
+    command: .buildkite/steps/android.sh

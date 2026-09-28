@@ -1,0 +1,35 @@
+[versions]
+agp = "8.13.2"
+kotlin = "2.3.21"
+coroutines = "1.10.2"
+sherpaOnnx = "1.13.6"
+genieX = "0.3.1"
+appcompat = "1.7.1"
+material = "1.13.0"
+lifecycle = "2.9.4"
+junit = "4.13.2"
+androidx-test = "1.7.0"
+espresso = "3.7.0"
+json = "20250517"
+liteRt = "2.2.0"
+
+[libraries]
+sherpa-onnx = { group = "com.k2fsa.sherpa.onnx", name = "sherpa-onnx", version.ref = "sherpaOnnx" }
+geniex-android = { group = "com.qualcomm.qti", name = "geniex-android", version.ref = "genieX" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-lifecycle-runtime = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidx-test" }
+androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidx-test" }
+espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+json = { group = "org.json", name = "json", version.ref = "json" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "liteRt" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

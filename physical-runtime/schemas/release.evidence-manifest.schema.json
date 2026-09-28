@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/release.evidence-manifest.schema.json",
+  "title": "Tokito Release Evidence Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "release_id",
+    "gate",
+    "android_artifact_manifest",
+    "evaluation_runs",
+    "security_review",
+    "scenario_results",
+    "limitations",
+    "companion_integration"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "release_id": { "type": "string", "minLength": 1 },
+    "gate": { "enum": ["Gate 6", "Gate 7"] },
+    "android_artifact_manifest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "evaluation_runs": { "type": "array", "items": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } },
+    "security_review": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "scenario_results": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "companion_integration": {
+      "type": "object",
+      "required": ["status", "blocking_gate"],
+      "properties": {
+        "status": { "enum": ["blocked", "ready-for-separate-issue"] },
+        "blocking_gate": { "const": "Gate 6" }
+      }
+    }
+  }
+}

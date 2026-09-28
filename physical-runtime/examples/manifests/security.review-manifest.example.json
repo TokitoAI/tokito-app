@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "review_id": "tokito-example-security-review",
+  "review_revision": "not-yet-run",
+  "scope": ["sensor-permissions", "model-supply-chain", "ipc", "logging"],
+  "controls": {
+    "sensor_permissions": "session-scoped and revocable",
+    "model_supply_chain": "digest and signature verification required",
+    "ipc": "callers, exported components, paths, and archive inputs require threat tests",
+    "logging": "transcripts, frame content, tokens, and identifiers are redacted by default"
+  },
+  "tests": ["not-yet-run"],
+  "retention": "raw media is ephemeral unless explicit diagnostic consent is recorded",
+  "reporting": "security reporting follows SECURITY.md"
+}

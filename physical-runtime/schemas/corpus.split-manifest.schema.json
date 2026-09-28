@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/corpus.split-manifest.schema.json",
+  "title": "Tokito Corpus Split Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "dataset_revision", "split_revision", "split_unit", "splits", "leakage_audit", "integrity"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "dataset_id": { "type": "string", "minLength": 1 },
+    "dataset_revision": { "type": "string", "minLength": 1 },
+    "split_revision": { "type": "string", "minLength": 1 },
+    "split_unit": { "const": "physical_board_and_session" },
+    "splits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["train", "validation", "calibration", "test"],
+      "properties": {
+        "train": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "validation": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "calibration": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "test": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "leakage_audit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm_version", "max_hamming_distance", "board_disjoint", "session_disjoint", "leakage_group_disjoint", "lineage_disjoint", "exact_duplicate_groups", "exact_cross_split_collisions", "near_duplicate_pairs", "near_duplicate_cross_split_pairs"],
+      "properties": {
+        "algorithm_version": { "const": "tokito-corpus-audit/1" },
+        "max_hamming_distance": { "type": "integer", "minimum": 0 },
+        "board_disjoint": { "type": "boolean" },
+        "session_disjoint": { "type": "boolean" },
+        "leakage_group_disjoint": { "type": "boolean" },
+        "lineage_disjoint": { "type": "boolean" },
+        "exact_duplicate_groups": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "exact_cross_split_collisions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "near_duplicate_pairs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "near_duplicate_cross_split_pairs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "integrity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inventory_manifest_digest", "annotation_manifest_digest", "manifest_digest", "frozen_at"],
+      "properties": {
+        "inventory_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "annotation_manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "manifest_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "frozen_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

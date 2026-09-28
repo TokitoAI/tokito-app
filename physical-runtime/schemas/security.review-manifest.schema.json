@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokito.ai/schemas/security.review-manifest.schema.json",
+  "title": "Tokito Security and Privacy Review Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "review_id",
+    "review_revision",
+    "scope",
+    "controls",
+    "tests",
+    "retention",
+    "reporting"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "review_id": { "type": "string", "minLength": 1 },
+    "review_revision": { "type": "string", "minLength": 1 },
+    "scope": { "type": "array", "items": { "type": "string" } },
+    "controls": {
+      "type": "object",
+      "required": ["sensor_permissions", "model_supply_chain", "ipc", "logging"],
+      "properties": {
+        "sensor_permissions": { "type": "string", "minLength": 1 },
+        "model_supply_chain": { "type": "string", "minLength": 1 },
+        "ipc": { "type": "string", "minLength": 1 },
+        "logging": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tests": { "type": "array", "items": { "type": "string" } },
+    "retention": { "type": "string", "minLength": 1 },
+    "reporting": { "type": "string", "minLength": 1 }
+  }
+}
