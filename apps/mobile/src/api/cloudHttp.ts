@@ -1,7 +1,7 @@
 /**
- * Real Tokito Cloud HTTP client (fetch) for auth + companion sync.
- * Production RN path until UniFFI is linked into the app binary.
- * Same wire contracts as `tokito-companion-core` — not a stub.
+ * Test-host Tokito Cloud HTTP client for auth and sync contract tests.
+ * Android/iOS production builds fail closed unless the Rust UniFFI module is
+ * linked; this implementation is never a device fallback.
  */
 
 import { normalizeBaseUrl } from "../cloud";

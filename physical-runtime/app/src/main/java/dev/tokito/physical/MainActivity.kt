@@ -33,10 +33,17 @@ import dev.tokito.physical.voice.VoiceEvent
 import dev.tokito.physical.voice.VoiceRuntimeConfig
 import dev.tokito.physical.voice.VoiceRuntimeState
 import dev.tokito.physical.session.PhysicalSessionStore
+import dev.tokito.physical.session.ObservationDraft
+import dev.tokito.physical.measurement.MeasurementCandidate
+import dev.tokito.physical.measurement.MeasurementTurn
+import dev.tokito.physical.measurement.MeasurementValue
+import dev.tokito.physical.measurement.RelationshipKind
+import dev.tokito.physical.voice.MeasurementVoiceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.json.JSONObject
 
 /** Camera-first host for the private, fully local voice conversation loop. */
 class MainActivity : AppCompatActivity() {
@@ -45,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dialogue: TokitoDialogueRuntime
     private lateinit var ar: ArSessionController
     private lateinit var call: VoiceCallController
+    private lateinit var measurement: MeasurementVoiceSession
     private var boardReference: BoardReferenceContext? = null
     private var digitalTwinAttempted = false
     private var vision: LocalPoseVisionRuntime? = null
@@ -70,7 +78,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) lifecycleScope.launch { call.start() }
-        else renderCallState(CallState.Unavailable("Allow microphone access to start a call"))
+        else {
+            if (::measurement.isInitialized && measurement.isActive) {
+                lifecycleScope.launch { measurement.cancel() }
+                closeMeasurementCapture()
+            }
+            renderCallState(CallState.Unavailable("Allow microphone access to start a call"))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -122,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             },
             onState = ::renderCallState,
         )
+        measurement = MeasurementVoiceSession(voice)
 
         bindActions()
         observeVoiceEvents()
@@ -217,6 +232,18 @@ class MainActivity : AppCompatActivity() {
         binding.registerArButton.setOnClickListener { ar.beginRegistration() }
         binding.previewDigitalTwinButton.setOnClickListener { ar.previewDigitalTwin() }
         binding.resetRegistrationButton.setOnClickListener { ar.reset() }
+        binding.recordMeasurementButton.setOnClickListener {
+            lifecycleScope.launch { beginMeasurementCapture() }
+        }
+        binding.confirmMeasurementButton.setOnClickListener {
+            lifecycleScope.launch { renderMeasurementTurn(measurement.confirmPrimary()) }
+        }
+        binding.discardMeasurementButton.setOnClickListener {
+            lifecycleScope.launch {
+                measurement.cancel()
+                closeMeasurementCapture()
+            }
+        }
     }
 
     private fun ensureCameraPermission() {
@@ -264,7 +291,13 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 voice.events.collect { event ->
                     when (event) {
-                        is VoiceEvent.Transcript -> call.accept(event.segment)
+                        is VoiceEvent.Transcript -> {
+                            if (measurement.isActive) {
+                                measurement.accept(event.segment)?.let { renderMeasurementTurn(it) }
+                            } else {
+                                call.accept(event.segment)
+                            }
+                        }
                         is VoiceEvent.Error -> call.fail(event.failure.message)
                         else -> Unit
                     }
@@ -450,6 +483,109 @@ class MainActivity : AppCompatActivity() {
         binding.callButton.backgroundTintList = ContextCompat.getColorStateList(this, color)
     }
 
+    private suspend fun beginMeasurementCapture() {
+        measurement.begin()
+        binding.measurementPanel.visibility = View.VISIBLE
+        binding.measurementStateText.text = getString(R.string.measurement_listening)
+        binding.confirmMeasurementButton.visibility = View.GONE
+        binding.recordMeasurementButton.isEnabled = false
+        if (call.currentState() == CallState.Idle || call.currentState() is CallState.Unavailable) {
+            if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
+                requestMicrophonePermission()
+            } else {
+                call.start()
+            }
+        }
+    }
+
+    private suspend fun renderMeasurementTurn(turn: MeasurementTurn) {
+        when (turn) {
+            is MeasurementTurn.ConfirmationRequired -> {
+                binding.measurementStateText.text = formatMeasurement(turn.draft.primary)
+                binding.confirmMeasurementButton.visibility = View.VISIBLE
+            }
+            is MeasurementTurn.CorrectionRequired -> {
+                binding.measurementStateText.text = turn.incomplete.recoverablePrompt
+                binding.confirmMeasurementButton.visibility = View.GONE
+            }
+            is MeasurementTurn.Confirmed -> {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        persistMeasurement(turn.measurement.confirmedCandidate)
+                    }
+                }.onSuccess {
+                    binding.measurementStateText.text = getString(R.string.measurement_saved)
+                    binding.confirmMeasurementButton.visibility = View.GONE
+                    binding.measurementPanel.postDelayed(::closeMeasurementCapture, MEASUREMENT_SUCCESS_VISIBILITY_MS)
+                }.onFailure {
+                    binding.measurementStateText.text = getString(R.string.measurement_save_failed)
+                    binding.confirmMeasurementButton.visibility = View.GONE
+                    binding.recordMeasurementButton.isEnabled = true
+                }
+            }
+            is MeasurementTurn.Rejected -> closeMeasurementCapture()
+        }
+    }
+
+    private fun persistMeasurement(candidate: MeasurementCandidate) {
+        val value = when (val measured = candidate.value) {
+            is MeasurementValue.Scalar -> JSONObject().put("kind", "scalar").put("value", measured.value.toPlainString())
+            is MeasurementValue.Range -> JSONObject()
+                .put("kind", "range")
+                .put("low", measured.low.toPlainString())
+                .put("high", measured.high.toPlainString())
+        }
+        val payload = JSONObject()
+            .put("schema_version", 1)
+            .put("value", value)
+            .put("unit", candidate.unit.symbol)
+            .put("quantity", candidate.unit.quantity.name.lowercase())
+            .put("normalized_si_value", when (val normalized = candidate.normalizedSiValue) {
+                is MeasurementValue.Scalar -> JSONObject().put("kind", "scalar").put("value", normalized.value.toPlainString())
+                is MeasurementValue.Range -> JSONObject().put("kind", "range")
+                    .put("low", normalized.low.toPlainString()).put("high", normalized.high.toPlainString())
+            })
+            .put("relationship", candidate.relationship?.let { relationship ->
+                JSONObject()
+                    .put("kind", relationship.kind.name.lowercase())
+                    .put("primary", relationship.primary)
+                    .put("reference", relationship.reference ?: JSONObject.NULL)
+            } ?: JSONObject.NULL)
+        val session = checkNotNull(sessionStore.session(sessionId))
+        sessionStore.appendObservation(
+            sessionId,
+            session.revision,
+            ObservationDraft(
+                kind = "electrical_measurement",
+                source = "engineer_voice",
+                payloadJson = payload.toString(),
+                capturedAtUnixMs = System.currentTimeMillis(),
+                evidenceAvailability = "unavailable",
+            ),
+        )
+    }
+
+    private fun formatMeasurement(candidate: MeasurementCandidate): String {
+        val value = when (val measured = candidate.value) {
+            is MeasurementValue.Scalar -> measured.value.toPlainString()
+            is MeasurementValue.Range -> "${measured.low.toPlainString()}–${measured.high.toPlainString()}"
+        }
+        val relationship = candidate.relationship?.let {
+            when (it.kind) {
+                RelationshipKind.BETWEEN -> getString(R.string.measurement_between, it.primary, it.reference)
+                RelationshipKind.ACROSS -> getString(R.string.measurement_across, it.primary)
+                RelationshipKind.AT -> getString(R.string.measurement_at, it.primary)
+            }
+        }.orEmpty()
+        return getString(R.string.measurement_confirm_value, value, candidate.unit.symbol, relationship)
+    }
+
+    private fun closeMeasurementCapture() {
+        binding.measurementPanel.visibility = View.GONE
+        binding.confirmMeasurementButton.visibility = View.GONE
+        binding.recordMeasurementButton.isEnabled = true
+    }
+
     private fun renderArState(state: ArSessionController.State) {
         binding.trackingChip.text = state.label
         binding.trackingChip.contentDescription = state.detail
@@ -468,5 +604,6 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_CONTEXT_REVISION = "dev.tokito.physical.extra.CONTEXT_REVISION"
         val QUALITY_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,63}")
         const val MAX_QUESTION_ECHO_RATIO = 0.80
+        const val MEASUREMENT_SUCCESS_VISIBILITY_MS = 1_200L
     }
 }

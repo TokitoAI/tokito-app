@@ -152,6 +152,64 @@
                 app:iconSize="28dp"
                 app:iconTint="@color/tokito_on_primary" />
         </FrameLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/recordMeasurementButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:contentDescription="@string/record_measurement_description"
+            android:text="@string/record_measurement"
+            android:textAllCaps="false"
+            app:cornerRadius="12dp"
+            app:strokeColor="@color/tokito_border" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/measurementPanel"
+        android:layout_width="360dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="148dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/status_pill"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/measurementStateText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/measurement_listening"
+            android:textColor="@color/tokito_text"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/discardMeasurementButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="@string/measurement_discard"
+                android:textAllCaps="false" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/confirmMeasurementButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/measurement_confirm"
+                android:textAllCaps="false"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
 
     <com.google.android.material.button.MaterialButton

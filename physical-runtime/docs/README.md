@@ -20,6 +20,13 @@ The documentation is split by authority and purpose:
 | [TRACEABILITY.md](TRACEABILITY.md) | Proposal capabilities mapped to requirements, issues, and gates |
 | [PHYSICAL_VISION_FOUNDATION.md](PHYSICAL_VISION_FOUNDATION.md) | Offline reference board-discovery and coordinate-frame pipeline |
 | [FRDM_MCXN236_VALIDATION.md](FRDM_MCXN236_VALIDATION.md) | First real-board, non-hardcoded standalone validation contract |
+| [FRDM_MCXN236_SYSTEM_OVERVIEW.md](FRDM_MCXN236_SYSTEM_OVERVIEW.md) | Restored reference-board identity, location, connection-guidance, and digital-twin pipeline |
+| [FRDM_MCXN236_ARTIFACT_INDEX.md](FRDM_MCXN236_ARTIFACT_INDEX.md) | Provenance index for the preserved reference-board evidence lane |
+| [FRDM_MCXN236_REFERENCE_PACKAGE.md](FRDM_MCXN236_REFERENCE_PACKAGE.md) | Generic source-package and board-reference build procedure |
+| [FRDM_MCXN236_POPULATED_MODEL.md](FRDM_MCXN236_POPULATED_MODEL.md) | Populated digital-twin build and verification procedure |
+| [FRDM_MCXN236_3D_PIPELINE_README.md](FRDM_MCXN236_3D_PIPELINE_README.md) | Component-model resolution and GLB packaging tools |
+| [FRDM_MCXN236_SEMANTIC_MAP.md](FRDM_MCXN236_SEMANTIC_MAP.md) | Reference-board semantic identity map |
+| [FRDM_MCXN236_PHOTO_VALIDATION.md](FRDM_MCXN236_PHOTO_VALIDATION.md) | Photo-to-model validation evidence and limits |
 | [FRDM_CAPTURE_INTAKE.md](FRDM_CAPTURE_INTAKE.md) | Local iQOO capture intake, YOLO annotation, and AR asset boundary |
 | [YOLO_LOCAL_EXPERIMENTS.md](YOLO_LOCAL_EXPERIMENTS.md) | Provenance-bound local detector smoke training and inference |
 | [DEVICE_PROFILE_CAPTURE.md](DEVICE_PROFILE_CAPTURE.md) | Reproducible, privacy-safe Android target-device evidence capture |

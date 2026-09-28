@@ -15,4 +15,15 @@
     <string name="call_speaking">Speaking</string>
     <string name="allow_camera">Allow camera</string>
     <string name="allow_camera_description">Allow camera access to continue the bench session</string>
+    <string name="record_measurement">Record reading</string>
+    <string name="record_measurement_description">Capture a spoken electrical measurement</string>
+    <string name="measurement_listening">Say the value, unit, and where you measured it</string>
+    <string name="measurement_saved">Reading saved</string>
+    <string name="measurement_save_failed">Couldn’t save this reading. Record it again.</string>
+    <string name="measurement_confirm">Save</string>
+    <string name="measurement_discard">Discard</string>
+    <string name="measurement_confirm_value">%1$s %2$s %3$s</string>
+    <string name="measurement_between">between %1$s and %2$s</string>
+    <string name="measurement_across">across %1$s</string>
+    <string name="measurement_at">at %1$s</string>
 </resources>

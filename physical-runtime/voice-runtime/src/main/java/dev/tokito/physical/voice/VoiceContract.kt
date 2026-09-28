@@ -9,6 +9,23 @@ data class VoiceRuntimeConfig(
     val ttsSynthesisTimeoutMillis: Long = 60_000,
     val partialUpdateIntervalSeconds: Double = 0.25,
     val bargeIn: BargeInConfig = BargeInConfig(),
+    val activation: ActivationConfig = ActivationConfig(),
+)
+
+data class ActivationConfig(
+    val wakePhrases: Set<String> = setOf("hey tokito", "okay tokito"),
+    val minimumWakeConfidence: Float = 0.82f,
+    val vad: VadConfig = VadConfig(),
+    val vadEventIntervalMillis: Long = 100,
+)
+
+data class VadConfig(
+    val calibrationMillis: Long = 500,
+    val minimumRms: Float = 0.012f,
+    val noiseMultiplier: Float = 2.8f,
+    val attackFrames: Int = 3,
+    val releaseFrames: Int = 10,
+    val preRollMillis: Long = 240,
 )
 
 data class BargeInConfig(
@@ -20,6 +37,8 @@ data class BargeInConfig(
 )
 
 enum class VoiceCapability {
+    LOCAL_WAKE_WORD,
+    LOCAL_VAD,
     STREAMING_STT,
     LOCAL_TTS,
     TOUCH_BARGE_IN,
@@ -29,6 +48,7 @@ enum class VoiceCapability {
 sealed interface VoiceRuntimeState {
     data object Uninitialized : VoiceRuntimeState
     data class Ready(val capabilities: Set<VoiceCapability>) : VoiceRuntimeState
+    data object AwaitingWake : VoiceRuntimeState
     data object Listening : VoiceRuntimeState
     data class Synthesizing(val utteranceId: String) : VoiceRuntimeState
     data class Speaking(val utteranceId: String) : VoiceRuntimeState
@@ -63,6 +83,13 @@ data class VoiceFailure(
 )
 
 sealed interface VoiceEvent {
+    data class VoiceActivity(
+        val confidence: Float,
+        val rms: Float,
+        val noiseFloor: Float,
+        val isSpeech: Boolean,
+    ) : VoiceEvent
+    data class WakeWordDetected(val phrase: String, val confidence: Float) : VoiceEvent
     data class Transcript(val segment: TranscriptSegment) : VoiceEvent
     data class SpeechStarted(val utteranceId: String, val text: String) : VoiceEvent
     data class SpeechFinished(val utteranceId: String, val interrupted: Boolean) : VoiceEvent
@@ -81,6 +108,7 @@ interface VoiceRuntime : Closeable {
     val events: SharedFlow<VoiceEvent>
 
     suspend fun initialize()
+    suspend fun startActivation() = startListening()
     suspend fun startListening()
     suspend fun stopListening()
     suspend fun speak(
