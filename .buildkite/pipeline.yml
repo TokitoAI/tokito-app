@@ -8,11 +8,13 @@ steps:
   - label: ":rust: Rust + UniFFI"
     key: rust
     command: .buildkite/steps/rust.sh
+    depends_on: release-readiness
     timeout_in_minutes: 25
 
   - label: ":typescript: mobile"
     key: mobile
     command: .buildkite/steps/mobile.sh
+    depends_on: release-readiness
     timeout_in_minutes: 20
 
   - label: ":lock: release signing readiness"
@@ -23,11 +25,13 @@ steps:
   - label: ":test_tube: physical contracts"
     key: physical-contracts
     command: .buildkite/steps/physical-contracts.sh
+    depends_on: release-readiness
     timeout_in_minutes: 25
 
   - label: ":android: physical Android"
     key: physical-android
     command: .buildkite/steps/physical-android.sh
+    depends_on: release-readiness
     timeout_in_minutes: 40
 
   - label: ":android: unified arm64 APK"
