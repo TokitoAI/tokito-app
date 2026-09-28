@@ -54,6 +54,9 @@ def validate_semantics(document: dict[str, Any], verify_digest: bool = True) -> 
     sources = _unique(document["sources"], "source_id", "source ID")
     _unique(document["landmarks"], "landmark_id", "landmark ID")
     _unique(document["connectors"], "connector_id", "connector ID")
+    graph = document.get("knowledge_graph", {"entities": [], "facts": []})
+    entities = _unique(graph["entities"], "entity_id", "knowledge entity ID")
+    facts = _unique(graph["facts"], "fact_id", "knowledge fact ID")
 
     for source in sources.values():
         if source["license_status"] != "approved" and source["redistributable"]:
@@ -110,6 +113,21 @@ def validate_semantics(document: dict[str, Any], verify_digest: bool = True) -> 
                 fail(
                     f"reserved signal {signal} has conflicting role: {connector['connector_id']}:{pin['number']}"
                 )
+
+    for fact in facts.values():
+        if fact["subject_id"] not in entities:
+            fail(f"knowledge fact {fact['fact_id']} cites unknown subject {fact['subject_id']}")
+        for related_id in fact["related_entity_ids"]:
+            if related_id not in entities:
+                fail(f"knowledge fact {fact['fact_id']} cites unknown related entity {related_id}")
+        for evidence in fact["evidence"]:
+            source = sources.get(evidence["source_id"])
+            if source is None:
+                fail(f"knowledge fact {fact['fact_id']} cites unknown source {evidence['source_id']}")
+            if source["review"]["state"] != "reviewed":
+                fail(f"knowledge fact {fact['fact_id']} cites unreviewed source {evidence['source_id']}")
+            if source["kind"] not in {"datasheet", "official_manual", "schematic", "sdk_documentation"}:
+                fail(f"knowledge fact {fact['fact_id']} cites nontechnical source {evidence['source_id']}")
 
     if verify_digest and document["integrity"]["manifest_digest"] != manifest_digest(document):
         fail("manifest digest mismatch")

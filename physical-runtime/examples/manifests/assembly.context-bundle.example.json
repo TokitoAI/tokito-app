@@ -1,43 +1,44 @@
 {
-  "schema_version": { "major": 1, "minor": 0 },
-  "board": {
-    "board_id": "documentation-board",
-    "revision": "rev-a",
-    "coordinate_frame_id": "board-plane",
-    "units": "mm",
-    "handedness": "right",
-    "outline": [
-      { "x": 0.0, "y": 0.0 },
-      { "x": 20.0, "y": 0.0 },
-      { "x": 20.0, "y": 10.0 },
-      { "x": 0.0, "y": 10.0 }
-    ]
+  "schema_version": "1.0",
+  "bundle_id": "tokito-example-assembly-context",
+  "bundle_revision": "not-yet-imported",
+  "design": {
+    "project_id": "not-yet-bound",
+    "source": "not-yet-imported",
+    "content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "components": [
+  "board": {
+    "revision": "not-yet-recorded",
+    "coordinate_system": "not-yet-declared",
+    "units": "mm",
+    "outline": [],
+    "landmarks": []
+  },
+  "references": [
     {
-      "reference_designator": "D1",
-      "footprint": "LED_0603",
-      "centroid": { "x": 5.0, "y": 5.0 },
-      "rotation_degrees": 0.0,
+      "refdes": "D1",
+      "footprint": "not-yet-imported",
+      "centroid": {},
+      "rotation_degrees": 0,
       "side": "top",
-      "polarity_or_pin_one": "cathode marker faces board west",
-      "alternates": [],
-      "placement_source_id": "placement-export"
+      "pin_one_or_polarity": "not-yet-reviewed",
+      "permitted_alternates": [],
+      "evidence_refs": ["evidence-001"]
     }
   ],
-  "landmarks": [
-    { "landmark_id": "fiducial-1", "position": { "x": 1.0, "y": 1.0 } }
-  ],
-  "sources": [
+  "evidence": [
     {
-      "source_id": "placement-export",
-      "role": "authored_placement",
-      "license": "documentation-example",
-      "digest": "sha256:9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0"
+      "evidence_id": "evidence-001",
+      "source_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "locator": "not-yet-located",
+      "extractor_revision": "not-yet-run",
+      "confidence": 0,
+      "review_state": "not-yet-reviewed"
     }
   ],
+  "provenance": {},
   "integrity": {
-    "payload_sha256": "sha256:70b93ea2c4c123e772f46aa9df992a9834fa9b424915f58d394fd71991616188",
-    "signature_id": "documentation-signing-key"
+    "bundle_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "not-yet-signed"
   }
 }
