@@ -203,6 +203,16 @@ Bundles are signed and content-addressed. Activation is transactional:
 
 Model artifacts are never committed to Git.
 
+The unified Android app exposes model provisioning under **Local models**. It
+uses Android's document picker, so the app never gains broad storage access.
+Each ZIP carries `model.manifest.json`, `model.manifest.sig`, and the exact
+manifest inventory. The signature is ECDSA P-256/SHA-256 over the manifest
+bytes. The release public key is embedded in the runtime; its private key is
+kept outside Git. Dialogue and vision activate only from their verified
+`models/<capability>/active` slots. Direct files under `models/dialogue` or
+`models/vision` are deliberately ignored, and rollback swaps only the retained
+previous verified slot.
+
 ## Calibration and abstention
 
 Raw logits/scores are not user confidence. Calibration is evaluated on held-out

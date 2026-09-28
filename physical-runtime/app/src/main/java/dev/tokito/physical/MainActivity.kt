@@ -225,7 +225,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (dialogue.state.value !is DialogueRuntimeState.Ready) {
             val model = withContext(Dispatchers.IO) {
-                DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
+                DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
                     .requireInstalled()
             }
             val modelBytes = model.artifacts.fold(0L) { total, artifact ->
@@ -237,7 +237,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun prepareLocalVision() {
-        val modelRoot = File(filesDir, "models/vision")
+        val modelRoot = File(filesDir, "models/vision/active")
         val installedBytes = withContext(Dispatchers.IO) {
             modelRoot.walkTopDown().filter(File::isFile).fold(0L) { total, file ->
                 Math.addExact(total, file.length())

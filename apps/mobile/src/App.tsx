@@ -23,6 +23,7 @@ import { ProjectListScreen } from "./screens/ProjectListScreen";
 import { SchematicViewerScreen } from "./screens/SchematicViewerScreen";
 import { LiveSchematicViewerScreen } from "./screens/LiveSchematicViewerScreen";
 import { HomeScreen } from "./screens/HomeScreen";
+import { ModelManagerScreen } from "./screens/ModelManagerScreen";
 import { SignInScreen } from "./screens/SignInScreen";
 import { TokitoPhysical } from "../modules/tokito-physical/src";
 import { applySystemChrome } from "./systemChrome";
@@ -32,6 +33,7 @@ import { BrandTile } from "./ui/primitives";
 
 type Route =
   | { name: "projects" }
+  | { name: "models" }
   | { name: "project"; id: string }
   | { name: "live_schematic"; projectId: string; designId: string }
   | { name: "svg"; projectId: string; artifact: string };
@@ -83,7 +85,7 @@ export default function App({
   const [booting, setBooting] = useState(true);
   const [state, setState] = useState<AuthState>({ status: "signed_out" });
   const [route, setRoute] = useState<Route>({ name: "projects" });
-  const [signedOutView, setSignedOutView] = useState<"home" | "sign_in">("home");
+  const [signedOutView, setSignedOutView] = useState<"home" | "sign_in" | "models">("home");
   const [bootError, setBootError] = useState<string | null>(null);
   const [restoreBlocked, setRestoreBlocked] = useState(false);
 
@@ -148,10 +150,13 @@ export default function App({
     return (
       <View style={styles.root}>
         <StatusBar style="light" />
-        {signedOutView === "home" ? (
+        {signedOutView === "models" ? (
+          <ModelManagerScreen onBack={() => setSignedOutView("home")} />
+        ) : signedOutView === "home" ? (
           <HomeScreen
             cloudMessage={restoreBlocked ? bootError ?? "Tokito Cloud is unavailable." : null}
             onStartBench={() => void startBench()}
+            onManageModels={() => setSignedOutView("models")}
             onSignIn={() => {
               void (async () => {
                 if (restoreBlocked) await auth.signOut();
@@ -181,6 +186,15 @@ export default function App({
         ? route.id
         : route.projectId
       : null;
+
+  if (route.name === "models") {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="light" />
+        <ModelManagerScreen onBack={() => setRoute({ name: "projects" })} />
+      </View>
+    );
+  }
 
   if (route.name === "live_schematic") {
     return (
@@ -227,6 +241,7 @@ export default function App({
             embedded
             onOpenProject={(id) => setRoute({ name: "project", id })}
             onStartBench={() => void startBench()}
+            onManageModels={() => setRoute({ name: "models" })}
             onSignOut={() => {
               void (async () => {
                 await auth.signOut();
@@ -297,6 +312,7 @@ export default function App({
         accountPlan={state.account.plan}
         onOpenProject={(id) => setRoute({ name: "project", id })}
         onStartBench={() => void startBench()}
+        onManageModels={() => setRoute({ name: "models" })}
         onSignOut={() => {
           void (async () => {
             await auth.signOut();

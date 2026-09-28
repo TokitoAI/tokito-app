@@ -18,6 +18,7 @@ fun interface ModelConformanceVerifier {
 }
 
 data class ModelInstallPolicy(
+    val capability: String,
     val runtimeRevision: String,
     val abi: String,
     val allowedLicenses: Set<String>,
@@ -27,6 +28,7 @@ data class ModelInstallPolicy(
     val maxEntries: Int = 256,
 ) {
     init {
+        require(capability in setOf("dialogue", "vision"))
         require(runtimeRevision.isNotBlank() && abi.isNotBlank())
         require(allowedLicenses.isNotEmpty() && allowedLicenses.none(String::isBlank))
         require(
@@ -152,6 +154,7 @@ class ModelBundleInstaller(
 
     private fun validateManifest(manifest: JSONObject) {
         require(manifest.getInt("schema_version") == 1) { "unsupported model manifest schema" }
+        require(manifest.getString("capability") == policy.capability) { "model targets another capability" }
         require(manifest.getString("runtime_revision") == policy.runtimeRevision) { "model targets another runtime" }
         require(manifest.getJSONArray("supported_abis").strings().contains(policy.abi)) { "model does not support this ABI" }
         require(manifest.getString("license") in policy.allowedLicenses) { "model license is not admitted" }

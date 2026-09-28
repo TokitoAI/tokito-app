@@ -27,6 +27,14 @@ replaces the older rollback only after schema, runtime, ABI, digest, and
 signature admission succeeds; failed upgrades preserve both slots. Rollback is
 therefore a swap between already admitted bundles, never a verification bypass.
 
+The shipping Android loader consumes only `filesDir/models/dialogue/active`
+and `filesDir/models/vision/active`. `ModelBundleRepository` is the platform
+admission boundary: the unified React Native shell passes only a document URI
+and capability, while bounded copy, ECDSA signature verification, manifest
+inventory/digests, runtime/ABI/license policy, capability-specific load
+conformance, atomic activation, and rollback stay native. There is no legacy
+directory fallback.
+
 The shipping Activity reads Android's current `MemoryInfo` and thermal status
 before loading dialogue and vision models. It reserves 512 MiB of system
 headroom, rejects low-memory or severe-thermal admission, and reports moderate

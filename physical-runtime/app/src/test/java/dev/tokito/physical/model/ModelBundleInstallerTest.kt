@@ -12,12 +12,32 @@ import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
+import java.security.KeyPairGenerator
+import java.security.Signature
+import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class ModelBundleInstallerTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun verifiesReleaseSignatureAndRejectsChangedManifest() {
+        val keyPair = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+        val manifest = "{\"model_id\":\"signed\"}".toByteArray()
+        val signature = Signature.getInstance("SHA256withECDSA").run {
+            initSign(keyPair.private)
+            update(manifest)
+            sign()
+        }
+        val verifier = EcdsaModelSignatureVerifier(
+            Base64.getEncoder().encodeToString(keyPair.public.encoded),
+        )
+
+        assertTrue(verifier.verify(manifest, signature))
+        assertFalse(verifier.verify("changed".toByteArray(), signature))
+    }
 
     @Test
     fun installsVerifiedBundleAndKeepsExactlyOneRollback() {
@@ -114,6 +134,7 @@ class ModelBundleInstallerTest {
     ) = ModelBundleInstaller(
         root = temporaryFolder.root.resolve("models"),
         policy = ModelInstallPolicy(
+            capability = "dialogue",
             runtimeRevision = "runtime-1",
             abi = "arm64-v8a",
             allowedLicenses = setOf("apache-2.0"),
@@ -146,6 +167,7 @@ class ModelBundleInstallerTest {
     ): ByteArray {
         val manifest = JSONObject()
             .put("schema_version", 1)
+            .put("capability", "dialogue")
             .put("runtime_revision", runtime)
             .put("supported_abis", JSONArray().put(abi))
             .put("license", license)

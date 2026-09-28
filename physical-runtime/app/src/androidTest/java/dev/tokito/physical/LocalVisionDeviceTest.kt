@@ -15,7 +15,7 @@ class LocalVisionDeviceTest {
     @Test
     fun closingDuringQueuedInferenceDoesNotUseAClosedInterpreter() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val bundle = File(context.filesDir, "models/vision")
+        val bundle = File(context.filesDir, "models/vision/active")
 
         repeat(3) {
             val runtime = LocalPoseVisionRuntime.load(bundle)

@@ -6,19 +6,21 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { Camera, CloudArrowDown, LockKey } from "phosphor-react-native";
+import { Camera, CloudArrowDown, Cpu, LockKey } from "phosphor-react-native";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { BrandTile, Card, GhostButton, PrimaryButton } from "../ui/primitives";
 
 export interface HomeScreenProps {
   cloudMessage?: string | null;
   onStartBench: () => void;
+  onManageModels: () => void;
   onSignIn: () => void;
 }
 
 export function HomeScreen({
   cloudMessage = null,
   onStartBench,
+  onManageModels,
   onSignIn,
 }: HomeScreenProps): JSX.Element {
   const { width } = useWindowDimensions();
@@ -55,6 +57,11 @@ export function HomeScreen({
             </Text>
           </View>
           <PrimaryButton label="Start session" onPress={onStartBench} style={styles.primary} />
+          <GhostButton
+            label="Manage local models"
+            onPress={onManageModels}
+            icon={<Cpu size={18} color={tokens.accent} />}
+          />
         </Card>
 
         <View style={styles.cloudSection}>
