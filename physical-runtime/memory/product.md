@@ -1,14 +1,13 @@
 # Product facts
 
-Tokito Physical Runtime is a standalone, offline-first Android AR application
-and reusable runtime. It includes local visual perception, local text
-reasoning, local English speech, AR guidance, and typed physical evidence. A
-Tokito client can optionally contribute design context, but is not required.
+Tokito's physical workspace is an offline-first native Android boundary
+embedded in the single Tokito application. It includes local visual perception,
+local text reasoning, local English speech, AR guidance, and typed physical evidence. A
+Cloud project can optionally contribute design context, but local work does not
+require authentication or networking.
 
-**Why:** The iQOO phone is the complete physical assistant. Keeping it in a
-separate product repo preserves independent models, UI, benchmarks, and release
-cadence without changing Companion's review boundary.
+**Why:** High-rate media and inference remain native and private while users get
+one app identity, navigation system, settings surface, and release train.
 
 **How to apply:** baseline workflows must pass with networking disabled and no
-Tokito installation. Any future Tokito or Companion consumption is optional and
-requires separately tracked integration work.
+Cloud session. Never add a second launcher or package.

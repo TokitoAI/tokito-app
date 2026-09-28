@@ -1,4 +1,9 @@
-# Architecture
+# Physical workspace architecture
+
+> **Unified-product note (2026-09-29):** The runtime below is embedded in the
+> single Tokito Android application. Historical "standalone" wording means its
+> local workflows do not require Cloud; it does not authorize a second app,
+> launcher, repository, or pipeline. See root `docs/decisions/0001-unified-mobile-application.md`.
 
 ## System boundary
 

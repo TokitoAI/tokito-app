@@ -11,6 +11,8 @@ block validation or releases.
 pins Node 22.14.0, Rust 1.92.0, cargo-ndk 4.1.2, JDK 17, Android platform and
 build tools 35, NDK 27.1.12297006, and CMake 3.22.1. Buildkite runs repository
 scripts inside that image; agent-host toolchains are never used.
+The pipeline references the published GHCR image by immutable SHA-256 digest,
+not by a mutable tag, and authenticates only long enough to pull it.
 
 ## Required pull-request gates
 

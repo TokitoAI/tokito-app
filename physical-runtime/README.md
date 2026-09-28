@@ -1,17 +1,13 @@
-# Tokito Physical Runtime
+# Tokito physical-intelligence runtime
 
-An offline, on-device AR assistant for electronics engineering. It detects and
+The native, offline physical workspace embedded in the single Tokito Android
+application. It detects and
 tracks a board through the phone camera, reasons locally, speaks and listens
 locally, overlays guidance, and produces structured bench observations. Tokito
-integration is optional; the application must remain useful without Tokito,
-Cloud, or Companion.
-
-This repository is deliberately separate from
-[`tokito-companion`](https://github.com/TokitoAI/tokito-companion). Companion is
-the mobile review application. This project owns its own standalone Android AR
-application and reusable runtime libraries. A future Companion integration may
-consume the stable Android interface, but Companion is not the host or a
-runtime dependency. No Companion changes are part of this phase.
+Cloud authentication is optional for local bench work. This directory is not a
+second app or repository boundary: React Native owns ordinary navigation while
+these Android modules own camera, AR, audio, local inference, and physical
+session lifecycle.
 
 ## Product boundary
 
@@ -22,7 +18,7 @@ The product owns:
 - an entirely local text LLM and lightweight board-pose inference;
 - push-to-talk English speech-to-text, measurement parsing, and English
   text-to-speech, all on-device;
-- a standalone camera-first AR interface with registered overlays and local
+- an embedded camera-first AR interface with registered overlays and local
   conversational state;
 - a digest-verified metric GLB digital twin rendered over a calibrated board
   pose, with a real calibration object for conformance before project assets
@@ -39,17 +35,17 @@ edit schematics or turn Companion into a CAD application.
 ```mermaid
 flowchart LR
     Bench[Engineer and physical board] --> Sensors[Camera and microphone]
-    Sensors --> App[Standalone Android AR app]
+    Sensors --> App[Tokito physical workspace]
     App --> LocalAI[Local LLM, VLM, vision, STT and TTS]
     LocalAI --> Tools[Typed physical tools]
     Tools --> Overlay[AR overlay and spoken guidance]
     Overlay --> Bench
-    Tokito[Optional Tokito design context] -.-> App
+    Cloud[Optional Cloud design context] -.-> App
 ```
 
 ## Current status
 
-The repository contains one landscape, camera-first Android product. Its single
+The subtree contains one landscape, camera-first Android workspace. Its internal
 activity composes CameraX, local board-pose detection, registered 2D/3D
 presentation, push-to-talk voice, deterministic measurement parsing, grounded
 board retrieval over a page-cited local knowledge graph, and local dialogue. Transcripts and model reasoning stay out

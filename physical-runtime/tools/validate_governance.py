@@ -227,18 +227,13 @@ def validate_workflow_runner_spec(path: Path, spec: str) -> None:
 
 
 def validate_workflow_runners() -> None:
-    workflows = sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(
-        WORKFLOW_DIR.glob("*.yaml")
-    )
-    if not workflows:
-        fail("no GitHub Actions workflows found")
-    for path in workflows:
-        text = path.read_text(encoding="utf-8")
-        declarations = RUNS_ON_DECLARATION.findall(text)
-        if not declarations:
-            fail(f"{path}: workflow has no runs-on declaration")
-        for spec in declarations:
-            validate_workflow_runner_spec(path.relative_to(ROOT), spec)
+    pipeline = ROOT.parent / ".buildkite" / "pipeline.yml"
+    if not pipeline.is_file():
+        fail("unified Buildkite pipeline is missing")
+    text = pipeline.read_text(encoding="utf-8")
+    for required in ("ghcr.io/tokitoai/tokito-ci-mobile@sha256:", "physical-contracts", "physical-android", "unified-android"):
+        if required not in text:
+            fail(f"unified Buildkite pipeline is missing {required!r}")
 
 
 def require_text(path: str, needles: list[str]) -> None:
@@ -256,41 +251,9 @@ def validate_docs() -> None:
         + [f"#{number}" for number in range(37, 41)]
         + ["#44", "#45"],
     )
-    require_text(
-        "docs/CI_CD.md",
-        [
-            "pull requests",
-            "Direct pushes to `main`",
-            "playground-linux-x64",
-            "ubuntu-latest",
-            "#33",
-            "#37",
-            "#45",
-            "CI",
-        ],
-    )
-    require_text(
-        "AGENTS.md",
-        [
-            "Require pull requests before merge",
-            "Block force-push",
-            "playground-linux-x64",
-            "must merge the PR",
-            "required checks",
-        ],
-    )
-    require_text(
-        ".github/pull_request_template.md",
-        ["Closes #", "CI", "No raw private captures"],
-    )
-    require_text(
-        ".github/workflows/ci.yml",
-        ["pull_request", "branches:", "main", "tools/validate_governance.py"],
-    )
-    require_text(
-        ".github/rulesets/main-pr-gates.example.json",
-        ["pull_request", "required_linear_history", "required_status_checks"],
-    )
+    require_text("../docs/CI_CD.md", ["Buildkite", "digest", "upload-signed", "GitHub Actions"])
+    require_text("../AGENTS.md", ["single Tokito mobile application", "Buildkite", "required checks"])
+    require_text("../docs/REPOSITORY_RETIREMENT.md", ["migration/physical", "existing Play upload", "Exact-device"])
     require_text(
         "docs/CORPUS_GOVERNANCE.md",
         [

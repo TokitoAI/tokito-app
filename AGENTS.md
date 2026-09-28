@@ -58,6 +58,9 @@ by the unified application.
 
 ## Verification
 
+Buildkite is the only CI/CD authority. Pull requests must pass the pinned-image
+Rust/UniFFI, mobile, Physical contracts, Physical Android, and unified APK gates.
+
 Run all checks relevant to changed layers: Rust formatting/clippy/tests,
 TypeScript lint/typecheck/tests, Android unit/emulator tests, Gradle lint and
 assembly, contract tests, package/signature checks, and security audits.

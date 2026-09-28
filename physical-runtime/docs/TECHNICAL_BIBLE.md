@@ -1,4 +1,10 @@
-# Tokito Physical Runtime Technical Bible
+# Tokito physical-intelligence runtime technical bible
+
+> **Unified-product note (2026-09-29):** This document specifies the native,
+> offline physical workspace embedded in `TokitoAI/tokito-app`. References to a
+> "standalone application" describe offline behavioral independence, not a
+> second launcher, repository, package, or release train. Root architecture and
+> ADR 0001 in the repository `docs/decisions/` control when wording conflicts.
 
 **Status:** Normative architecture and quality contract.
 

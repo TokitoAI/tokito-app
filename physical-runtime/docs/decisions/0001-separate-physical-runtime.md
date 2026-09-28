@@ -1,7 +1,12 @@
 # ADR 0001: Separate physical runtime from Companion
 
-- Status: Accepted
+- Status: Superseded by root ADR 0001, one Tokito mobile application
 - Date: 2026-08-29
+- Superseded: 2026-09-28
+
+This record explains the original isolation decision. It is retained as design
+history and must not be used to create a second launcher, repository, or
+release train.
 
 ## Context
 
