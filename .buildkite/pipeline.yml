@@ -15,6 +15,11 @@ steps:
     command: .buildkite/steps/mobile.sh
     timeout_in_minutes: 20
 
+  - label: ":lock: release signing readiness"
+    key: release-readiness
+    command: .buildkite/steps/release-readiness.sh
+    timeout_in_minutes: 2
+
   - label: ":test_tube: physical contracts"
     key: physical-contracts
     command: .buildkite/steps/physical-contracts.sh

@@ -36,6 +36,9 @@ the matching immutable GitHub release.
 
 Release secrets are passed only to the release container. The decoded
 keystore is temporary and must never enter git, the image, logs, or artifacts.
+Every normal build checks that the release worker exposes all four required
+variables without printing or passing their values into an ordinary test
+container, so signing drift blocks retirement before a tag is cut.
 
 Exact-device iQOO acceptance remains a separately recorded hardware gate. It
 cannot be replaced by CI, an emulator, or a successful package build.
