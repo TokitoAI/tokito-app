@@ -8,8 +8,8 @@
     "userInterfaceStyle": "dark",
     "scheme": "tokito",
     "android": {
-      "package": "dev.tokito.companion",
-      "versionCode": 11,
+      "package": "dev.tokito.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#07101E"

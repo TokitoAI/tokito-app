@@ -1,4 +1,4 @@
-package dev.tokito.companion.ffi
+package dev.tokito.app.ffi
 
 import android.util.Base64
 import android.os.Build
@@ -283,7 +283,7 @@ class TokitoCompanionFfiModule : Module() {
       if (err.message?.contains("UniFFI API checksum mismatch") == true) {
         throw CodedException(
           "NativeCompatibility",
-          "App components are out of sync. Install the latest Companion build.",
+          "App components are out of sync. Install the latest Tokito build.",
           err,
         )
       }

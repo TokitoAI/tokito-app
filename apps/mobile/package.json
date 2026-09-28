@@ -1,5 +1,5 @@
 {
-  "name": "@tokito/companion-mobile",
+  "name": "@tokito/app-mobile",
   "version": "0.3.0",
   "private": true,
   "description": "Tokito mobile app — project review, Cloud sync, and fully native physical bench assistance",

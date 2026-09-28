@@ -46,16 +46,16 @@ user; raw camera/audio and evidence bytes never enter realtime sync.
 The consolidation is tracked by
 [TokitoAI/tokito-app#1](https://github.com/TokitoAI/tokito-app/issues/1).
 
-CI and Android releases run on the organization-managed Buildkite `linux`
-queue using the pinned mobile build image. See [CI and releases](docs/CI_CD.md)
-for the five required gates, release signing, and artifact flow. GitHub Actions
-is not part of the release path.
+CI runs on the organization-managed Buildkite `linux` queue; signed Android
+releases run only on the isolated `release` queue. Both use the pinned mobile
+build image. See [CI and releases](docs/CI_CD.md) for the five required gates,
+release signing, and artifact flow. GitHub Actions is not part of the release
+path.
 
 Companion history is the repository base and Physical Runtime history is
-preserved in `physical-runtime/`. The merge is complete only when one launcher
-consumes the native runtime, duplicate packaging is removed, CI produces one
-signed APK/AAB, migrations are verified, and the retirement gate in
-[ADR 0001](docs/decisions/0001-unified-mobile-application.md) passes.
+preserved in `physical-runtime/`. Both former GitHub repositories are archived,
+their local checkouts are retired, and `tokito-app` is the only active mobile
+source and release repository.
 
 The historical work map and archival rules are documented in
 [Former mobile repository retirement](docs/REPOSITORY_RETIREMENT.md).

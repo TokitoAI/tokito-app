@@ -35,7 +35,7 @@ export function validateReleaseIdentity({
   return failures;
 }
 
-function releasedVersionCodes(currentTag) {
+function releasedVersionCodes(currentTag, currentPackage) {
   let tags = [];
   try {
     tags = execFileSync("git", ["tag", "--list", "v*"], {
@@ -55,7 +55,9 @@ function releasedVersionCodes(currentTag) {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
       });
-      const code = JSON.parse(raw)?.expo?.android?.versionCode;
+      const android = JSON.parse(raw)?.expo?.android;
+      if (android?.package !== currentPackage) continue;
+      const code = android?.versionCode;
       if (Number.isSafeInteger(code) && code > 0) codes.push(code);
     } catch {
       // Early tags predate the mobile app or its Expo metadata.
@@ -75,7 +77,9 @@ function main() {
     appVersion: appJson.expo.version,
     versionCode: appJson.expo.android.versionCode,
     releaseTag,
-    previousVersionCodes: releaseTag ? releasedVersionCodes(releaseTag) : [],
+    previousVersionCodes: releaseTag
+      ? releasedVersionCodes(releaseTag, appJson.expo.android.package)
+      : [],
   });
   if (failures.length > 0) {
     for (const failure of failures) console.error(`ERROR: ${failure}`);

@@ -1,6 +1,6 @@
 apply plugin: 'com.android.library'
 
-group = 'dev.tokito.companion'
+group = 'dev.tokito.app'
 version = '0.1.2'
 
 def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
@@ -11,7 +11,7 @@ useDefaultAndroidSdkVersions()
 useExpoPublishing()
 
 android {
-  namespace "dev.tokito.companion.ffi"
+  namespace "dev.tokito.app.ffi"
   defaultConfig {
     versionCode 1
     versionName "0.1.2"

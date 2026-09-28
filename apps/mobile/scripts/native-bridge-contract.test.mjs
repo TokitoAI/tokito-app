@@ -8,7 +8,7 @@ const mobileDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const bridge = fs.readFileSync(
   path.join(
     mobileDir,
-    "modules/tokito-companion-ffi/android/src/main/java/dev/tokito/companion/ffi/TokitoCompanionFfiModule.kt",
+    "modules/tokito-companion-ffi/android/src/main/java/dev/tokito/app/ffi/TokitoCompanionFfiModule.kt",
   ),
   "utf8",
 );
