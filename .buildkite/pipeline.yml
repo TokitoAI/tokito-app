@@ -1,5 +1,5 @@
 env:
-  CI_IMAGE: "tokito-ci-mobile:node22-rust1.92-android35"
+  CI_IMAGE: "ghcr.io/tokitoai/tokito-ci-mobile@sha256:67bd10c8dab6d208c37feece035ee6b9e5778c98d50270e79b806a62d640caa4"
 
 agents:
   queue: "${TOKITO_CI_QUEUE:-linux}"

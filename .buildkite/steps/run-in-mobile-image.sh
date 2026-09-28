@@ -22,10 +22,16 @@ for name in ${CI_PASS_ENV:-}; do
   docker_args+=(--env "$name")
 done
 
-if [ -x /usr/local/bin/tokito-gh-token ]; then
-  GH_TOKEN="$(/usr/local/bin/tokito-gh-token)"
-  export GH_TOKEN
-  docker_args+=(--env GH_TOKEN)
+if [[ "$CI_IMAGE" == ghcr.io/* ]]; then
+  if [ ! -x /usr/local/bin/tokito-gh-token ]; then
+    echo "private GHCR image requires /usr/local/bin/tokito-gh-token" >&2
+    exit 1
+  fi
+  registry_token="$(/usr/local/bin/tokito-gh-token)"
+  printf '%s' "$registry_token" | docker login ghcr.io --username x-access-token --password-stdin >/dev/null
+  unset registry_token
+  trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+  docker pull "$CI_IMAGE" >/dev/null
 fi
 
-exec docker run "${docker_args[@]}" "$CI_IMAGE" "$script"
+docker run "${docker_args[@]}" "$CI_IMAGE" "$script"
