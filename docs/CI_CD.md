@@ -34,8 +34,11 @@ four `ANDROID_UPLOAD_*` secrets, builds an upload-signed arm64 APK and AAB,
 rejects Android Debug certificates, uploads Buildkite artifacts, and creates
 the matching immutable GitHub release.
 
-Release secrets are passed only to the release container. The decoded
-keystore is temporary and must never enter git, the image, logs, or artifacts.
+The signed step targets the isolated `release` queue, not the PR-capable
+`linux` build queue. Only a trusted tag job after the manual block may receive
+the four variables. Release secrets are passed only to its release container.
+The decoded keystore is temporary and must never enter git, the image, logs,
+ordinary build workers, or artifacts.
 
 Exact-device iQOO acceptance remains a separately recorded hardware gate. It
 cannot be replaced by CI, an emulator, or a successful package build.
