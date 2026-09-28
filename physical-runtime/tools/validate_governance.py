@@ -253,7 +253,7 @@ def validate_docs() -> None:
     )
     require_text("../docs/CI_CD.md", ["Buildkite", "digest", "upload-signed", "GitHub Actions"])
     require_text("../AGENTS.md", ["single Tokito mobile application", "Buildkite", "required checks"])
-    require_text("../docs/REPOSITORY_RETIREMENT.md", ["migration/physical", "existing Play upload", "Exact-device"])
+    require_text("../docs/REPOSITORY_RETIREMENT.md", ["migration/physical", "dev.tokito.app", "Exact-device"])
     require_text(
         "docs/CORPUS_GOVERNANCE.md",
         [

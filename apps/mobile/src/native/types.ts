@@ -74,7 +74,7 @@ export class CompanionError extends Error {
   static nativeCompatibility(): CompanionError {
     return new CompanionError(
       "NativeCompatibility",
-      "App components are out of sync. Install the latest Companion build.",
+      "App components are out of sync. Install the latest Tokito build.",
     );
   }
 

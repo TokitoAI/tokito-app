@@ -10,7 +10,7 @@ Companion and Physical were isolated products. That creates duplicate Android
 applications, navigation, release ownership, permissions, settings, and user
 concepts despite one continuous project-to-bench workflow.
 
-Companion owns the Cloud/auth/review shell and signing lineage. Physical owns
+Companion contributed the Cloud/auth/review shell. Physical contributed
 CameraX, AR, audio, model, tool, and evidence runtimes. Reimplementing those
 pipelines in React Native or transporting high-rate data through JavaScript
 would violate latency, privacy, and lifecycle requirements.
@@ -19,7 +19,9 @@ would violate latency, privacy, and lifecycle requirements.
 
 Tokito ships as one Android application from `TokitoAI/tokito-app`.
 
-1. Companion history and signing lineage form the migration base.
+1. Companion history forms the migration base. Tokito App owns the standalone
+   `dev.tokito.app` package and signing identity because neither predecessor
+   reached production.
 2. React Native owns navigation, Cloud resources, review, account state,
    ordinary settings, and session history.
 3. Native Android owns camera, registration, AR, audio, local inference,
@@ -44,9 +46,9 @@ Permissions are requested only when a session needs them.
 ## Retirement gate
 
 Former repositories remain available until accepted source and history, open
-work, releases, docs, issue traceability, upgrade behavior, and rollback
-artifacts are preserved; one launcher and pipeline exist; available checks
-pass; and exact-device checks are either evidenced or visibly deferred.
+work, docs, and issue traceability are preserved; one launcher and pipeline
+exist; available checks pass; and exact-device checks are either evidenced or
+visibly deferred.
 
 Afterward old repositories are archived rather than permanently deleted so
 audit history and rollback remain available.

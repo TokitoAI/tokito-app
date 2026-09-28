@@ -19,7 +19,7 @@ test("Tokito owns the only production launcher", async () => {
   assert.equal(expo.name, "Tokito");
   assert.equal(expo.slug, "tokito");
   assert.equal(expo.scheme, "tokito");
-  assert.equal(expo.android.package, "dev.tokito.companion");
+  assert.equal(expo.android.package, "dev.tokito.app");
   assert.doesNotMatch(physicalManifest, /android\.intent\.action\.MAIN/);
   assert.doesNotMatch(physicalManifest, /android\.intent\.category\.LAUNCHER/);
   assert.match(physicalManifest, /android:exported="false"/);

@@ -20,9 +20,9 @@ Rust outbox durably accepts them. Projectless sessions remain local; evidence
 sync contains metadata and digests, never content URIs or media bytes.
 
 The production Android artifact has one launcher and one package. Expo owns
-`dev.tokito.companion` so existing installs can upgrade in place; the imported
-Physical shell is an internal Android library/activity and has no launcher or
-application identity of its own.
+`dev.tokito.app`; neither predecessor reached production, so no legacy upgrade
+identity is carried forward. The imported Physical shell is an internal Android
+library/activity and has no launcher or application identity of its own.
 
 **How to apply:** link the Physical modules through
 `apps/mobile/plugins/withTokitoPhysical.js`, open the internal activity through

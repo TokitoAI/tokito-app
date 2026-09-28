@@ -1,6 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["dev.tokito.companion.ffi.TokitoCompanionFfiModule"]
+    "modules": ["dev.tokito.app.ffi.TokitoCompanionFfiModule"]
   }
 }

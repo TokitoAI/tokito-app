@@ -1,9 +1,9 @@
 # Former mobile repository retirement
 
 `TokitoAI/tokito-app` is the only active mobile application repository. The
-former Companion and Physical Runtime repositories are retained as read-only
-archives so commit ancestry, release assets, issue redirects, and Android
-signing provenance remain auditable.
+former Companion and Physical Runtime repositories are read-only archives.
+Their local checkouts have been removed; all active mobile development happens
+in this repository.
 
 ## Preserved history
 
@@ -12,11 +12,11 @@ signing provenance remain auditable.
   `physical-runtime/`.
 - Every observed old Physical local and remote branch tip is retained by an
   immutable `migration/physical/*` tag.
-- Existing Companion and Physical GitHub releases remain on their archived
-  repositories. They are historical artifacts, not current download channels.
-- The production package remains `dev.tokito.companion` to preserve Android
-  upgrade identity. Release signing must continue with the existing Play upload
-  key; a newly generated key is not an acceptable fallback.
+- Existing Companion and Physical GitHub content is historical and is not a
+  current source, build, or download channel.
+- Neither former application reached production. Tokito therefore uses the
+  standalone package identity `dev.tokito.app`, version code sequence starting
+  at 1, and a new Tokito App upload key.
 
 ## Work migration
 
