@@ -12,40 +12,33 @@ from validate_governance import (
 
 
 class WorkflowRunnerPolicyTest(unittest.TestCase):
-    """Builds must not run on billed GitHub-hosted capacity.
-
-    The original rule (#49/#50) required the `tokito-vps` label set on every
-    job. That runner is being decommissioned and the Android build moved to
-    Buildkite, so the rule now states the intent directly instead of naming a
-    machine: GitHub-hosted is refused everywhere except ci.yml, which runs this
-    validator and needs the Actions event payload to do it.
-    """
-
-    def test_self_hosted_runner_is_accepted(self) -> None:
+    def test_complete_tokito_vps_label_set_is_accepted(self) -> None:
         validate_workflow_runner_spec(
-            Path(".github/workflows/android.yml"),
+            Path(".github/workflows/ci.yml"),
             "[self-hosted, Linux, X64, tokito-vps, private-build]",
         )
 
-    def test_github_hosted_runner_is_rejected_for_builds(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "not allowed here"):
+    def test_github_hosted_runner_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "GitHub-hosted runner"):
             validate_workflow_runner_spec(
-                Path(".github/workflows/android.yml"),
+                Path(".github/workflows/ci.yml"),
                 "ubuntu-latest",
             )
 
-    def test_github_hosted_runner_is_allowed_for_the_governance_workflow(self) -> None:
-        validate_workflow_runner_spec(
-            Path(".github/workflows/ci.yml"),
-            "ubuntu-latest",
-        )
-
-    def test_a_new_workflow_cannot_opt_itself_into_hosted_capacity(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "not allowed here"):
+    def test_partial_vps_label_set_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "missing Tokito VPS labels"):
             validate_workflow_runner_spec(
-                Path(".github/workflows/sneaky-build.yml"),
-                "ubuntu-latest",
+                Path(".github/workflows/ci.yml"),
+                "[self-hosted, Linux, X64, tokito-vps]",
             )
+
+    def test_label_names_must_be_exact_tokens(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "missing Tokito VPS labels"):
+            validate_workflow_runner_spec(
+                Path(".github/workflows/ci.yml"),
+                "[not-self-hosted, Linux, X64, tokito-vps, private-build]",
+            )
+
 
 class SchemaSubsetTest(unittest.TestCase):
     def test_unknown_properties_are_rejected_when_schema_is_strict(self) -> None:

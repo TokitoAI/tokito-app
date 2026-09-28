@@ -1,0 +1,21 @@
+{
+  "schema_version": { "major": 1, "minor": 0 },
+  "board": {
+    "board_id": "board",
+    "revision": "rev-a",
+    "coordinate_frame_id": "board-plane",
+    "handedness": "right",
+    "outline": [
+      { "x": 0.0, "y": 0.0 },
+      { "x": 10.0, "y": 0.0 },
+      { "x": 10.0, "y": 10.0 }
+    ]
+  },
+  "components": [],
+  "landmarks": [],
+  "sources": [],
+  "integrity": {
+    "payload_sha256": "sha256:9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0",
+    "signature_id": "verified-signature"
+  }
+}

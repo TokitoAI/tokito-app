@@ -3,81 +3,103 @@
   "$id": "https://tokito.ai/schemas/assembly.context-bundle.schema.json",
   "title": "Tokito Assembly Context Bundle",
   "type": "object",
-  "required": [
-    "schema_version",
-    "bundle_id",
-    "bundle_revision",
-    "design",
-    "board",
-    "references",
-    "evidence",
-    "provenance",
-    "integrity"
-  ],
+  "required": ["schema_version", "board", "components", "landmarks", "sources", "integrity"],
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "bundle_id": { "type": "string", "minLength": 1 },
-    "bundle_revision": { "type": "string", "minLength": 1 },
-    "design": {
+    "schema_version": {
       "type": "object",
-      "required": ["project_id", "source", "content_digest"],
+      "required": ["major", "minor"],
       "properties": {
-        "project_id": { "type": "string", "minLength": 1 },
-        "source": { "type": "string", "minLength": 1 },
-        "content_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
-      }
+        "major": { "type": "integer", "minimum": 1 },
+        "minor": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
     },
     "board": {
       "type": "object",
-      "required": ["revision", "coordinate_system", "units", "outline", "landmarks"],
+      "required": ["board_id", "revision", "coordinate_frame_id", "units", "handedness", "outline"],
       "properties": {
+        "board_id": { "type": "string", "minLength": 1 },
         "revision": { "type": "string", "minLength": 1 },
-        "coordinate_system": { "type": "string", "minLength": 1 },
-        "units": { "type": "string", "minLength": 1 },
-        "outline": { "type": "array", "items": { "type": "object" } },
-        "landmarks": { "type": "array", "items": { "type": "object" } }
-      }
+        "coordinate_frame_id": { "type": "string", "minLength": 1 },
+        "units": { "const": "mm" },
+        "handedness": { "enum": ["left", "right"] },
+        "outline": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/point" }
+        }
+      },
+      "additionalProperties": true
     },
-    "references": {
+    "components": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["refdes", "footprint", "centroid", "rotation_degrees", "side", "evidence_refs"],
+        "required": ["reference_designator", "footprint", "centroid", "rotation_degrees", "side", "placement_source_id"],
         "properties": {
-          "refdes": { "type": "string", "minLength": 1 },
+          "reference_designator": { "type": "string", "minLength": 1 },
           "footprint": { "type": "string", "minLength": 1 },
-          "centroid": { "type": "object" },
-          "rotation_degrees": { "type": "number" },
-          "side": { "type": "string", "minLength": 1 },
-          "pin_one_or_polarity": { "type": "string" },
-          "permitted_alternates": { "type": "array", "items": { "type": "string" } },
-          "evidence_refs": { "type": "array", "items": { "type": "string" } }
-        }
+          "centroid": { "$ref": "#/$defs/point" },
+          "rotation_degrees": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },
+          "side": { "enum": ["top", "bottom"] },
+          "polarity_or_pin_one": { "type": ["string", "null"] },
+          "alternates": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "placement_source_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
       }
     },
-    "evidence": {
+    "landmarks": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["evidence_id", "source_digest", "locator", "extractor_revision", "review_state"],
+        "required": ["landmark_id", "position"],
         "properties": {
-          "evidence_id": { "type": "string", "minLength": 1 },
-          "source_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-          "locator": { "type": "string", "minLength": 1 },
-          "extractor_revision": { "type": "string", "minLength": 1 },
-          "confidence": { "type": "number", "minimum": 0 },
-          "review_state": { "type": "string", "minLength": 1 }
-        }
+          "landmark_id": { "type": "string", "minLength": 1 },
+          "position": { "$ref": "#/$defs/point" }
+        },
+        "additionalProperties": true
       }
     },
-    "provenance": { "type": "object" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["source_id", "role", "license", "digest"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "role": { "enum": ["authored_placement", "datasheet", "supporting"] },
+          "license": { "type": "string", "minLength": 1 },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        },
+        "additionalProperties": true
+      }
+    },
     "integrity": {
       "type": "object",
-      "required": ["bundle_digest", "signature"],
+      "required": ["payload_sha256", "signature_id"],
       "properties": {
-        "bundle_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "signature": { "type": "string", "minLength": 1 }
-      }
+        "payload_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "signature_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
     }
-  }
+  },
+  "$defs": {
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
 }

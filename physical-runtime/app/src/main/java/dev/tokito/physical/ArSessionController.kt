@@ -170,6 +170,19 @@ class ArSessionController(
         val revision = registrationRevision ?: return false
         val now = System.nanoTime()
         val expiry = now + HIGHLIGHT_VALIDITY_NANOS
+        // Isolate the answered component in the digital twin for the same
+        // validity window the 2D marker uses, then restore the full twin.
+        // target.label is the verified reference designator (the board
+        // reference requires it to cite reviewed authored-design evidence),
+        // and the twin names its nodes by that same designator, so this
+        // lights up exactly one component and nothing else.
+        surface.digitalTwin.post {
+            surface.digitalTwin.showOnlyComponents(setOf(target.label))
+        }
+        surface.digitalTwin.postDelayed(
+            { surface.digitalTwin.showOnlyComponents(null) },
+            HIGHLIGHT_VALIDITY_NANOS / 1_000_000L,
+        )
         val scene = OverlayScene(
             sequence = ++sequence,
             transformRevision = revision,

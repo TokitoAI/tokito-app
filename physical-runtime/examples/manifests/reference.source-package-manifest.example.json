@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "package_id": "nxp-frdm-mcxn236-source-package-2026-08-29",
+  "board": {
+    "vendor": "NXP",
+    "product": "FRDM-MCXN236",
+    "revision_status": "pending_physical_confirmation"
+  },
+  "retrieval_policy": {
+    "default_output_directory": "build/reference-packages/nxp-frdm-mcxn236",
+    "network_downloads_require_explicit_command": true,
+    "commit_downloaded_artifacts": false,
+    "account_required_downloads": false
+  },
+  "capture_evidence_policy": {
+    "physical_capture_required": true,
+    "internet_artifacts_are_physical_captures": false,
+    "raw_captures_committed_to_git": false
+  },
+  "sources": [
+    {
+      "source_id": "nxp-frdm-mcxn236-product-page",
+      "role": "board_reference",
+      "kind": "product_page",
+      "url": "https://www.nxp.com/design/design-center/development-boards-and-designs/general-purpose-mcus/frdm-development-board-for-mcx-n23x-mcus:FRDM-MCXN236",
+      "access": "public",
+      "retrieved_at": "2026-08-29",
+      "revision": "active product page crawled 2026-08-28",
+      "artifact_format": "html",
+      "license_status": "public_metadata_only",
+      "trainability": "metadata_only",
+      "fetch_allowed": false,
+      "use_in_pipeline": "source_manifest_only"
+    },
+    {
+      "source_id": "nxp-frdm-mcxn236-getting-started",
+      "role": "board_reference",
+      "kind": "getting_started",
+      "url": "https://www.nxp.com/document/guide/getting-started-with-frdm-mcxn236%3AGS-FRDM-MCXN236",
+      "artifact_code": "GS-FRDM-MCXN236",
+      "access": "public",
+      "retrieved_at": "2026-08-29",
+      "revision": "last modified 2024-04-30",
+      "artifact_format": "html",
+      "license_status": "public_metadata_only",
+      "trainability": "metadata_only",
+      "fetch_allowed": false,
+      "use_in_pipeline": "source_manifest_only"
+    },
+    {
+      "source_id": "nxp-frdm-mcxn236-board-bottom-image",
+      "role": "visual_reference",
+      "kind": "product_image",
+      "url": "https://www.nxp.com/assets/images/en/dev-board-image/FRDM-MCXN236-BOT.jpg",
+      "artifact_code": "FRDM-MCXN236-BOT",
+      "access": "public",
+      "retrieved_at": "2026-08-29",
+      "revision": "official NXP public product image indexed from FRDM-MCXN236 product page",
+      "artifact_format": "image",
+      "license_status": "pending_review",
+      "trainability": "requires_explicit_permission",
+      "fetch_allowed": false,
+      "use_in_pipeline": "visual_reference_after_review"
+    },
+    {
+      "source_id": "nxp-frdm-mcxn236-user-manual",
+      "role": "design_truth_candidate",
+      "kind": "user_manual",
+      "url": "https://www.nxp.com/design/design-center/development-boards-and-designs/general-purpose-mcus/frdm-development-board-for-mcx-n23x-mcus:FRDM-MCXN236",
+      "artifact_code": "UM12041",
+      "access": "account_required",
+      "retrieved_at": "2026-08-29",
+      "revision": "rev 4.0 2025-11-13",
+      "artifact_format": "pdf",
+      "license_status": "account_terms_required",
+      "trainability": "training_candidate_after_license_review",
+      "fetch_allowed": false,
+      "use_in_pipeline": "validation_reference_after_review"
+    },
+    {
+      "source_id": "nxp-frdm-mcxn236-schematic",
+      "role": "design_truth_candidate",
+      "kind": "schematic",
+      "url": "https://www.nxp.com/design/design-center/development-boards-and-designs/general-purpose-mcus/frdm-development-board-for-mcx-n23x-mcus:FRDM-MCXN236",
+      "artifact_code": "SPF-90828",
+      "access": "account_required",
+      "retrieved_at": "2026-08-29",
+      "revision": "rev C 2024-04-26 12:52:00",
+      "artifact_format": "pdf",
+      "license_status": "account_terms_required",
+      "trainability": "training_candidate_after_license_review",
+      "fetch_allowed": false,
+      "use_in_pipeline": "validation_reference_after_review"
+    },
+    {
+      "source_id": "nxp-frdm-mcxn236-design-files",
+      "role": "design_truth_candidate",
+      "kind": "design_files",
+      "url": "https://www.nxp.com/design/design-center/development-boards-and-designs/general-purpose-mcus/frdm-development-board-for-mcx-n23x-mcus:FRDM-MCXN236",
+      "artifact_code": "FRDM-MCXN236-DESIGN-FILES",
+      "access": "account_required",
+      "retrieved_at": "2026-08-29",
+      "revision": "rev C 2024-04-26 12:56:00",
+      "artifact_format": "zip",
+      "license_status": "account_terms_required",
+      "trainability": "training_candidate_after_license_review",
+      "fetch_allowed": false,
+      "use_in_pipeline": "validation_reference_after_review"
+    },
+    {
+      "source_id": "nxp-mcuxpresso-sdk-frdm-mcxn236-docs",
+      "role": "software_reference",
+      "kind": "sdk_docs",
+      "url": "https://mcuxpresso.nxp.com/mcuxsdk/latest/html/boards/MCX/frdmmcxn236/index.html",
+      "access": "public",
+      "retrieved_at": "2026-08-29",
+      "revision": "version 26.09.00-pvw2 branch release/26.09.00-pvw2 revision a27bae57",
+      "artifact_format": "html",
+      "license_status": "public_metadata_only",
+      "trainability": "metadata_only",
+      "fetch_allowed": true,
+      "use_in_pipeline": "source_manifest_only"
+    }
+  ]
+}

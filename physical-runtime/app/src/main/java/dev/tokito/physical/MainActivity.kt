@@ -11,7 +11,10 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -77,6 +80,22 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The camera view intentionally draws edge to edge, so the AR
+        // controls column must clear the system bar / display cutout itself:
+        // in landscape the navigation bar sits at the screen's end edge and
+        // otherwise covers the buttons, leaving them clipped and only
+        // partially tappable.
+        val controlsBaseEndMargin =
+            (binding.arControls.layoutParams as android.widget.FrameLayout.LayoutParams).marginEnd
+        ViewCompat.setOnApplyWindowInsetsListener(binding.arControls) { view, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            view.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
+                marginEnd = controlsBaseEndMargin + maxOf(insets.right, insets.left)
+            }
+            windowInsets
+        }
 
         sessionId = requireNotNull(intent.getStringExtra(EXTRA_SESSION_ID)) {
             "Physical sessions must be opened through the Tokito session boundary"
@@ -109,6 +128,47 @@ class MainActivity : AppCompatActivity() {
         ensureCameraPermission()
         lifecycleScope.launch { prepareLocalVision() }
         lifecycleScope.launch { call.warmUp() }
+        registerDebugUtteranceReceiver()
+    }
+
+    // Debug builds accept an utterance over adb so the grounded-answer and
+    // highlight path can be exercised and diagnosed independently of the
+    // microphone and speech recognition:
+    //   adb shell am broadcast -a dev.tokito.physical.debug.UTTERANCE \
+    //     --es utterance "where is the main chip"
+    // Release builds never register the receiver, so the production entry
+    // point for dialogue remains the local voice loop only.
+    private var debugUtteranceReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerDebugUtteranceReceiver() {
+        if (!BuildConfig.DEBUG) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                val utterance = intent?.getStringExtra("utterance")?.takeIf { it.isNotBlank() } ?: return
+                lifecycleScope.launch {
+                    val answer = respondLocally(utterance)
+                    android.util.Log.i(
+                        "TokitoDialogue",
+                        "debug utterance='$utterance' answer='$answer'",
+                    )
+                    // Some devices (observed on vivo/iQOO) drop all app logcat
+                    // output via a system log kill switch, so the debug hook
+                    // also records its outcome to a run-as readable file.
+                    runCatching {
+                        File(filesDir, "debug-last-answer.txt")
+                            .writeText("utterance=$utterance\nanswer=$answer\n")
+                    }
+                    voice.speak(answer, SpeechQueuePolicy.REPLACE) {}
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            android.content.IntentFilter("dev.tokito.physical.debug.UTTERANCE"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        debugUtteranceReceiver = receiver
     }
 
     override fun onStart() {
@@ -128,6 +188,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        debugUtteranceReceiver?.let(::unregisterReceiver)
+        debugUtteranceReceiver = null
         if (::call.isInitialized) call.close()
         if (::ar.isInitialized) ar.destroy()
         if (::dialogue.isInitialized) dialogue.close()
@@ -224,15 +286,28 @@ class MainActivity : AppCompatActivity() {
             voice.initialize()
         }
         if (dialogue.state.value !is DialogueRuntimeState.Ready) {
-            val model = withContext(Dispatchers.IO) {
-                DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
-                    .requireInstalled()
+            // The local LLM refines grounded answers into conversational
+            // phrasing; the answers themselves come from the verified board
+            // reference (respondLocally already falls back to the grounded
+            // text when dialogue is unavailable or unfaithful). A missing
+            // dialogue bundle therefore degrades phrasing, not capability,
+            // and must not take down the whole voice loop with it.
+            runCatching {
+                val model = withContext(Dispatchers.IO) {
+                    DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
+                        .requireInstalled()
+                }
+                val modelBytes = model.artifacts.fold(0L) { total, artifact ->
+                    Math.addExact(total, artifact.sizeBytes)
+                }
+                requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
+                dialogue.initialize(model)
+            }.onFailure { failure ->
+                android.util.Log.i(
+                    "TokitoDialogue",
+                    "local LLM bundle unavailable; responding with verified board data only: ${failure.message}",
+                )
             }
-            val modelBytes = model.artifacts.fold(0L) { total, artifact ->
-                Math.addExact(total, artifact.sizeBytes)
-            }
-            requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
-            dialogue.initialize(model)
         }
     }
 
@@ -273,7 +348,13 @@ class MainActivity : AppCompatActivity() {
             ?: return "No verified board reference is loaded."
         val grounded = reference.index.groundedAnswer(utterance)
             ?: return "I couldn't match that to verified ${reference.identity.model} data. Please repeat the component name."
-        grounded.boardTarget?.let(ar::highlightBoardTarget)
+        grounded.boardTarget?.let { target ->
+            val accepted = ar.highlightBoardTarget(target)
+            android.util.Log.i(
+                "TokitoDialogue",
+                "grounded board target ${target.label} highlight accepted=$accepted",
+            )
+        }
         val generated = runCatching {
             dialogue.respond(
                 DialogueRequest(
