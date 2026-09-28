@@ -138,9 +138,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
         with:
           targets: aarch64-linux-android
-      - uses: taiki-e/install-action@5143e80b967e6a45c75666141984b2747152469f # v2
-        with:
-          tool: cargo-ndk@4.1.2
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
       - run: npm ci
       - name: Build Android UniFFI artifact
         env:
