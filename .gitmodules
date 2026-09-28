@@ -1,0 +1,3 @@
+[submodule "physical-runtime/third_party/llama.cpp"]
+	path = physical-runtime/third_party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git
