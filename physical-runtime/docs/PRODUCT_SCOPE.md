@@ -1,4 +1,9 @@
-# Product scope
+# Physical workspace scope
+
+> **Unified-product note (2026-09-29):** This is the offline physical workspace
+> inside Tokito, not a separate product. Local use remains account-free and
+> network-free; application identity, navigation, signing, and releases belong
+> to `TokitoAI/tokito-app`.
 
 ## Problem
 

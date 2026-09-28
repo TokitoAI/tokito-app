@@ -1,21 +1,23 @@
 # AGENTS.md
 
-**For AI coding assistants working in this repository.** Read this file first,
-then the relevant `memory/` files and the normative documents under `docs/`.
+**For AI coding assistants working in this subtree.** Root `AGENTS.md` is the
+controlling instruction set. Read it first, then this file, the relevant
+`memory/` files, and the normative documents under `docs/`.
 Inspect the Tokito project board before starting work:
 <https://github.com/orgs/TokitoAI/projects/1>.
 
 ## Product
 
-Tokito Physical Runtime is a standalone, offline-first Android AR assistant for
-electronics bench work. It owns local perception, local text reasoning, local
-speech, AR guidance, typed observations, and bounded physical tools. It must
-complete its baseline workflows without Tokito, Cloud, or Companion.
+This directory is the native physical-intelligence boundary embedded inside the
+single Tokito mobile application. It owns local perception, local text
+reasoning, local speech, AR guidance, typed observations, and bounded physical
+tools. Local bench workflows remain available without an account or network,
+but there is no second product, launcher, repository roadmap, or release train.
 
-The project is separate from `tokito-companion`. Do not modify Companion while
-working here unless a separately approved cross-repository issue explicitly
-requires it. A future integration consumes a versioned Android interface; it
-does not host the standalone product or merge runtime internals into Companion.
+React Native owns ordinary application navigation. This subtree owns the
+latency-sensitive Android implementation. Integrate through the versioned
+in-process boundary; never move camera frames, PCM, tensors, or high-rate
+tracking through the JavaScript bridge.
 
 ## Authority order
 
@@ -30,8 +32,8 @@ the implementation conflict.
 
 ## Board workflow
 
-All work is tracked on Tokito's organization project. Issues belong in this
-repository and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
+All work is tracked on Tokito's organization project. Issues belong in
+`TokitoAI/tokito-app` and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
 `bug`, or `chore`.
 
 - Set a card to **In progress** before implementation.
@@ -41,41 +43,12 @@ repository and use exactly one type label: `roadmap`, `epic`, `feature`, `task`,
 - Merge only with required evidence green; close and mark **Done** afterward.
 - The board is the roadmap. Do not create a competing roadmap file.
 
-## Main branch policy
+## Delivery policy
 
-`main` is PR-only by project policy. Require pull requests before merge, require
-conversation resolution, preserve linear history, block force-push, block branch
-deletion, and bind required checks once CI workflows exist. GitHub branch
-protection for this private repository is tracked by issue #33 because the
-current organization plan does not yet support the needed repository rules.
-Do not make the repository public solely to work around that limitation.
-
-All repository changes, including CI, documentation, and agent-maintenance
-changes, go through an issue-scoped branch and pull request. An agent must not
-push a change directly to `main`. When an agent owns or has been explicitly
-delegated a pull request, it must merge the PR without waiting for another
-human confirmation once all of the following are true: the PR is not a draft,
-all required checks are successful, GitHub reports a clean merge state, and no
-review conversation or requested change remains unresolved. After merging, the
-agent must verify the `main` push workflow, close the issue if GitHub did not,
-and set its project card to **Done**. A user instruction to hold or not merge
-always overrides this default.
-
-## CI runner policy
-
-Every GitHub Actions job in this repository runs on the organization-managed
-`playground-linux-x64` runner using the complete label set
-`[self-hosted, Linux, X64, tokito-vps, private-build]`. Do not use
-`ubuntu-latest`, `windows-latest`, `macos-latest`, another GitHub-hosted label,
-or a partial VPS label set. This repository is authorized in the restricted
-Tokito VPS runner group. `tools/validate_governance.py` enforces the invariant
-across every workflow so a pull request cannot silently move CI back to billed
-GitHub-hosted capacity.
-
-A job that truly requires another operating system must not weaken or bypass
-this rule. Track the requirement in an issue, provision an organization-managed
-self-hosted runner with explicit labels, and update the validator and this
-policy together through a separately reviewed PR.
+All changes go through issue-scoped branches and pull requests in
+`TokitoAI/tokito-app`. The root Buildkite pipeline is authoritative; it runs
+this subtree's governance, Rust, Android, and unified-APK gates in the pinned
+mobile image. Do not add a second GitHub Actions or subtree release pipeline.
 
 ## Non-negotiable rules
 
@@ -99,11 +72,11 @@ policy together through a separately reviewed PR.
 - **Python is tooling, not the shipping hot path.** Training/export/evaluation
   may use Python. Android production code uses a stable native interface unless
   an ADR backed by device measurements changes the decision.
-- **Standalone means standalone.** Tokito design context may improve identity
-  mapping, but absence of Tokito cannot disable generic board discovery,
+- **Offline means offline.** Tokito design context may improve identity
+  mapping, but absence of Cloud authentication or networking cannot disable generic board discovery,
   inspection, local conversation, or AR guidance.
-- **No Companion drift.** This product cannot add CAD editing or broaden
-  Companion's read/review product boundary.
+- **One product boundary.** Mobile cannot add CAD editing or become a desktop
+  workspace-management client.
 - **No hardcoded device assumptions.** Hardware features are discovered through
   a capability profile and unsupported paths fail closed.
 - **AR is registered presentation, not an independent geometry system.** Every

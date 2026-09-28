@@ -1,7 +1,12 @@
 # ADR 0004: Standalone fully local AR product
 
-- Status: Accepted
+- Status: Amended by root ADR 0001, one Tokito mobile application
 - Date: 2026-08-29
+- Amended: 2026-09-28
+
+"Standalone" in this historical record now means local physical workflows are
+independent of authentication and networking. The shipping surface is the
+embedded physical workspace in the single Tokito application.
 
 ## Context
 

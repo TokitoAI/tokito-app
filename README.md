@@ -57,3 +57,6 @@ consumes the native runtime, duplicate packaging is removed, CI produces one
 signed APK/AAB, migrations are verified, and the retirement gate in
 [ADR 0001](docs/decisions/0001-unified-mobile-application.md) passes.
 
+The historical work map and archival rules are documented in
+[Former mobile repository retirement](docs/REPOSITORY_RETIREMENT.md).
+

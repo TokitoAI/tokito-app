@@ -1,4 +1,10 @@
-# Proposal-to-delivery traceability
+# Physical capability traceability
+
+> **Migration note (2026-09-29):** Former Physical Runtime issues were
+> transferred to `TokitoAI/tokito-app`; old URLs redirect and preserve their
+> discussion. The organization board and `tokito-app` are now authoritative.
+> Historical standalone/Companion milestones mean offline independence and the
+> completed embedding gate, not separate current products.
 
 The source proposal in [`proposals/`](proposals/) is informative: it explains
 the intended experience, but does not override the Technical Bible, accepted
