@@ -21,7 +21,7 @@ scripts inside that image; agent-host toolchains are never used.
 4. Physical Android unit tests, lint, and debug assembly.
 5. Unified arm64 APK assembly and package-content verification.
 
-The unified APK gate depends on the first four. Its debug APK is retained as a
+The unified APK gate depends on the first four. Its standalone unsigned release APK is retained as a
 Buildkite artifact for manual QA.
 
 ## Release flow
