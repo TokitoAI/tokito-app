@@ -1,0 +1,14 @@
+steps:
+  - block: ":rocket: Publish ${BUILDKITE_TAG}"
+    key: approve-release
+    prompt: "Publish an upload-signed APK/AAB and create the immutable GitHub release?"
+    if: build.tag != null
+
+  - label: ":android: signed APK + AAB"
+    command: .buildkite/steps/release-android.sh
+    depends_on: approve-release
+    if: build.tag != null
+    timeout_in_minutes: 75
+    artifact_paths:
+      - "ci-out/Tokito-*.apk"
+      - "ci-out/Tokito-*.aab"
