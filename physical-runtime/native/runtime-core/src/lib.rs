@@ -1299,6 +1299,8 @@ impl ModelManifest {
 pub struct ModelRegistry {
     active: Option<ModelManifest>,
     active_bytes: u64,
+    rollback: Option<ModelManifest>,
+    rollback_bytes: u64,
 }
 
 impl ModelRegistry {
@@ -1316,7 +1318,16 @@ impl ModelRegistry {
         candidate.verify_artifact(artifact, verifier)?;
         let candidate_bytes =
             u64::try_from(artifact.len()).map_err(|_| RuntimeError::ResourceExhausted)?;
-        quota.replace(self.active_bytes, candidate_bytes)?;
+        let previous_total = self
+            .active_bytes
+            .checked_add(self.rollback_bytes)
+            .ok_or(RuntimeError::ResourceExhausted)?;
+        let next_total = candidate_bytes
+            .checked_add(self.active_bytes)
+            .ok_or(RuntimeError::ResourceExhausted)?;
+        quota.replace(previous_total, next_total)?;
+        self.rollback = self.active.take();
+        self.rollback_bytes = self.active_bytes;
         self.active = Some(candidate);
         self.active_bytes = candidate_bytes;
         Ok(())
@@ -1324,6 +1335,29 @@ impl ModelRegistry {
 
     pub fn active(&self) -> Option<&ModelManifest> {
         self.active.as_ref()
+    }
+
+    pub fn rollback_candidate(&self) -> Option<&ModelManifest> {
+        self.rollback.as_ref()
+    }
+
+    /// Atomically swaps the active and previously verified bundle. No
+    /// signature bypass occurs: only a manifest admitted by an earlier
+    /// successful activation can occupy the rollback slot.
+    pub fn rollback(&mut self) -> Result<(), RuntimeError> {
+        if self.rollback.is_none() {
+            return Err(RuntimeError::ModelUnavailable);
+        }
+        std::mem::swap(&mut self.active, &mut self.rollback);
+        std::mem::swap(&mut self.active_bytes, &mut self.rollback_bytes);
+        Ok(())
+    }
+
+    pub fn discard_rollback(&mut self, quota: &mut StorageQuota) -> Result<(), RuntimeError> {
+        quota.release(self.rollback_bytes)?;
+        self.rollback = None;
+        self.rollback_bytes = 0;
+        Ok(())
     }
 }
 
@@ -2370,6 +2404,97 @@ mod tests {
             ),
             Err(RuntimeError::UnsupportedCapability)
         );
+    }
+
+    #[test]
+    fn model_activation_retains_exactly_one_verified_rollback() {
+        let first_artifact = b"model-one";
+        let second_artifact = b"model-two";
+        let third_artifact = b"model-three";
+        let first = model_manifest(first_artifact);
+        let mut second = model_manifest(second_artifact);
+        second.model_revision = "revision-2".into();
+        let mut third = model_manifest(third_artifact);
+        third.model_revision = "revision-3".into();
+        let mut registry = ModelRegistry::default();
+        let mut quota = StorageQuota::new(64).unwrap();
+
+        for (manifest, artifact) in [
+            (first.clone(), first_artifact.as_slice()),
+            (second.clone(), second_artifact.as_slice()),
+            (third.clone(), third_artifact.as_slice()),
+        ] {
+            registry
+                .activate_atomically(
+                    manifest,
+                    artifact,
+                    1,
+                    "runtime-revision",
+                    "declared-abi",
+                    &AcceptingVerifier,
+                    &mut quota,
+                )
+                .unwrap();
+        }
+
+        assert_eq!(registry.active(), Some(&third));
+        assert_eq!(registry.rollback_candidate(), Some(&second));
+        assert_eq!(registry.rollback(), Ok(()));
+        assert_eq!(registry.active(), Some(&second));
+        assert_eq!(registry.rollback_candidate(), Some(&third));
+        registry.discard_rollback(&mut quota).unwrap();
+        assert!(registry.rollback_candidate().is_none());
+        assert_eq!(quota.remaining_bytes(), 64 - second_artifact.len() as u64);
+    }
+
+    #[test]
+    fn failed_model_upgrade_preserves_active_and_rollback() {
+        let active_artifact = b"active";
+        let rollback_artifact = b"rollback";
+        let active = model_manifest(active_artifact);
+        let mut rollback = model_manifest(rollback_artifact);
+        rollback.model_revision = "rollback".into();
+        let mut registry = ModelRegistry::default();
+        let mut quota = StorageQuota::new(32).unwrap();
+        registry
+            .activate_atomically(
+                rollback.clone(),
+                rollback_artifact,
+                1,
+                "runtime-revision",
+                "declared-abi",
+                &AcceptingVerifier,
+                &mut quota,
+            )
+            .unwrap();
+        registry
+            .activate_atomically(
+                active.clone(),
+                active_artifact,
+                1,
+                "runtime-revision",
+                "declared-abi",
+                &AcceptingVerifier,
+                &mut quota,
+            )
+            .unwrap();
+
+        let oversized = vec![7u8; 40];
+        let oversized_manifest = model_manifest(&oversized);
+        assert_eq!(
+            registry.activate_atomically(
+                oversized_manifest,
+                &oversized,
+                1,
+                "runtime-revision",
+                "declared-abi",
+                &AcceptingVerifier,
+                &mut quota,
+            ),
+            Err(RuntimeError::ResourceExhausted)
+        );
+        assert_eq!(registry.active(), Some(&active));
+        assert_eq!(registry.rollback_candidate(), Some(&rollback));
     }
 
     #[test]

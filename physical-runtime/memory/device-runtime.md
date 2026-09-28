@@ -21,6 +21,12 @@ thermal evidence digests match the active device-profile and ABI and report no
 silent fallback. This mechanism does not constitute measured evidence or select
 a backend for the captured device.
 
+The native model registry accounts the active and one previously verified
+rollback artifact together against its caller-owned storage quota. Activation
+replaces the older rollback only after schema, runtime, ABI, digest, and
+signature admission succeeds; failed upgrades preserve both slots. Rollback is
+therefore a swap between already admitted bundles, never a verification bypass.
+
 **How to apply:** use the versioned profile capture procedure for each firmware
 revision. Do not hardcode device, vendor/NPU, camera, ABI, or backend
 assumptions into the runtime; unsupported paths must fail closed.
