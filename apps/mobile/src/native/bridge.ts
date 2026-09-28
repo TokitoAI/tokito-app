@@ -65,7 +65,8 @@ export type SyncResourceName =
   | "schematic"
   | "bom"
   | "chat"
-  | "suggestions";
+  | "suggestions"
+  | "physical_sessions";
 
 /** Map Expo CodedException codes from Kotlin CompanionException simple names. */
 function mapNativeError(err: unknown): CompanionError {

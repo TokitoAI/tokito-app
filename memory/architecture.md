@@ -11,6 +11,14 @@ JavaScript bridge.
 low-rate lifecycle state, typed observations, and failures. Frames, audio,
 tensors, and high-rate tracking stay native.
 
+Physical sessions are locally authoritative in `PhysicalSessionStore`.
+Stable session, observation, and evidence IDs plus optimistic session revisions
+are persisted before the native bench opens. A record enters Cloud sync only
+after explicit per-record authorization. The Expo control plane merges complete
+structured snapshots into the versioned `physical_sessions` resource after the
+Rust outbox durably accepts them. Projectless sessions remain local; evidence
+sync contains metadata and digests, never content URIs or media bytes.
+
 The production Android artifact has one launcher and one package. Expo owns
 `dev.tokito.companion` so existing installs can upgrade in place; the imported
 Physical shell is an internal Android library/activity and has no launcher or

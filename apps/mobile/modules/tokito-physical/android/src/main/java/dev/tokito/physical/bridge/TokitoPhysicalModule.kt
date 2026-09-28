@@ -5,6 +5,8 @@ import android.os.Build
 import ai.tokito.physical.runtime.PhysicalRuntime
 import ai.tokito.physical.runtime.RuntimeConfiguration
 import dev.tokito.physical.MainActivity
+import dev.tokito.physical.session.PhysicalSessionContext as StoredSessionContext
+import dev.tokito.physical.session.PhysicalSessionStore
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -17,6 +19,9 @@ class PhysicalSessionContext : Record {
 
   @Field
   val designId: String? = null
+
+  @Field
+  val contextRevision: String? = null
 }
 
 /**
@@ -49,16 +54,57 @@ class TokitoPhysicalModule : Module() {
     }
 
     AsyncFunction("openSession") { sessionContext: PhysicalSessionContext? ->
-      val context = appContext.currentActivity
+      val activity = appContext.currentActivity
         ?: throw CodedException("NoActivity", "Tokito must be visible to open a Physical session", null)
       val session = physicalRuntime.openSession()
-      context.startActivity(
-        Intent(context, MainActivity::class.java).apply {
-          sessionContext?.projectId?.let { putExtra(MainActivity.EXTRA_PROJECT_ID, it) }
-          sessionContext?.designId?.let { putExtra(MainActivity.EXTRA_DESIGN_ID, it) }
-        },
-      )
+      val storedContext = try {
+        StoredSessionContext(
+          projectId = sessionContext?.projectId,
+          designId = sessionContext?.designId,
+          contextRevision = sessionContext?.contextRevision,
+        )
+      } catch (failure: IllegalArgumentException) {
+        throw CodedException("InvalidSessionContext", failure.message ?: "Invalid session context", failure)
+      }
+      PhysicalSessionStore.open(activity).use { store ->
+        store.startSession(storedContext, session.id)
+        try {
+          activity.startActivity(
+            Intent(activity, MainActivity::class.java).apply {
+              putExtra(MainActivity.EXTRA_SESSION_ID, session.id)
+              storedContext.projectId?.let { putExtra(MainActivity.EXTRA_PROJECT_ID, it) }
+              storedContext.designId?.let { putExtra(MainActivity.EXTRA_DESIGN_ID, it) }
+              storedContext.contextRevision?.let { putExtra(MainActivity.EXTRA_CONTEXT_REVISION, it) }
+            },
+          )
+        } catch (failure: RuntimeException) {
+          store.deleteSession(session.id)
+          throw failure
+        }
+      }
       mapOf("id" to session.id, "state" to "created")
+    }
+
+    AsyncFunction("pendingSyncSnapshots") {
+      val context = appContext.reactContext
+        ?: throw CodedException("NoContext", "Tokito is not ready to read Physical sessions", null)
+      PhysicalSessionStore.open(context).use { store ->
+        store.pendingSyncSnapshots().map { snapshot ->
+          mapOf(
+            "sessionId" to snapshot.sessionId,
+            "projectId" to snapshot.projectId,
+            "designId" to snapshot.designId,
+            "revision" to snapshot.revision,
+            "payloadJson" to snapshot.payloadJson,
+          )
+        }
+      }
+    }
+
+    AsyncFunction("markSyncEnqueued") { sessionId: String ->
+      val context = appContext.reactContext
+        ?: throw CodedException("NoContext", "Tokito is not ready to update Physical sessions", null)
+      PhysicalSessionStore.open(context).use { store -> store.markSyncEnqueued(sessionId) }
     }
   }
 }

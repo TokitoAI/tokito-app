@@ -1,6 +1,9 @@
 import type { JSX, PropsWithChildren } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
+import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
 
 export type SyncResource = {
   project_id: string;
@@ -64,6 +67,7 @@ export function RealtimeWorkspaceProvider({
   const [error, setError] = useState<string | null>(null);
   const [resourceMap, setResourceMap] = useState<Map<string, SyncResource>>(new Map());
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
+  const physicalDrain = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
@@ -167,6 +171,54 @@ export function RealtimeWorkspaceProvider({
     });
     return commandId;
   }, [client, subscriptionId]);
+
+  const drainPhysicalSync = useCallback(async (): Promise<void> => {
+    if (physicalDrain.current !== null) return physicalDrain.current;
+    if (subscriptionId === null || !client.enqueueSyncCommand) return;
+    const enqueueSyncCommand = client.enqueueSyncCommand.bind(client);
+    const run = (async () => {
+      const snapshots = await TokitoPhysical.pendingSyncSnapshots();
+      const mergedByResource = new Map<string, PhysicalSessionsPayload>();
+      for (const snapshot of snapshots) {
+        const key = keyOf(snapshot.projectId, snapshot.designId, "physical_sessions");
+        const current = mergedByResource.get(key)
+          ?? resourceMap.get(key)?.payload;
+        const merged = mergePhysicalSessionSnapshot(current, snapshot);
+        await enqueueSyncCommand(
+          subscriptionId,
+          snapshot.projectId,
+          snapshot.designId,
+          "physical_sessions",
+          merged,
+        );
+        // enqueueSyncCommand returns only after the Rust outbox durably owns the
+        // command. Until then the native queue remains untouched and retryable.
+        await TokitoPhysical.markSyncEnqueued(snapshot.sessionId);
+        mergedByResource.set(key, merged);
+      }
+    })();
+    physicalDrain.current = run;
+    try {
+      await run;
+    } finally {
+      physicalDrain.current = null;
+    }
+  }, [client, resourceMap, subscriptionId]);
+
+  useEffect(() => {
+    if (subscriptionId === null) return;
+    void drainPhysicalSync().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    const listener = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        void drainPhysicalSync().catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        });
+      }
+    });
+    return () => listener.remove();
+  }, [drainPhysicalSync, subscriptionId]);
 
   const resolveConflict = useCallback(async (commandId: string, keepLocal: boolean) => {
     if (subscriptionId === null || !client.resolveSyncConflict) return;
