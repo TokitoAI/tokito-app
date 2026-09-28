@@ -28,6 +28,7 @@ import dev.tokito.physical.voice.TokitoVoiceRuntime
 import dev.tokito.physical.voice.VoiceEvent
 import dev.tokito.physical.voice.VoiceRuntimeConfig
 import dev.tokito.physical.voice.VoiceRuntimeState
+import dev.tokito.physical.session.PhysicalSessionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,6 +46,8 @@ class MainActivity : AppCompatActivity() {
     private var vision: LocalPoseVisionRuntime? = null
     private var cameraPermissionRequested = false
     private var microphonePermissionRequested = false
+    private lateinit var sessionStore: PhysicalSessionStore
+    private lateinit var sessionId: String
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -72,6 +75,12 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        sessionId = requireNotNull(intent.getStringExtra(EXTRA_SESSION_ID)) {
+            "Physical sessions must be opened through the Tokito session boundary"
+        }
+        sessionStore = PhysicalSessionStore.open(this)
+        requireNotNull(sessionStore.session(sessionId)) { "Physical session does not exist" }
 
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         dialogue = TokitoDialogueRuntime(
@@ -120,6 +129,14 @@ class MainActivity : AppCompatActivity() {
         if (::ar.isInitialized) ar.destroy()
         if (::dialogue.isInitialized) dialogue.close()
         if (::voice.isInitialized) voice.close()
+        if (::sessionStore.isInitialized) {
+            if (isFinishing && !isChangingConfigurations) {
+                sessionStore.session(sessionId)?.takeIf { it.status == "active" }?.let { session ->
+                    sessionStore.finishSession(sessionId, session.revision)
+                }
+            }
+            sessionStore.close()
+        }
         super.onDestroy()
     }
 
@@ -337,8 +354,10 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     companion object {
+        const val EXTRA_SESSION_ID = "dev.tokito.physical.extra.SESSION_ID"
         const val EXTRA_PROJECT_ID = "dev.tokito.physical.extra.PROJECT_ID"
         const val EXTRA_DESIGN_ID = "dev.tokito.physical.extra.DESIGN_ID"
+        const val EXTRA_CONTEXT_REVISION = "dev.tokito.physical.extra.CONTEXT_REVISION"
         val QUALITY_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,63}")
         const val MAX_QUESTION_ECHO_RATIO = 0.80
     }

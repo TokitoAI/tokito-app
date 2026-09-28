@@ -31,6 +31,10 @@ React Native product shell
 The native boundary transports commands and typed low-rate state. Frames,
 audio buffers, tensors, and high-rate tracking data stay native.
 
+Physical session history is local-first, durable, and revisioned. Cloud project
+sessions synchronize only structured observations explicitly authorized by the
+user; raw camera/audio and evidence bytes never enter realtime sync.
+
 ## Workspace
 
 - `apps/mobile` - Expo/React Native TypeScript application shell
