@@ -46,6 +46,11 @@ user; raw camera/audio and evidence bytes never enter realtime sync.
 The consolidation is tracked by
 [TokitoAI/tokito-app#1](https://github.com/TokitoAI/tokito-app/issues/1).
 
+CI and Android releases run on the organization-managed Buildkite `linux`
+queue using the pinned mobile build image. See [CI and releases](docs/CI_CD.md)
+for the five required gates, release signing, and artifact flow. GitHub Actions
+is not part of the release path.
+
 Companion history is the repository base and Physical Runtime history is
 preserved in `physical-runtime/`. The merge is complete only when one launcher
 consumes the native runtime, duplicate packaging is removed, CI produces one
