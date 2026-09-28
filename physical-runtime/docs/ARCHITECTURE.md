@@ -15,11 +15,11 @@ flowchart TB
         DSVire[DS-ViRe evidence extraction]
         Design[PCB, BOM, placement and assembly data]
         Bundle[Versioned assembly context bundle]
-        FutureCompanion[Future Companion integration]
+        MobileShell[Unified Tokito mobile shell]
     end
 
-    subgraph Product[Standalone iQOO Android product - this repository]
-        App[Camera-first AR application]
+    subgraph Product[Embedded offline workspace - tokito-app]
+        App[Native physical activity]
         API[Versioned local API and capability manifest]
         Session[Session and dialogue coordinator]
         LLM[Local text LLM and constrained tool planner]
@@ -42,7 +42,7 @@ flowchart TB
     DSVire -->|part, package, pin and polarity evidence| Bundle
     Design -->|board geometry, refdes, centroid and rotation| Bundle
     Bundle -.->|optional verified local import| API
-    FutureCompanion -.->|future in-process consumer| API
+    MobileShell -->|typed low-rate native boundary| API
     App --> Session
     API --> Session
     Session --> LLM
@@ -80,10 +80,10 @@ the asset into the camera frame. Invalid assets or registration loss suppress
 
 ## Deployable artifacts
 
-The repository produces, or is converging on, these artifacts:
+The unified repository produces, or is converging on, these artifacts:
 
-1. a standalone camera-first Android AR application;
-2. an Android AAR exposing reusable Kotlin APIs and lifecycle integration;
+1. one installable Tokito Android application with an embedded camera-first workspace;
+2. internal Android libraries exposing reusable Kotlin APIs and lifecycle integration;
 3. native runtime libraries selected by ABI and inference backend;
 4. signed, digest-addressed model bundles for text LLM, visual models, English
    speech, and supporting models, with provenance manifests;
@@ -91,8 +91,9 @@ The repository produces, or is converging on, these artifacts:
    conformance only;
 6. reproducible benchmark reports and a machine-readable capability manifest.
 
-The `app` module is the sole user-facing Android application. Its camera-first
-activity composes `voice-runtime`, `measurement-runtime`, `dialogue-runtime`,
+The root Expo application is the sole user-facing Android application. The
+imported Physical `app` module is an internal library/activity, not a launcher.
+Its camera-first activity composes `voice-runtime`, `measurement-runtime`, `dialogue-runtime`,
 and `android/ar-runtime` in-process so AR, speech, dialogue, and typed tools
 share one lifecycle and one interaction surface. `android/ar-demo` is only the
 manual-registration conformance host and is not a second product. Their package coordinates remain
@@ -194,13 +195,13 @@ revision, timestamp, and uncertainty. A box without a frame ID is invalid.
 
 ## Integration policy
 
-The primary integration surface is the standalone Android application using
-the runtime in-process. It requires neither a local HTTP server nor Python IPC.
+The primary integration surface is the unified Tokito application using the
+runtime in-process. It requires neither a local HTTP server nor Python IPC.
 An imported Tokito design package or future authenticated transport may add
 design context, but loss or absence of that integration cannot disable generic
-board discovery, local conversation, inspection, or AR guidance. A future
-Companion change consumes the reusable API only after the standalone product
-passes its hardware gates.
+board discovery, local conversation, inspection, or AR guidance. The root
+mobile shell already consumes the reusable API; exact-device gates still
+govern capability claims, not whether a second app should exist.
 
 The integration boundary is a versioned **assembly context bundle**, not a live
 dependency on Tokito or DS-ViRe. Tokito owns design identity, BOM, board

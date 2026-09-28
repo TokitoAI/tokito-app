@@ -109,10 +109,10 @@ Read, in full:
 - Do not commit local datasets, captures, model weights, generated reports, APKs,
   AARs, or device logs.
 - Preserve evidence manifests and benchmark summaries; do not hand-edit results.
-- Keep `.github/workflows/ci.yml` and `tools/validate_governance.py` green for
-  documentation, schema, and evidence-contract changes.
-- Never weaken the VPS-only workflow validation to work around runner or billing
-  failures; repair the self-hosted runner or its repository authorization.
+- Keep the root `.buildkite/` pipeline and `tools/validate_governance.py` green
+  for documentation, schema, and evidence-contract changes.
+- Never add an Actions or standalone-pipeline fallback to work around CI
+  failures; repair the unified Buildkite pipeline or its pinned image.
 
 ## Memory index
 
@@ -121,5 +121,5 @@ Read, in full:
 | [memory/product.md](memory/product.md) | Product framing and non-goals |
 | [memory/architecture.md](memory/architecture.md) | Runtime boundary and planned artifacts |
 | [memory/device-runtime.md](memory/device-runtime.md) | Hardware/backend constraints and Python policy |
-| [memory/integration.md](memory/integration.md) | Future Tokito/Companion contract boundary |
+| [memory/integration.md](memory/integration.md) | Unified mobile-shell and physical-workspace boundary |
 | [memory/evaluation.md](memory/evaluation.md) | Dataset, metric, and release-evidence rules |

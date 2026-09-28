@@ -30,7 +30,7 @@ The product owns:
   reproducible on-device evaluation.
 
 It does not require Tokito's design reasoning or any cloud service. It does not
-edit schematics or turn Companion into a CAD application.
+edit schematics or turn the mobile application into a CAD editor.
 
 ```mermaid
 flowchart LR
