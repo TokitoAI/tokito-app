@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Tokito Companion",
-    "slug": "tokito-companion",
+    "name": "Tokito",
+    "slug": "tokito",
     "version": "0.2.2",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "tokito-companion",
+    "scheme": "tokito",
     "android": {
       "package": "dev.tokito.companion",
       "versionCode": 10,
@@ -15,7 +15,9 @@
         "backgroundColor": "#07101E"
       },
       "permissions": [
-        "INTERNET"
+        "INTERNET",
+        "CAMERA",
+        "RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -45,7 +47,8 @@
           "backgroundColor": "#0C0D10"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "./plugins/withTokitoPhysical"
     ],
     "extra": {
       "cloudBaseUrl": "https://api.tokito.dev"

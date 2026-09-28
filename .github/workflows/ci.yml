@@ -110,3 +110,41 @@ jobs:
           packages: platform-tools
       - run: chmod +x gradlew
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace
+
+  unified-android:
+    name: unified Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools ndk;27.1.12297006
+      - uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
+        with:
+          targets: aarch64-linux-android
+      - uses: taiki-e/install-action@5143e80b967e6a45c75666141984b2747152469f # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - run: npm ci
+      - name: Build Android UniFFI artifact
+        env:
+          TOKITO_ANDROID_TARGETS: arm64-v8a
+        run: ../../scripts/build-android-ffi.sh
+      - run: npx expo prebuild --platform android --clean --non-interactive
+      - run: ./android/gradlew -p android :app:assembleDebug --no-daemon --stacktrace

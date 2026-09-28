@@ -1,7 +1,7 @@
 plugins {
     id("com.android.library")
     kotlin("android")
-    kotlin("plugin.serialization")
+    kotlin("plugin.serialization") version "2.3.21"
 }
 
 android {
