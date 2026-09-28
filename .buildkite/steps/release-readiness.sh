@@ -17,16 +17,8 @@ report_status() {
   if [ -x /usr/local/bin/tokito-gh-token ] && [ -n "${BUILDKITE_COMMIT:-}" ]; then
     local token payload
     token="$(/usr/local/bin/tokito-gh-token)"
-    payload="$(python3 - "$state" "$description" <<'PY'
-import json, sys
-print(json.dumps({
-    "state": sys.argv[1],
-    "context": "buildkite/tokito-app-release-readiness",
-    "description": sys.argv[2][:140],
-    "target_url": f"https://buildkite.com/tokito/tokito-app/builds/{__import__('os').environ.get('BUILDKITE_BUILD_NUMBER', '')}",
-}))
-PY
-)"
+    payload="$(printf '{"state":"%s","context":"buildkite/tokito-app-release-readiness","description":"%s","target_url":"https://buildkite.com/tokito/tokito-app/builds/%s"}' \
+      "$state" "$description" "${BUILDKITE_BUILD_NUMBER:-}")"
     curl --fail --silent --show-error \
       -X POST \
       -H "Authorization: Bearer $token" \
