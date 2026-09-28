@@ -172,8 +172,20 @@ def extract_footprint_pads(footprint: list[Any]) -> list[dict[str, Any]]:
         if size_node and len(size_node) > 2:
             width = float(size_node[1])
             height = float(size_node[2])
+        at_node = find_direct(child, "at")
+        at_x = at_y = 0.0
+        if at_node and len(at_node) > 2:
+            at_x = float(at_node[1])
+            at_y = float(at_node[2])
         net_node = find_direct(child, "net")
-        net = net_node[2] if net_node and len(net_node) > 2 else None
+        # KiCad-native boards write (net <number> "<name>"); the Allegro
+        # importer writes just (net "<name>"). Take the name in either form.
+        net = None
+        if net_node is not None:
+            if len(net_node) > 2:
+                net = str(net_node[2])
+            elif len(net_node) > 1:
+                net = str(net_node[1])
         pads.append(
             {
                 "number": pad_number,
@@ -181,6 +193,8 @@ def extract_footprint_pads(footprint: list[Any]) -> list[dict[str, Any]]:
                 "shape": pad_shape,
                 "size_w_mm": width,
                 "size_h_mm": height,
+                "at_x_mm": at_x,
+                "at_y_mm": at_y,
                 "net": net,
             }
         )

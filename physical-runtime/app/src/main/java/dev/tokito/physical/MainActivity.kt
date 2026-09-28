@@ -11,7 +11,10 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -30,10 +33,17 @@ import dev.tokito.physical.voice.VoiceEvent
 import dev.tokito.physical.voice.VoiceRuntimeConfig
 import dev.tokito.physical.voice.VoiceRuntimeState
 import dev.tokito.physical.session.PhysicalSessionStore
+import dev.tokito.physical.session.ObservationDraft
+import dev.tokito.physical.measurement.MeasurementCandidate
+import dev.tokito.physical.measurement.MeasurementTurn
+import dev.tokito.physical.measurement.MeasurementValue
+import dev.tokito.physical.measurement.RelationshipKind
+import dev.tokito.physical.voice.MeasurementVoiceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import org.json.JSONObject
 
 /** Camera-first host for the private, fully local voice conversation loop. */
 class MainActivity : AppCompatActivity() {
@@ -42,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dialogue: TokitoDialogueRuntime
     private lateinit var ar: ArSessionController
     private lateinit var call: VoiceCallController
+    private lateinit var measurement: MeasurementVoiceSession
     private var boardReference: BoardReferenceContext? = null
     private var digitalTwinAttempted = false
     private var vision: LocalPoseVisionRuntime? = null
@@ -67,7 +78,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) lifecycleScope.launch { call.start() }
-        else renderCallState(CallState.Unavailable("Allow microphone access to start a call"))
+        else {
+            if (::measurement.isInitialized && measurement.isActive) {
+                lifecycleScope.launch { measurement.cancel() }
+                closeMeasurementCapture()
+            }
+            renderCallState(CallState.Unavailable("Allow microphone access to start a call"))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,6 +94,22 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The camera view intentionally draws edge to edge, so the AR
+        // controls column must clear the system bar / display cutout itself:
+        // in landscape the navigation bar sits at the screen's end edge and
+        // otherwise covers the buttons, leaving them clipped and only
+        // partially tappable.
+        val controlsBaseEndMargin =
+            (binding.arControls.layoutParams as android.widget.FrameLayout.LayoutParams).marginEnd
+        ViewCompat.setOnApplyWindowInsetsListener(binding.arControls) { view, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            view.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
+                marginEnd = controlsBaseEndMargin + maxOf(insets.right, insets.left)
+            }
+            windowInsets
+        }
 
         sessionId = requireNotNull(intent.getStringExtra(EXTRA_SESSION_ID)) {
             "Physical sessions must be opened through the Tokito session boundary"
@@ -103,12 +136,54 @@ class MainActivity : AppCompatActivity() {
             },
             onState = ::renderCallState,
         )
+        measurement = MeasurementVoiceSession(voice)
 
         bindActions()
         observeVoiceEvents()
         ensureCameraPermission()
         lifecycleScope.launch { prepareLocalVision() }
         lifecycleScope.launch { call.warmUp() }
+        registerDebugUtteranceReceiver()
+    }
+
+    // Debug builds accept an utterance over adb so the grounded-answer and
+    // highlight path can be exercised and diagnosed independently of the
+    // microphone and speech recognition:
+    //   adb shell am broadcast -a dev.tokito.physical.debug.UTTERANCE \
+    //     --es utterance "where is the main chip"
+    // Release builds never register the receiver, so the production entry
+    // point for dialogue remains the local voice loop only.
+    private var debugUtteranceReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerDebugUtteranceReceiver() {
+        if (!BuildConfig.DEBUG) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                val utterance = intent?.getStringExtra("utterance")?.takeIf { it.isNotBlank() } ?: return
+                lifecycleScope.launch {
+                    val answer = respondLocally(utterance)
+                    android.util.Log.i(
+                        "TokitoDialogue",
+                        "debug utterance='$utterance' answer='$answer'",
+                    )
+                    // Some devices (observed on vivo/iQOO) drop all app logcat
+                    // output via a system log kill switch, so the debug hook
+                    // also records its outcome to a run-as readable file.
+                    runCatching {
+                        File(filesDir, "debug-last-answer.txt")
+                            .writeText("utterance=$utterance\nanswer=$answer\n")
+                    }
+                    voice.speak(answer, SpeechQueuePolicy.REPLACE) {}
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            android.content.IntentFilter("dev.tokito.physical.debug.UTTERANCE"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        debugUtteranceReceiver = receiver
     }
 
     override fun onStart() {
@@ -128,6 +203,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        debugUtteranceReceiver?.let(::unregisterReceiver)
+        debugUtteranceReceiver = null
         if (::call.isInitialized) call.close()
         if (::ar.isInitialized) ar.destroy()
         if (::dialogue.isInitialized) dialogue.close()
@@ -155,6 +232,18 @@ class MainActivity : AppCompatActivity() {
         binding.registerArButton.setOnClickListener { ar.beginRegistration() }
         binding.previewDigitalTwinButton.setOnClickListener { ar.previewDigitalTwin() }
         binding.resetRegistrationButton.setOnClickListener { ar.reset() }
+        binding.recordMeasurementButton.setOnClickListener {
+            lifecycleScope.launch { beginMeasurementCapture() }
+        }
+        binding.confirmMeasurementButton.setOnClickListener {
+            lifecycleScope.launch { renderMeasurementTurn(measurement.confirmPrimary()) }
+        }
+        binding.discardMeasurementButton.setOnClickListener {
+            lifecycleScope.launch {
+                measurement.cancel()
+                closeMeasurementCapture()
+            }
+        }
     }
 
     private fun ensureCameraPermission() {
@@ -202,7 +291,13 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 voice.events.collect { event ->
                     when (event) {
-                        is VoiceEvent.Transcript -> call.accept(event.segment)
+                        is VoiceEvent.Transcript -> {
+                            if (measurement.isActive) {
+                                measurement.accept(event.segment)?.let { renderMeasurementTurn(it) }
+                            } else {
+                                call.accept(event.segment)
+                            }
+                        }
                         is VoiceEvent.Error -> call.fail(event.failure.message)
                         else -> Unit
                     }
@@ -224,15 +319,28 @@ class MainActivity : AppCompatActivity() {
             voice.initialize()
         }
         if (dialogue.state.value !is DialogueRuntimeState.Ready) {
-            val model = withContext(Dispatchers.IO) {
-                DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
-                    .requireInstalled()
+            // The local LLM refines grounded answers into conversational
+            // phrasing; the answers themselves come from the verified board
+            // reference (respondLocally already falls back to the grounded
+            // text when dialogue is unavailable or unfaithful). A missing
+            // dialogue bundle therefore degrades phrasing, not capability,
+            // and must not take down the whole voice loop with it.
+            runCatching {
+                val model = withContext(Dispatchers.IO) {
+                    DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
+                        .requireInstalled()
+                }
+                val modelBytes = model.artifacts.fold(0L) { total, artifact ->
+                    Math.addExact(total, artifact.sizeBytes)
+                }
+                requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
+                dialogue.initialize(model)
+            }.onFailure { failure ->
+                android.util.Log.i(
+                    "TokitoDialogue",
+                    "local LLM bundle unavailable; responding with verified board data only: ${failure.message}",
+                )
             }
-            val modelBytes = model.artifacts.fold(0L) { total, artifact ->
-                Math.addExact(total, artifact.sizeBytes)
-            }
-            requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
-            dialogue.initialize(model)
         }
     }
 
@@ -273,7 +381,13 @@ class MainActivity : AppCompatActivity() {
             ?: return "No verified board reference is loaded."
         val grounded = reference.index.groundedAnswer(utterance)
             ?: return "I couldn't match that to verified ${reference.identity.model} data. Please repeat the component name."
-        grounded.boardTarget?.let(ar::highlightBoardTarget)
+        grounded.boardTarget?.let { target ->
+            val accepted = ar.highlightBoardTarget(target)
+            android.util.Log.i(
+                "TokitoDialogue",
+                "grounded board target ${target.label} highlight accepted=$accepted",
+            )
+        }
         val generated = runCatching {
             dialogue.respond(
                 DialogueRequest(
@@ -369,6 +483,109 @@ class MainActivity : AppCompatActivity() {
         binding.callButton.backgroundTintList = ContextCompat.getColorStateList(this, color)
     }
 
+    private suspend fun beginMeasurementCapture() {
+        measurement.begin()
+        binding.measurementPanel.visibility = View.VISIBLE
+        binding.measurementStateText.text = getString(R.string.measurement_listening)
+        binding.confirmMeasurementButton.visibility = View.GONE
+        binding.recordMeasurementButton.isEnabled = false
+        if (call.currentState() == CallState.Idle || call.currentState() is CallState.Unavailable) {
+            if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
+                requestMicrophonePermission()
+            } else {
+                call.start()
+            }
+        }
+    }
+
+    private suspend fun renderMeasurementTurn(turn: MeasurementTurn) {
+        when (turn) {
+            is MeasurementTurn.ConfirmationRequired -> {
+                binding.measurementStateText.text = formatMeasurement(turn.draft.primary)
+                binding.confirmMeasurementButton.visibility = View.VISIBLE
+            }
+            is MeasurementTurn.CorrectionRequired -> {
+                binding.measurementStateText.text = turn.incomplete.recoverablePrompt
+                binding.confirmMeasurementButton.visibility = View.GONE
+            }
+            is MeasurementTurn.Confirmed -> {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        persistMeasurement(turn.measurement.confirmedCandidate)
+                    }
+                }.onSuccess {
+                    binding.measurementStateText.text = getString(R.string.measurement_saved)
+                    binding.confirmMeasurementButton.visibility = View.GONE
+                    binding.measurementPanel.postDelayed(::closeMeasurementCapture, MEASUREMENT_SUCCESS_VISIBILITY_MS)
+                }.onFailure {
+                    binding.measurementStateText.text = getString(R.string.measurement_save_failed)
+                    binding.confirmMeasurementButton.visibility = View.GONE
+                    binding.recordMeasurementButton.isEnabled = true
+                }
+            }
+            is MeasurementTurn.Rejected -> closeMeasurementCapture()
+        }
+    }
+
+    private fun persistMeasurement(candidate: MeasurementCandidate) {
+        val value = when (val measured = candidate.value) {
+            is MeasurementValue.Scalar -> JSONObject().put("kind", "scalar").put("value", measured.value.toPlainString())
+            is MeasurementValue.Range -> JSONObject()
+                .put("kind", "range")
+                .put("low", measured.low.toPlainString())
+                .put("high", measured.high.toPlainString())
+        }
+        val payload = JSONObject()
+            .put("schema_version", 1)
+            .put("value", value)
+            .put("unit", candidate.unit.symbol)
+            .put("quantity", candidate.unit.quantity.name.lowercase())
+            .put("normalized_si_value", when (val normalized = candidate.normalizedSiValue) {
+                is MeasurementValue.Scalar -> JSONObject().put("kind", "scalar").put("value", normalized.value.toPlainString())
+                is MeasurementValue.Range -> JSONObject().put("kind", "range")
+                    .put("low", normalized.low.toPlainString()).put("high", normalized.high.toPlainString())
+            })
+            .put("relationship", candidate.relationship?.let { relationship ->
+                JSONObject()
+                    .put("kind", relationship.kind.name.lowercase())
+                    .put("primary", relationship.primary)
+                    .put("reference", relationship.reference ?: JSONObject.NULL)
+            } ?: JSONObject.NULL)
+        val session = checkNotNull(sessionStore.session(sessionId))
+        sessionStore.appendObservation(
+            sessionId,
+            session.revision,
+            ObservationDraft(
+                kind = "electrical_measurement",
+                source = "engineer_voice",
+                payloadJson = payload.toString(),
+                capturedAtUnixMs = System.currentTimeMillis(),
+                evidenceAvailability = "unavailable",
+            ),
+        )
+    }
+
+    private fun formatMeasurement(candidate: MeasurementCandidate): String {
+        val value = when (val measured = candidate.value) {
+            is MeasurementValue.Scalar -> measured.value.toPlainString()
+            is MeasurementValue.Range -> "${measured.low.toPlainString()}–${measured.high.toPlainString()}"
+        }
+        val relationship = candidate.relationship?.let {
+            when (it.kind) {
+                RelationshipKind.BETWEEN -> getString(R.string.measurement_between, it.primary, it.reference)
+                RelationshipKind.ACROSS -> getString(R.string.measurement_across, it.primary)
+                RelationshipKind.AT -> getString(R.string.measurement_at, it.primary)
+            }
+        }.orEmpty()
+        return getString(R.string.measurement_confirm_value, value, candidate.unit.symbol, relationship)
+    }
+
+    private fun closeMeasurementCapture() {
+        binding.measurementPanel.visibility = View.GONE
+        binding.confirmMeasurementButton.visibility = View.GONE
+        binding.recordMeasurementButton.isEnabled = true
+    }
+
     private fun renderArState(state: ArSessionController.State) {
         binding.trackingChip.text = state.label
         binding.trackingChip.contentDescription = state.detail
@@ -387,5 +604,6 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_CONTEXT_REVISION = "dev.tokito.physical.extra.CONTEXT_REVISION"
         val QUALITY_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,63}")
         const val MAX_QUESTION_ECHO_RATIO = 0.80
+        const val MEASUREMENT_SUCCESS_VISIBILITY_MS = 1_200L
     }
 }

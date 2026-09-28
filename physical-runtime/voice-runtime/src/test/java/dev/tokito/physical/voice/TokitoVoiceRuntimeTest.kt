@@ -22,6 +22,25 @@ import java.util.concurrent.TimeUnit
 
 class TokitoVoiceRuntimeTest {
     @Test
+    fun wakePhraseMovesBoundedActivationIntoListening() = runBlocking {
+        val fixture = Fixture()
+        fixture.runtime.initialize()
+        fixture.runtime.startActivation()
+        assertEquals(VoiceRuntimeState.AwaitingWake, fixture.runtime.state.value)
+
+        val detected = async(start = CoroutineStart.UNDISPATCHED) {
+            fixture.runtime.events.filterIsInstance<VoiceEvent.WakeWordDetected>().first()
+        }
+        fixture.recognizer.emit("hey tokito", true)
+
+        assertEquals("hey tokito", withTimeout(2_000) { detected.await() }.phrase)
+        withTimeout(2_000) { fixture.runtime.state.first { it == VoiceRuntimeState.Listening } }
+        assertEquals(2, fixture.recognizer.startCount)
+        assertEquals(1, fixture.recognizer.stopCount)
+        fixture.runtime.close()
+    }
+
+    @Test
     fun listeningEmitsPartialAndFinalTranscripts() = runBlocking {
         val fixture = Fixture()
         fixture.runtime.initialize()
@@ -144,6 +163,18 @@ class TokitoVoiceRuntimeTest {
                     noiseMultiplier = 2f,
                     requiredActiveFrames = 2,
                     rollingWindowFrames = 3,
+                ),
+                activation = ActivationConfig(
+                    minimumWakeConfidence = 0.80f,
+                    vad = VadConfig(
+                        calibrationMillis = 40,
+                        minimumRms = 0.01f,
+                        noiseMultiplier = 2f,
+                        attackFrames = 2,
+                        releaseFrames = 3,
+                        preRollMillis = 40,
+                    ),
+                    vadEventIntervalMillis = 1,
                 ),
             ),
             backendFactory = object : VoiceBackendFactory {

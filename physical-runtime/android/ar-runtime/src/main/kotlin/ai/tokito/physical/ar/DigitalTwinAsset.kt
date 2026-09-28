@@ -42,9 +42,24 @@ data class DigitalTwinManifest(
     val boardPlaneBoundsMetres: Bounds3Contract? = null,
     val defaultOpacity: Double = 0.42,
     val componentNodePrefix: String = "ref:",
+    val boardPlaneCornerPointsMetres: List<Vector3Contract>? = null,
 ) {
-    /** Metric board-plane landmarks in the same clockwise order required by registration. */
+    /**
+     * Metric board-plane landmarks in the same clockwise order required by
+     * registration.
+     *
+     * When the manifest supplies explicit corner points they take priority:
+     * the detector's corner semantics belong to the vision model, and
+     * authored physical landmarks (for example the four corner mounting
+     * holes, whose centres come from the PCB source) can be stated in
+     * exactly the model's keypoint order instead of being derived from an
+     * axis-aligned bounds rectangle. Absent that field, the previous
+     * bounds-derived quad is used unchanged.
+     */
     fun boardPlaneCorners(): List<Point2> {
+        boardPlaneCornerPointsMetres?.let { corners ->
+            if (corners.size == 4) return corners.map { Point2(it.x, it.z) }
+        }
         val board = boardPlaneBoundsMetres ?: boundsMetres
         return listOf(
             Point2(board.minimum.x, board.minimum.z),
@@ -146,6 +161,24 @@ class DigitalTwinValidator(
             ).any { kotlin.math.abs(it) > 10.0 }
         ) {
             return DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.INVALID_GEOMETRY, "asset geometry contract is invalid")
+        }
+        manifest.boardPlaneCornerPointsMetres?.let { corners ->
+            // explicit registration landmarks must be exactly four finite
+            // points inside the declared bounds; a malformed list would
+            // otherwise feed the pose estimator silently wrong geometry
+            val bounds = manifest.boundsMetres
+            val valid = corners.size == 4 && corners.all { point ->
+                point.isFinite() &&
+                    point.x in bounds.minimum.x..bounds.maximum.x &&
+                    point.y in bounds.minimum.y..bounds.maximum.y &&
+                    point.z in bounds.minimum.z..bounds.maximum.z
+            }
+            if (!valid) {
+                return DigitalTwinValidation.Rejected(
+                    DigitalTwinValidation.Code.INVALID_GEOMETRY,
+                    "board plane corner points are not four finite in-bounds landmarks",
+                )
+            }
         }
         if (!isGlbV2(glb)) {
             return DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.INVALID_GLB, "asset is not a complete GLB 2 container")

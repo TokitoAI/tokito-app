@@ -156,6 +156,8 @@ class KicadPcbPlacementsTest(unittest.TestCase):
             self.assertEqual(len(first_pads), 2)
             self.assertEqual(first_pads[0]["shape"], "rect")
             self.assertAlmostEqual(first_pads[0]["size_w_mm"], 0.5)
+            self.assertAlmostEqual(first_pads[0]["at_x_mm"], -0.5)
+            self.assertAlmostEqual(first_pads[1]["at_x_mm"], 0.5)
 
             third_pads = extract_footprint_pads(footprints[2])
             self.assertEqual(len(third_pads), 1)
