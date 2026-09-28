@@ -23,6 +23,7 @@ import dev.tokito.physical.dialogue.DialogueOutcome
 import dev.tokito.physical.dialogue.DialogueRequest
 import dev.tokito.physical.dialogue.DialogueRuntimeState
 import dev.tokito.physical.dialogue.TokitoDialogueRuntime
+import dev.tokito.physical.model.DeviceResourceGovernor
 import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.voice.TokitoVoiceRuntime
 import dev.tokito.physical.voice.VoiceEvent
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var microphonePermissionRequested = false
     private lateinit var sessionStore: PhysicalSessionStore
     private lateinit var sessionId: String
+    private lateinit var resourceGovernor: DeviceResourceGovernor
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -81,6 +83,7 @@ class MainActivity : AppCompatActivity() {
         }
         sessionStore = PhysicalSessionStore.open(this)
         requireNotNull(sessionStore.session(sessionId)) { "Physical session does not exist" }
+        resourceGovernor = DeviceResourceGovernor.android(this)
 
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         dialogue = TokitoDialogueRuntime(
@@ -225,13 +228,27 @@ class MainActivity : AppCompatActivity() {
                 DialogueModelProvisioner.fromAdmittedBundle(java.io.File(filesDir, "models/dialogue"))
                     .requireInstalled()
             }
+            val modelBytes = model.artifacts.fold(0L) { total, artifact ->
+                Math.addExact(total, artifact.sizeBytes)
+            }
+            requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
             dialogue.initialize(model)
         }
     }
 
     private suspend fun prepareLocalVision() {
+        val modelRoot = File(filesDir, "models/vision")
+        val installedBytes = withContext(Dispatchers.IO) {
+            modelRoot.walkTopDown().filter(File::isFile).fold(0L) { total, file ->
+                Math.addExact(total, file.length())
+            }
+        }
+        if (!resourceGovernor.admit(Math.multiplyExact(installedBytes, 2)).allowed) {
+            android.util.Log.w("TokitoPoseVision", "Local vision admission rejected by resource governor")
+            return
+        }
         val runtime = withContext(Dispatchers.IO) {
-            runCatching { LocalPoseVisionRuntime.load(File(filesDir, "models/vision")) }
+            runCatching { LocalPoseVisionRuntime.load(modelRoot) }
         }.getOrElse { failure ->
             android.util.Log.e("TokitoPoseVision", "Local vision bundle was rejected", failure)
             return
@@ -239,6 +256,16 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.i("TokitoPoseVision", "Local pose runtime admitted")
         vision = runtime
         ar.enableAutomaticRegistration(runtime)
+    }
+
+    private fun requireHeavyWork(capability: String, requiredBytes: Long) {
+        val admission = resourceGovernor.admit(requiredBytes)
+        check(admission.allowed) {
+            "$capability unavailable: ${admission.reason ?: "resource_limited"}"
+        }
+        if (admission.maxConcurrency == 1) {
+            android.util.Log.w("TokitoResources", "$capability admitted with constrained concurrency")
+        }
     }
 
     private suspend fun respondLocally(utterance: String): String {

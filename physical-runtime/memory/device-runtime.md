@@ -27,6 +27,12 @@ replaces the older rollback only after schema, runtime, ABI, digest, and
 signature admission succeeds; failed upgrades preserve both slots. Rollback is
 therefore a swap between already admitted bundles, never a verification bypass.
 
+The shipping Activity reads Android's current `MemoryInfo` and thermal status
+before loading dialogue and vision models. It reserves 512 MiB of system
+headroom, rejects low-memory or severe-thermal admission, and reports moderate
+thermal pressure as constrained concurrency. This is a safety preflight, not
+the missing exact-device benchmark evidence.
+
 **How to apply:** use the versioned profile capture procedure for each firmware
 revision. Do not hardcode device, vendor/NPU, camera, ABI, or backend
 assumptions into the runtime; unsupported paths must fail closed.

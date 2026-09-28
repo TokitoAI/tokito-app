@@ -20,6 +20,11 @@ The core owns only deterministic mechanisms required by the delivery gates:
 - latest-frame handoff and caller-configured storage quotas; and
 - caller-configured thermal concurrency policy.
 
+The Android product host also performs a live memory/thermal preflight before
+loading heavyweight dialogue or vision models. Low-memory and severe thermal
+states reject work before allocation; moderate thermal pressure explicitly
+reduces admitted concurrency instead of silently selecting another backend.
+
 Runtime errors are typed and carry only retryability plus safe recovery
 guidance. They distinguish invalid input, unsupported capability, permission or
 lifecycle loss, deadline, cancellation, registration loss, resource/thermal
