@@ -70,6 +70,11 @@ HTTP receipt: that would skip unrelated preceding events. A resource revision
 has immutable content; contradictory same-revision payloads fail atomically.
 
 Sync startup emits the account-scoped persisted resources before connecting.
+All signed-in routes retain the same workspace provider, including model
+management; navigation must not stop project synchronization. Cold start restores
+the verified session automatically. Transient identity/startup failures retry on
+foreground and a bounded timer; authentication and malformed-protocol failures do
+not retry indefinitely. Native SSE/outbox workers own online recovery after startup.
 Device registration and a consistent bootstrap must succeed before the outbox
 or SSE worker starts. Network/service outages retry cancellably, keeping queued
 commands intact; protocol/authentication failures stop instead of inventing a

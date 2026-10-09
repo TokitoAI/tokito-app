@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
 import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
+import { retryableStartup, startupRetryDelay } from "./startupRetry";
 
 export type SyncResource = {
   project_id: string;
@@ -68,6 +69,7 @@ export function RealtimeWorkspaceProvider({
   const [resourceMap, setResourceMap] = useState<Map<string, SyncResource>>(new Map());
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const physicalDrain = useRef<Promise<void> | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
 
   useEffect(() => {
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
@@ -75,6 +77,15 @@ export function RealtimeWorkspaceProvider({
       return;
     }
     let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let transientFailure = false;
+    const foreground = AppState.addEventListener("change", next => {
+      if (next === "active" && transientFailure && !disposed) {
+        transientFailure = false;
+        clearTimeout(retryTimer);
+        setStartupAttempt(value => value + 1);
+      }
+    });
     let activeId: string | null = null;
     const earlyEvents: { subscriptionId: string; apply: () => void }[] = [];
     let earlyOverflow = false;
@@ -148,17 +159,23 @@ export function RealtimeWorkspaceProvider({
       setSubscriptionId(id);
     }).catch((cause: unknown) => {
       if (!disposed) {
-        setStatus("stopped");
+        transientFailure = retryableStartup(cause);
+        setStatus(transientFailure ? "reconnecting" : "stopped");
         setError(cause instanceof Error ? cause.message : String(cause));
+        if (transientFailure) retryTimer = setTimeout(() => {
+          if (!disposed) setStartupAttempt(value => value + 1);
+        }, startupRetryDelay(startupAttempt));
       }
     });
     return () => {
       disposed = true;
+      clearTimeout(retryTimer);
+      foreground.remove();
       earlyEvents.length = 0;
       subscriptions.forEach((item) => item.remove());
       if (activeId !== null) void client.stopSync?.(activeId);
     };
-  }, [client, token]);
+  }, [client, token, startupAttempt]);
 
   const getResource = useCallback(
     (projectId: string, designId: string | null, resource: SyncResourceName) =>

@@ -1,7 +1,8 @@
 import type { JSX } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ import { SignInScreen } from "./screens/SignInScreen";
 import { TokitoPhysical } from "../modules/tokito-physical/src";
 import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
+import { retryableStartup } from "./sync/startupRetry";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile } from "./ui/primitives";
 
@@ -99,11 +101,16 @@ function AppContent({
   const [signedOutView, setSignedOutView] = useState<"home" | "sign_in" | "models">("home");
   const [bootError, setBootError] = useState<string | null>(null);
   const [restoreBlocked, setRestoreBlocked] = useState(false);
+  const [retryRestore, setRetryRestore] = useState(false);
+  const restoreInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (restoreInFlight.current) return;
+    restoreInFlight.current = true;
     setBooting(true);
     setBootError(null);
     setRestoreBlocked(false);
+    setRetryRestore(false);
     try {
       const next = await auth.restore();
       setState(next);
@@ -124,8 +131,10 @@ function AppContent({
         setRestoreBlocked(false);
       } else {
         setRestoreBlocked(true);
+        setRetryRestore(retryableStartup(err));
       }
     } finally {
+      restoreInFlight.current = false;
       setBooting(false);
     }
   }, [auth]);
@@ -145,6 +154,14 @@ function AppContent({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!retryRestore || booting || signedOutView === "sign_in") return;
+    const retry = (): void => { void refresh(); };
+    const timer = setTimeout(retry, 30_000);
+    const foreground = AppState.addEventListener("change", next => { if (next === "active") retry(); });
+    return () => { clearTimeout(timer); foreground.remove(); };
+  }, [retryRestore, booting, signedOutView, refresh]);
 
   // Wait briefly for Inter; never block boot forever if fonts stall.
   if (!fontsReady || booting) {
@@ -200,10 +217,12 @@ function AppContent({
 
   if (route.name === "models") {
     return (
+      <RealtimeWorkspaceProvider client={client} token={token}>
       <View style={styles.root}>
         <StatusBar style="light" />
         <ModelManagerScreen onBack={() => setRoute({ name: "projects" })} />
       </View>
+      </RealtimeWorkspaceProvider>
     );
   }
 
