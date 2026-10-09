@@ -27,7 +27,7 @@ export type NativeAccount = {
   plan: string;
 };
 
-type TokitoCompanionFfiNative = {
+export type TokitoCompanionFfiNative = {
   openConversations(baseUrl: string, token: string, sessionId: string): Promise<string>;
   closeConversations(sessionId: string): Promise<void>;
   conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
