@@ -18,12 +18,13 @@ export function ProjectReview({ base, token, project, design, revision, bomRevis
   const [ready, setReady] = useState(false);
   const [retry, setRetry] = useState(0);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [cached, setCached] = useState(false);
   async function refresh(current: ReviewClient): Promise<void> {
     if (operation.current) { refreshQueued.current = true; return; }
     operation.current = true;
     const ticket = ++request.current;
     setBusy(true);
-    try { const result = await current.load(project, design); if (client.current !== current || ticket !== request.current) return; setProposals(result.proposals); setCommands(result.commands); setError(null); }
+    try { const result = await current.load(project, design); if (client.current !== current || ticket !== request.current) return; setProposals(result.proposals); setCommands(result.commands); setCached(result.cached); setError(null); }
     catch { if (client.current !== current || ticket !== request.current) return; setError("Reviews could not be refreshed. Any saved decision remains queued; retrying will not apply it twice."); try { const local = await current.local(project, design); if (client.current === current && ticket === request.current) setCommands(local); } catch { /* Keep last known queue. */ } }
     finally { if (client.current === current && ticket === request.current) { operation.current = false; setBusy(false); if (refreshQueued.current) { refreshQueued.current = false; void refresh(current); } } }
   }
@@ -31,7 +32,7 @@ export function ProjectReview({ base, token, project, design, revision, bomRevis
     const current = new ReviewClient(getTokitoCompanionFfi()); client.current = current;
     operation.current = false;
     refreshQueued.current = false;
-    setReady(false); setProposals([]); setCommands([]); setError(null); setReceipt(null);
+    setReady(false); setProposals([]); setCommands([]); setError(null); setReceipt(null); setCached(false);
     void current.open(base, token).then(async () => { if (client.current !== current) return; setReady(true); await refresh(current); }).catch(() => { if (client.current === current) setError("Review service could not be opened. Check your connection and sign-in, then retry."); });
     return () => { client.current = null; request.current++; void current.close(); };
     // Retry deliberately recreates the authenticated native session.
@@ -44,7 +45,7 @@ export function ProjectReview({ base, token, project, design, revision, bomRevis
     let confirmed = false;
     let rejection: string | undefined;
     try { const result = await current.decide(project, design, proposal, action, selection); if (client.current !== current) return; rejection = result.failure; if (result.failure) setError(result.failure); if (result.receipt) { confirmed = true; setReceipt(result.receipt); }
-      const refreshed = await current.load(project, design); if (client.current !== current) return; setProposals(refreshed.proposals); setCommands(refreshed.commands);
+      const refreshed = await current.load(project, design); if (client.current !== current) return; setProposals(refreshed.proposals); setCommands(refreshed.commands); setCached(refreshed.cached);
     } catch { if (client.current === current) { setError(rejection ?? (confirmed ? "Your decision was confirmed, but the review list could not be refreshed." : "The server has not confirmed this decision. Refresh to check its status before trying again.")); try { const local = await current.local(project, design); if (client.current === current) setCommands(local); } catch { /* Recovery remains in durable native storage. */ } } }
     finally { if (client.current === current) { operation.current = false; setBusy(false); if (refreshQueued.current) { refreshQueued.current = false; void refresh(current); } } }
   }
@@ -61,7 +62,8 @@ export function ProjectReview({ base, token, project, design, revision, bomRevis
   return <View style={styles.root}>
     <View style={styles.heading}><View style={styles.flex}><Text style={styles.title}>Review changes</Text><Muted>Choose changes before applying them to this design.</Muted></View><Pressable accessibilityRole="button" disabled={busy} onPress={() => setRetry(v => v + 1)} style={styles.refresh}><Text style={styles.link}>Refresh</Text></Pressable></View>
     {busy ? <ActivityIndicator color={tokens.accent} /> : null}{error ? <ErrorText>{error}</ErrorText> : null}
-    {pending.length > 0 ? <Card><Text style={styles.cardTitle}>Waiting for confirmation</Text><Muted>{pending.length} saved decision(s). Refresh to retry the exact saved command.</Muted></Card> : null}
+    {cached ? <Card><Muted>Saved reviews · checking for updates. Decisions synchronize when your connection returns.</Muted></Card> : null}
+    {pending.length > 0 ? <Card><Text style={styles.cardTitle}>Waiting for confirmation</Text><Muted>{pending.length} saved decision(s). Tokito retries automatically when connected.</Muted></Card> : null}
     {commands.filter(c => c.state === "blocked").slice(0, 1).map(c => <Card key={c.request.command_id}><ErrorText>{reviewFailure(c.result)}</ErrorText></Card>)}
     {displayedReceipt ? <ReceiptCard receipt={displayedReceipt} /> : null}
     {ready && !busy && !error && proposals.filter(p => p.status === "pending").length === 0 ? <Card><Text style={styles.cardTitle}>No changes waiting for review</Text><Muted>Proposals from this design’s chat will appear here.</Muted></Card> : null}

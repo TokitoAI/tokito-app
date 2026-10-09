@@ -141,7 +141,7 @@ impl ConversationSession {
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
         let id = uuid::Uuid::new_v4().to_string();
-        if title.len() > 512 || project.is_empty() || design.is_empty() {
+        if title.trim().is_empty() || title.len() > 240 || project.is_empty() || design.is_empty() {
             return Err(CompanionError::Unexpected);
         }
         let now = std::time::SystemTime::now()

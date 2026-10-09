@@ -42,7 +42,7 @@ export class ReviewClient {
   constructor(private native: TokitoCompanionFfiNative) {}
   async open(base: string, token: string): Promise<void> { await this.native.openReviews(base, token, this.id); if (this.closed) await this.native.closeReviews(this.id); }
   async close(): Promise<void> { this.closed = true; await this.native.closeReviews(this.id); }
-  async load(project: string, design: string): Promise<{ proposals: Proposal[]; commands: ReviewCommand[] }> { const data = record(JSON.parse(await this.native.loadReviews(this.id, project, design))); return { proposals: parseProposals(data.proposals, project, design), commands: parseCommands(data.commands, project, design) }; }
+  async load(project: string, design: string): Promise<{ proposals: Proposal[]; commands: ReviewCommand[]; cached: boolean }> { const data = record(JSON.parse(await this.native.loadReviews(this.id, project, design))); if (data.cached !== undefined && typeof data.cached !== "boolean") throw new Error("Invalid review freshness"); return { proposals: parseProposals(data.proposals, project, design), commands: parseCommands(data.commands, project, design), cached: data.cached === true }; }
   async local(project: string, design: string): Promise<ReviewCommand[]> { return parseCommands(JSON.parse(await this.native.localReviewCommands(this.id, project, design)), project, design); }
   async decide(project: string, design: string, p: Proposal, action: "apply" | "reject", selected: number[]): Promise<{ receipt?: Receipt; failure?: string }> {
     if (p.project_id !== project || p.design_id !== design) throw new Error("Review scope mismatch");

@@ -140,6 +140,21 @@ impl ConversationStore {
         let body = encode(thread)?;
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
+        let existing: Option<String> = tx
+            .query_row(
+                "SELECT body FROM chat_thread_outbox WHERE thread_id=?1",
+                [&thread.id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        if let Some(existing) = existing {
+            return if existing == body {
+                Ok(())
+            } else {
+                Err(CloudError::Unexpected)
+            };
+        }
         let count: i64 = tx
             .query_row("SELECT COUNT(*) FROM chat_thread_outbox", [], |r| r.get(0))
             .map_err(db_error)?;

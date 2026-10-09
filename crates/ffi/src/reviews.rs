@@ -59,6 +59,16 @@ mod tests {
         let commands: serde_json::Value = serde_json::from_str(&before).unwrap();
         assert_eq!(commands.as_array().unwrap().len(), 1);
         assert_eq!(commands[0]["state"], "pending");
+        assert!(session
+            .decide(
+                "other-project".into(),
+                "other-design".into(),
+                "other-run".into(),
+                2,
+                "reject".into(),
+                "[]".into()
+            )
+            .is_err());
         session.shutdown();
         drop(session);
         runtime().block_on(async {
@@ -78,6 +88,32 @@ mod tests {
                 .local_commands("project".into(), "design".into())
                 .unwrap()
         );
+        runtime().block_on(async {
+            Mock::given(method("POST")).and(path("/v1/companion/devices"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"device","label":"test","platform":"android","last_seen_at":1})))
+                .mount(&server).await;
+            for (project, design, action) in [("project", "design", "apply"), ("other-project", "other-design", "reject")] {
+                let saved: serde_json::Value = serde_json::from_str(&reopened.local_commands(project.into(), design.into()).unwrap()).unwrap();
+                let request = saved[0]["request"].clone();
+                let result = if action == "apply" { serde_json::json!({"status":"applied","applied":[0],"unchanged":[],"rejected":[],"erc":[]}) } else { serde_json::json!({"status":"rejected"}) };
+                let receipt = serde_json::json!({"command_id":request["command_id"],"run_id":request["run_id"],"event_seq":request["event_seq"],"result":result});
+                Mock::given(method("POST")).and(path(format!("/v1/projects/{project}/designs/{design}/proposals/{action}")))
+                    .and(wiremock::matchers::body_json(request)).respond_with(ResponseTemplate::new(200).set_body_json(receipt)).expect(1).mount(&server).await;
+            }
+        });
+        // The account-wide worker calls this from the application lifecycle;
+        // no project/review screen or proposal-list fetch is needed to drain it.
+        reopened.replay_pending().unwrap();
+        reopened.replay_pending().unwrap();
+        for (project, design) in [("project", "design"), ("other-project", "other-design")] {
+            let saved: serde_json::Value = serde_json::from_str(
+                &reopened
+                    .local_commands(project.into(), design.into())
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(saved[0]["state"], "confirmed");
+        }
         reopened.shutdown();
         drop(reopened);
         std::fs::remove_dir_all(dir).unwrap();
