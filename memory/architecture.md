@@ -31,6 +31,8 @@ conversation even when the local LLM was installed and healthy.
 Voice barge-in detection starts with audio playback, not TTS generation. Cancelling
 generation intentionally completes as interrupted speech rather than a synthesis
 failure. Both phone and sw600dp layouts reserve system-inset space for voice controls.
+The React Native shell uses one SafeAreaProvider/SafeAreaView boundary for all
+routes; individual headers must not guess Android status-bar or cutout heights.
 
 The Expo/React Native shell owns ordinary product UI and the existing Rust
 UniFFI Cloud client. Native Android owns CameraX, AR, voice, local models,
