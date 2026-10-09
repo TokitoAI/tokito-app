@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    conversations::{Run, RunEvent, SendMessage, ThreadPage},
+    conversations::{Run, RunEvent, SendMessage, Thread, ThreadPage},
     CloudError,
 };
 
@@ -72,6 +72,7 @@ impl ConversationStore {
             CREATE INDEX IF NOT EXISTS chat_runs_thread ON chat_runs(thread_id);
             CREATE TABLE IF NOT EXISTS chat_events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,seq));
             CREATE TABLE IF NOT EXISTS chat_threads (thread_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_thread_indexes (project_id TEXT NOT NULL, design_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,design_id));
             CREATE TABLE IF NOT EXISTS chat_recovered_drafts (thread_id TEXT PRIMARY KEY, content TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_messages (thread_id TEXT NOT NULL, seq INTEGER NOT NULL, message_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(thread_id,seq), UNIQUE(thread_id,message_id));")
             .map_err(db_error)?;
@@ -133,6 +134,106 @@ impl ConversationStore {
         )
         .map_err(db_error)?;
         tx.commit().map_err(db_error)
+    }
+
+    pub fn cache_threads(
+        &self,
+        project: &str,
+        design: &str,
+        threads: &[Thread],
+    ) -> Result<(), CloudError> {
+        let mut seen = std::collections::HashSet::new();
+        if threads.len() > 100
+            || threads
+                .iter()
+                .any(|t| t.project_id != project || t.design_id != design || !seen.insert(&t.id))
+        {
+            return Err(CloudError::Unexpected);
+        }
+        let body = encode(&threads)?;
+        self.conn.lock().map_err(|_| CloudError::Unexpected)?.execute(
+            "INSERT INTO chat_thread_indexes VALUES(?1,?2,?3) ON CONFLICT(project_id,design_id) DO UPDATE SET body=excluded.body",
+            params![project,design,body]).map_err(db_error)?;
+        Ok(())
+    }
+
+    pub fn cached_threads(
+        &self,
+        project: &str,
+        design: &str,
+    ) -> Result<Option<Vec<Thread>>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let body: Option<String> = conn
+            .query_row(
+                "SELECT body FROM chat_thread_indexes WHERE project_id=?1 AND design_id=?2",
+                params![project, design],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        body.map(|body| serde_json::from_str(&body).map_err(|_| CloudError::Unexpected))
+            .transpose()
+    }
+
+    pub fn cached_tail(
+        &self,
+        project: &str,
+        design: &str,
+        thread_id: &str,
+        before: Option<u64>,
+    ) -> Result<Option<ThreadPage>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let body: Option<String> = conn
+            .query_row(
+                "SELECT body FROM chat_threads WHERE thread_id=?1",
+                [thread_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        let Some(body) = body else {
+            return Ok(None);
+        };
+        let thread: Thread = serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?;
+        if thread.project_id != project || thread.design_id != design {
+            return Err(CloudError::Unauthorized);
+        }
+        let boundary = before.unwrap_or(i64::MAX as u64);
+        if boundary > i64::MAX as u64 {
+            return Err(CloudError::Unexpected);
+        }
+        let mut stmt = conn.prepare("SELECT body FROM chat_messages WHERE thread_id=?1 AND seq<?2 ORDER BY seq DESC LIMIT 101").map_err(db_error)?;
+        let rows = stmt
+            .query_map(params![thread_id, boundary as i64], |r| {
+                r.get::<_, String>(0)
+            })
+            .map_err(db_error)?;
+        let mut messages = rows
+            .map(|row| {
+                serde_json::from_str(&row.map_err(db_error)?).map_err(|_| CloudError::Unexpected)
+            })
+            .collect::<Result<Vec<crate::conversations::Message>, _>>()?;
+        let has_older = messages.len() > 100;
+        if has_older {
+            messages.pop();
+        }
+        messages.reverse();
+        let older_cursor = if has_older {
+            messages.first().map(|m| m.seq)
+        } else {
+            None
+        };
+        let run: Option<String> = conn.query_row("SELECT body FROM chat_runs WHERE thread_id=?1 ORDER BY json_extract(body,'$.updated_at') DESC,run_id DESC LIMIT 1", [thread_id], |r| r.get(0)).optional().map_err(db_error)?;
+        let latest_run = run
+            .map(|body| serde_json::from_str(&body).map_err(|_| CloudError::Unexpected))
+            .transpose()?;
+        Ok(Some(ThreadPage {
+            thread,
+            messages,
+            next_cursor: None,
+            older_cursor,
+            latest_run,
+        }))
     }
 
     /// Include quarantined and offline work so a reopened view cannot hide a
@@ -399,6 +500,31 @@ impl ConversationStore {
             .map_err(db_error)?;
         tx.execute("DELETE FROM chat_threads WHERE thread_id=?1", [thread_id])
             .map_err(db_error)?;
+        let indexes = {
+            let mut stmt = tx
+                .prepare("SELECT project_id,design_id,body FROM chat_thread_indexes")
+                .map_err(db_error)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(db_error)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(db_error)?
+        };
+        for (project, design, body) in indexes {
+            let mut threads: Vec<Thread> =
+                serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?;
+            threads.retain(|t| t.id != thread_id);
+            tx.execute(
+                "UPDATE chat_thread_indexes SET body=?3 WHERE project_id=?1 AND design_id=?2",
+                params![project, design, encode(&threads)?],
+            )
+            .map_err(db_error)?;
+        }
         tx.execute(
             "DELETE FROM chat_recovered_drafts WHERE thread_id=?1",
             [thread_id],
@@ -634,6 +760,30 @@ mod tests {
             latest_run: None,
         };
         store.cache_page(&page).unwrap();
+        store
+            .cache_threads("p", "d", std::slice::from_ref(&page.thread))
+            .unwrap();
+        assert!(store.cached_threads("p", "other").unwrap().is_none());
+        assert!(store
+            .cache_threads("other", "d", std::slice::from_ref(&page.thread))
+            .is_err());
+        let tail = store.cached_tail("p", "d", "t", None).unwrap().unwrap();
+        assert_eq!(tail.messages.first().unwrap().seq, 51);
+        assert_eq!(tail.messages.last().unwrap().seq, 150);
+        assert_eq!(tail.older_cursor, Some(51));
+        assert_eq!(
+            store
+                .cached_tail("p", "d", "t", tail.older_cursor)
+                .unwrap()
+                .unwrap()
+                .messages
+                .len(),
+            50
+        );
+        assert!(matches!(
+            store.cached_tail("other", "d", "t", None),
+            Err(CloudError::Unauthorized)
+        ));
         let first = store.cached_page("t", 0).unwrap().unwrap();
         assert_eq!(first.messages.len(), 100);
         assert_eq!(first.next_cursor, Some(100));
@@ -655,6 +805,7 @@ mod tests {
             )
             .unwrap();
         store.remove_thread("t").unwrap();
+        assert!(store.cached_threads("p", "d").unwrap().unwrap().is_empty());
         assert!(store.cached_page("t", 0).unwrap().is_none());
         assert!(store.run("r").unwrap().is_none());
         assert!(store.events("r", 0).unwrap().is_empty());

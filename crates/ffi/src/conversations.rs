@@ -27,6 +27,8 @@ pub struct ConversationSession {
     store: Arc<ConversationStore>,
     stop: watch::Sender<bool>,
     wake: mpsc::Sender<()>,
+    listener: Arc<dyn ConversationListener>,
+    identity_path: String,
 }
 
 #[uniffi::export]
@@ -41,27 +43,22 @@ impl CompanionClient {
         listener: Arc<dyn ConversationListener>,
     ) -> Result<Arc<ConversationSession>, CompanionError> {
         let base = api::origin(&self.base_url)?;
-        let account = runtime().block_on(tokito_companion_core::me(&base, &token))?;
+        let identity = crate::identity::identity_store(&storage_dir)?;
+        let account = runtime().block_on(identity.resolve(&base, &token))?.account;
         let owner = format!("{base}|{}", account.email.to_lowercase());
         let key = format!("{:x}", Sha256::digest(owner.as_bytes()));
         let path = Path::new(&storage_dir).join(format!("chat-{key}.sqlite3"));
         let store = Arc::new(ConversationStore::open(&path, &owner)?);
-        runtime().block_on(tokito_companion_core::register_device(
-            &base,
-            &token,
-            &device_id,
-            "Tokito app",
-            "android",
-        ))?;
         let (stop, receiver) = watch::channel(false);
         let (wake, wake_rx) = mpsc::channel(1);
         runtime().spawn(outbox(
             base.clone(),
             token.clone(),
+            (device_id.clone(), storage_dir.clone()),
             store.clone(),
             receiver,
             wake_rx,
-            listener,
+            listener.clone(),
         ));
         Ok(Arc::new(ConversationSession {
             base,
@@ -70,11 +67,20 @@ impl CompanionClient {
             store,
             stop,
             wake,
+            listener,
+            identity_path: storage_dir,
         }))
     }
 }
 
 impl ConversationSession {
+    fn failure(&self, error: CloudError) -> CompanionError {
+        if matches!(error, CloudError::Unauthorized) {
+            revoke_identity(&self.identity_path, &self.base, &self.token);
+            let _ = self.stop.send(true);
+        }
+        error.into()
+    }
     fn ensure_open(&self) -> Result<(), CompanionError> {
         if *self.stop.borrow() {
             Err(CompanionError::Unauthorized)
@@ -92,12 +98,29 @@ impl ConversationSession {
 
     pub fn list_threads(&self, project: String, design: String) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        let threads = runtime().block_on(api::list_threads(
+        let result = runtime().block_on(api::list_threads(
             &self.base,
             &self.token,
             &project,
             &design,
-        ))?;
+        ));
+        let threads = match result {
+            Ok(threads) => {
+                self.store.cache_threads(&project, &design, &threads)?;
+                threads
+            }
+            Err(error @ CloudError::Network(_)) => {
+                let Some(threads) = self.store.cached_threads(&project, &design)? else {
+                    return Err(error.into());
+                };
+                emit(
+                    self.listener.as_ref(),
+                    serde_json::json!({"type":"offline"}),
+                );
+                threads
+            }
+            Err(error) => return Err(self.failure(error)),
+        };
         serde_json::to_string(&threads).map_err(|_| CompanionError::Unexpected)
     }
 
@@ -109,14 +132,16 @@ impl ConversationSession {
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
         let id = uuid::Uuid::new_v4().to_string();
-        let thread = runtime().block_on(api::create_thread(
-            &self.base,
-            &self.token,
-            &project,
-            &design,
-            &id,
-            &title,
-        ))?;
+        let thread = runtime()
+            .block_on(api::create_thread(
+                &self.base,
+                &self.token,
+                &project,
+                &design,
+                &id,
+                &title,
+            ))
+            .map_err(|error| self.failure(error))?;
         serde_json::to_string(&thread).map_err(|_| CompanionError::Unexpected)
     }
 
@@ -128,14 +153,28 @@ impl ConversationSession {
         before: Option<u64>,
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        let page = runtime().block_on(api::get_thread_tail(
+        let result = runtime().block_on(api::get_thread_tail(
             &self.base,
             &self.token,
             &project,
             &design,
             &thread,
             before,
-        ))?;
+        ));
+        let page = match result {
+            Ok(page) => page,
+            Err(error @ CloudError::Network(_)) => {
+                let Some(page) = self.store.cached_tail(&project, &design, &thread, before)? else {
+                    return Err(error.into());
+                };
+                emit(
+                    self.listener.as_ref(),
+                    serde_json::json!({"type":"offline"}),
+                );
+                return serde_json::to_string(&page).map_err(|_| CompanionError::Unexpected);
+            }
+            Err(error) => return Err(self.failure(error)),
+        };
         self.store.cache_page(&page)?;
         if let Some(run) = &page.latest_run {
             self.store.acknowledge(run)?;
@@ -197,7 +236,9 @@ impl ConversationSession {
 
     pub fn cancel(&self, run: String) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        let run = runtime().block_on(api::cancel_run(&self.base, &self.token, &run))?;
+        let run = runtime()
+            .block_on(api::cancel_run(&self.base, &self.token, &run))
+            .map_err(|error| self.failure(error))?;
         self.store.acknowledge(&run)?;
         serde_json::to_string(&run).map_err(|_| CompanionError::Unexpected)
     }
@@ -213,13 +254,15 @@ impl ConversationSession {
         if self.store.has_pending(&thread)? {
             return Err(CompanionError::Unexpected);
         }
-        runtime().block_on(api::delete_thread(
-            &self.base,
-            &self.token,
-            &project,
-            &design,
-            &thread,
-        ))?;
+        runtime()
+            .block_on(api::delete_thread(
+                &self.base,
+                &self.token,
+                &project,
+                &design,
+                &thread,
+            ))
+            .map_err(|error| self.failure(error))?;
         self.store.remove_thread(&thread)?;
         Ok(())
     }
@@ -261,6 +304,7 @@ impl ConversationSession {
         runtime().spawn(watch_run(
             self.base.clone(),
             self.token.clone(),
+            self.identity_path.clone(),
             run,
             after,
             self.store.clone(),
@@ -297,15 +341,40 @@ impl Drop for RunSubscription {
 async fn outbox(
     base: String,
     token: String,
+    registration: (String, String),
     store: Arc<ConversationStore>,
     mut stop: watch::Receiver<bool>,
     mut wake: mpsc::Receiver<()>,
     listener: Arc<dyn ConversationListener>,
 ) {
+    let (device, identity_path) = registration;
     let mut delay = 1;
+    let mut registered = false;
     loop {
         if *stop.borrow() {
             return;
+        }
+        if !registered {
+            let result = tokio::select! {
+                _ = stop.changed() => return,
+                result = tokito_companion_core::register_device(&base, &token, &device, "Tokito app", "android") => result,
+            };
+            match result {
+                Ok(_) => registered = true,
+                Err(CloudError::Unauthorized) => {
+                    revoke_identity(&identity_path, &base, &token);
+                    emit(
+                        listener.as_ref(),
+                        serde_json::json!({"type":"unauthorized"}),
+                    );
+                    return;
+                }
+                Err(_) => {
+                    emit(listener.as_ref(), serde_json::json!({"type":"offline"}));
+                    tokio::select! { _ = stop.changed() => return, _ = tokio::time::sleep(Duration::from_secs(3)) => {} }
+                    continue;
+                }
+            }
         }
         let pending = match store.pending() {
             Ok(p) => p,
@@ -338,6 +407,7 @@ async fn outbox(
                     );
                 }
                 Err(CloudError::Unauthorized) => {
+                    revoke_identity(&identity_path, &base, &token);
                     emit(
                         listener.as_ref(),
                         serde_json::json!({"type":"unauthorized"}),
@@ -374,6 +444,7 @@ async fn outbox(
 async fn watch_run(
     base: String,
     token: String,
+    identity_path: String,
     run_id: String,
     mut delivered: u64,
     store: Arc<ConversationStore>,
@@ -418,6 +489,7 @@ async fn watch_run(
             }
             Ok(_) => delay = 1,
             Err(CloudError::Unauthorized) => {
+                revoke_identity(&identity_path, &base, &token);
                 emit(
                     listener.as_ref(),
                     serde_json::json!({"type":"unauthorized"}),
@@ -433,6 +505,12 @@ async fn watch_run(
             }
         }
         tokio::select! { _ = stop.changed() => return, _ = session_stop.changed() => return, _ = tokio::time::sleep(Duration::from_secs(delay)) => {} }
+    }
+}
+
+fn revoke_identity(path: &str, base: &str, token: &str) {
+    if let Ok(store) = crate::identity::identity_store(path) {
+        let _ = store.revoke(base, token);
     }
 }
 
