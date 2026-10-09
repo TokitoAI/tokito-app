@@ -15,6 +15,14 @@ import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class PhysicalSessionStoreTest {
+    @Test fun projectContextCannotReuseUnboundOrStaleGlobalBoardEvidence() {
+        assertTrue(PhysicalSessionContext().admitsBoardReference("local-reviewed-v1"))
+        assertFalse(PhysicalSessionContext("project").admitsBoardReference("local-reviewed-v1"))
+        assertFalse(PhysicalSessionContext("project", "design").admitsBoardReference("local-reviewed-v1"))
+        assertFalse(PhysicalSessionContext("project", "design", "project-v2").admitsBoardReference("project-v1"))
+        assertTrue(PhysicalSessionContext("project", "design", "project-v2").admitsBoardReference("project-v2"))
+    }
+
     private lateinit var context: Context
     private lateinit var store: PhysicalSessionStore
 

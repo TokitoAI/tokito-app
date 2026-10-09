@@ -13,6 +13,10 @@ data class PhysicalSessionContext(
     val designId: String? = null,
     val contextRevision: String? = null,
 ) {
+    /** A Cloud project must explicitly bind the immutable local evidence revision. */
+    fun admitsBoardReference(referenceRevision: String): Boolean =
+        projectId == null || contextRevision != null && contextRevision == referenceRevision
+
     init {
         require(projectId?.isNotBlank() != false) { "projectId cannot be blank" }
         require(designId?.isNotBlank() != false) { "designId cannot be blank" }

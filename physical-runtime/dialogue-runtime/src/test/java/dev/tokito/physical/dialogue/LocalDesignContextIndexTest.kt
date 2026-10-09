@@ -34,6 +34,21 @@ class LocalDesignContextIndexTest {
         assertEquals("pcb-placement", record.getJSONArray("source_ids").getString(0))
     }
 
+    @Test fun explicitReferenceCannotRedirectToAnUnrelatedHigherAuthorityTarget() {
+        val index = LocalDesignContextIndex("test-revision", listOf(
+            DesignContextRecord("r14", DesignFactAuthority.DATASHEET, setOf("R14"),
+                "R14 is a reset resistor.", setOf("datasheet")),
+            DesignContextRecord("switch", DesignFactAuthority.AUTHORED_PLACEMENT, setOf("SW1"),
+                "SW1 is the reset switch.", setOf("board"),
+                spokenAliases = setOf("reset switch"),
+                boardTarget = DesignBoardTarget("SW1", 0.5, 0.5)),
+        ))
+        val answer = index.groundedAnswer("Where is R14 near the reset switch?")!!
+        assertEquals("R14 is a reset resistor.", answer.fallbackText)
+        assertNull(answer.boardTarget)
+        assertEquals("r14", JSONObject(answer.designContext).getJSONArray("records").getJSONObject(0).getString("record_id"))
+    }
+
     @Test
     fun lexicalEvidenceLookupDoesNotRequireAnEmbeddingModel() {
         val result = JSONObject(index().retrieve("Is the reset switch active low?")!!)

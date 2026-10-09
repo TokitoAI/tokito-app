@@ -75,8 +75,10 @@ mobile image. Do not add a second GitHub Actions or subtree release pipeline.
 - **Offline means offline.** Tokito design context may improve identity
   mapping, but absence of Cloud authentication or networking cannot disable generic board discovery,
   inspection, local conversation, or AR guidance.
-- **One product boundary.** Mobile cannot add CAD editing or become a desktop
-  workspace-management client.
+- **One product boundary.** The mobile shell and desktop share projects and
+  server-backed engineering conversations through the versioned Cloud API.
+  This physical runtime remains the local bench boundary: its observations and
+  local model cannot silently mutate a design or substitute for Cloud approval.
 - **No hardcoded device assumptions.** Hardware features are discovered through
   a capability profile and unsupported paths fail closed.
 - **AR is registered presentation, not an independent geometry system.** Every

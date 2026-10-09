@@ -79,11 +79,20 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
     }
 
     fun ungroundedIdentityClarification(request: DialogueRequest): DialogueOutcome.Clarification? {
+        validateRequest(request)
         val references = REFERENCE_DESIGNATOR.findAll(request.utterance)
             .map { it.value.uppercase() }
             .distinct()
             .toList()
-        if (references.isEmpty()) return null
+        if (references.isEmpty()) {
+            val hasRecords = request.designContext?.let {
+                JSONObject(it).getJSONArray("records").length() > 0
+            } == true
+            if (!hasRecords && BOARD_SPECIFIC_QUESTION.containsMatchIn(request.utterance)) {
+                return DialogueOutcome.Clarification("I need verified board context to answer that board-specific question.")
+            }
+            return null
+        }
         val groundedKeys = request.designContext?.let(::designContextKeys).orEmpty()
         val missing = references.filterNot(groundedKeys::contains)
         if (missing.isEmpty()) return null
@@ -124,7 +133,7 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         if (text.any { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' }) {
             invalid("Conversational output contains control characters")
         }
-        if (text.startsWith('{') || text.contains("<tool_call>") || text.contains("</tool_call>")) {
+        if (text.startsWith('{') || text.startsWith('[') || text.contains("```") || CONTROL_TAG.containsMatchIn(text)) {
             invalid("Conversational output contains a control payload")
         }
         return DialogueOutcome.Response(text)
@@ -135,10 +144,10 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         val id = requiredString(value, "id")
         if (!id.matches(Regex("[A-Za-z0-9_-]{8,64}"))) invalid("Invalid proposal id")
         val name = requiredString(value, "tool")
-        val version = value.optInt("version", -1)
-        val capability = request.capabilities.singleOrNull { it.name == name && it.version == version }
+        val version = strictInteger(value, "version")
+        val capability = request.capabilities.singleOrNull { it.name == name && it.version.toLong() == version }
             ?: policy("Tool is not declared by the host")
-        val deadline = value.optLong("deadline_ms", -1)
+        val deadline = strictInteger(value, "deadline_ms")
         if (deadline !in 1..minOf(request.deadlineMs, capability.maxDeadlineMs)) {
             policy("Tool deadline is outside the authorized bound")
         }
@@ -153,7 +162,7 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         return DialogueOutcome.ToolProposal(
             id = id,
             tool = name,
-            version = version,
+            version = capability.version,
             arguments = normalized,
             deadlineMs = deadline,
             rationale = boundedText(value, "rationale"),
@@ -164,14 +173,15 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         ArgumentType.STRING -> requiredString(input, spec.name).also {
             if (it.length > spec.maxLength) policy("Argument ${spec.name} exceeds its limit")
         }
-        ArgumentType.NUMBER -> input.opt(spec.name).takeIf { it is Number }
-            ?: policy("Argument ${spec.name} must be a number")
+        ArgumentType.NUMBER -> input.opt(spec.name).takeIf { it is Number && it.toDouble().isFinite() }
+            ?: policy("Argument ${spec.name} must be a finite number")
         ArgumentType.BOOLEAN -> input.opt(spec.name).takeIf { it is Boolean }
             ?: policy("Argument ${spec.name} must be a boolean")
     }
 
-    private fun validateRequest(request: DialogueRequest) {
+    fun validateRequest(request: DialogueRequest) {
         if (request.utterance.isBlank() || request.utterance.length > limits.maxTurnChars) fail("Invalid utterance")
+        if (request.utterance.any { it.isISOControl() && it !in "\n\r\t" }) fail("Utterance contains control characters")
         if (request.history.size > limits.maxHistoryTurns || request.history.any { it.text.length > limits.maxTurnChars }) fail("History exceeds bounds")
         if (request.observations.size > limits.maxObservationCount || request.observations.any {
                 it.summary.length > limits.maxObservationChars || it.confidence !in 0.0..1.0
@@ -182,6 +192,12 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         }
         if (request.capabilities.size > limits.maxCapabilities || request.capabilities.map { it.name to it.version }.toSet().size != request.capabilities.size) fail("Capabilities are invalid")
         if (request.deadlineMs !in 1..limits.maxDeadlineMs) fail("Deadline is invalid")
+    }
+
+    private fun strictInteger(value: JSONObject, key: String): Long = when (val number = value.opt(key)) {
+        is Int -> number.toLong()
+        is Long -> number
+        else -> invalid("$key must be an integer, not a coerced string or fraction")
     }
 
     private fun capabilityJson(capability: Capability) = JSONObject()
@@ -218,14 +234,40 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         if (context.keys().asSequence().toSet() != setOf("context_revision", "records")) {
             fail("Design context fields do not match the schema")
         }
-        requiredString(context, "context_revision")
+        requestString(context, "context_revision")
         val records = context.optJSONArray("records") ?: fail("Design context records must be an array")
+        val recordIds = mutableSetOf<String>()
         buildSet {
             for (index in 0 until records.length()) {
                 val record = records.optJSONObject(index) ?: fail("Design context record must be an object")
+                if (record.keys().asSequence().toSet() != setOf(
+                        "record_id", "authority", "exact_keys", "text", "source_ids", "evidence_locators",
+                    )) fail("Design context record fields do not match the schema")
+                if (!recordIds.add(requestString(record, "record_id"))) fail("Design context record IDs must be unique")
+                if (requestString(record, "authority") !in DesignFactAuthority.entries.map { it.wireValue }) {
+                    fail("Unknown design fact authority")
+                }
+                requestString(record, "text")
+                val sources = record.optJSONArray("source_ids") ?: fail("Design context sources must be an array")
+                if (sources.length() == 0) fail("Design context record must retain source evidence")
+                val sourceIds = (0 until sources.length()).map { sourceIndex ->
+                    (sources.opt(sourceIndex) as? String)?.takeIf { it.isNotBlank() }
+                        ?: fail("Design context source must be a non-empty string")
+                }.toSet()
+                val locators = record.optJSONArray("evidence_locators") ?: fail("Evidence locators must be an array")
+                for (locatorIndex in 0 until locators.length()) {
+                    val locator = locators.optJSONObject(locatorIndex) ?: fail("Evidence locator must be an object")
+                    if (locator.keys().asSequence().toSet() != setOf("source_id", "page", "locator")) {
+                        fail("Evidence locator fields do not match the schema")
+                    }
+                    if (requestString(locator, "source_id") !in sourceIds) fail("Evidence locator cites an unknown source")
+                    val page = locator.opt("page")
+                    if (page !is Int || page <= 0) fail("Evidence page must be a positive integer")
+                    requestString(locator, "locator")
+                }
                 val keys = record.optJSONArray("exact_keys") ?: fail("Design context exact keys must be an array")
                 for (keyIndex in 0 until keys.length()) {
-                    val key = keys.optString(keyIndex, "")
+                    val key = keys.opt(keyIndex) as? String ?: fail("Design context exact key must be a string")
                     if (!CONTEXT_KEY.matches(key) || key != key.uppercase()) {
                         fail("Design context contains an invalid exact key")
                     }
@@ -237,11 +279,24 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Design context is invalid JSON", failure)
     }
 
+    private fun requestString(value: JSONObject, key: String): String =
+        (value.opt(key) as? String)?.takeIf { it.isNotBlank() }
+            ?: fail("$key must be a non-empty string")
+
     private fun fail(message: String): Nothing = throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, message)
     private fun invalid(message: String): Nothing = throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, message)
     private fun policy(message: String): Nothing = throw DialogueFailure(DialogueFailureCode.POLICY_REJECTED, message)
 
     private companion object {
+        val CONTROL_TAG = Regex("(?i)<\\s*/?\\s*(?:think|tool_call|function_call|system|assistant|user)(?:\\s|>|/)")
+        val BOARD_SPECIFIC_QUESTION = Regex(
+            "(?i)\\b(?:" +
+                "(?:this|my|our)\\s+(?:board|pcb|circuit|device|component)|" +
+                "(?:where\\s+(?:is|are)|locate|highlight)\\s+(?:the|my|this)|" +
+                "(?:does|can)\\s+(?:this|it)\\s+(?:have|support)|" +
+                "(?:is|are)\\s+(?:installed|fitted|populated)" +
+                ")\\b",
+        )
         val FENCED_JSON = Regex(
             """\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\z""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),

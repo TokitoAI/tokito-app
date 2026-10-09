@@ -249,6 +249,12 @@ class LocalDesignContextIndex(
             }
         }.sortedWith(RANKING)
         if (lexical.isNotEmpty()) {
+            // Explicit component identity outranks another component's location
+            // or alias match. Keep secondary evidence for aggregate questions,
+            // and do not mistake generic keys such as USB for a reference.
+            val references = REFERENCE_QUERY.findAll(query).map { it.value.uppercase() }.toSet()
+            val explicit = lexical.filter { it.record.exactKeys.any(references::contains) }
+            if (explicit.isNotEmpty()) return explicit + lexical.filterNot(explicit::contains)
             val targeted = lexical.filter(RankedRecord::target)
             if (targeted.isNotEmpty()) return targeted
             val strongestAliasOverlap = lexical.maxOf(RankedRecord::primaryOverlap)
@@ -351,6 +357,9 @@ class LocalDesignContextIndex(
         val TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
         val NUMBER = Regex("(?<![A-Za-z])(?:[0-9]+(?:\\.[0-9]+)?)(?![A-Za-z])")
         val KEY = Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}")
+        val REFERENCE_QUERY = Regex(
+            "(?i)(?<![A-Z0-9])(?:R|C|U|D|Q|L|J|SW|TP|F|FB|Y|X|CN|RN|RV|BT|BH|SJ)[0-9]{1,5}(?![A-Z0-9])",
+        )
         val PIN_QUERY = Regex("(?i)\\bpin\\s*([0-9]+)\\b")
         val CONNECTOR_REFERENCE = Regex("(?i)\\bJ\\s*([0-9]+)\\b")
         val LOCATION_INTENT = Regex("(?i)\\b(where|locate|show|highlight|point)\\b")
