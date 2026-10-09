@@ -64,8 +64,8 @@ function AppContent({
   cloudBaseUrl = defaultCloudBaseUrl(),
   useMemoryStore = false,
 }: AppProps): JSX.Element {
-  const { width } = useWindowDimensions();
-  const tablet = width >= TABLET_MIN_WIDTH;
+  const { width, height } = useWindowDimensions();
+  const tablet = width >= TABLET_MIN_WIDTH && height >= 600;
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -212,6 +212,8 @@ function AppContent({
       <RealtimeWorkspaceProvider client={client} token={token}>
         <StatusBar style="light" />
         <LiveSchematicViewerScreen
+          client={client}
+          token={token}
           projectId={route.projectId}
           designId={route.designId}
           onBack={() => setRoute({ name: "project", id: route.projectId })}

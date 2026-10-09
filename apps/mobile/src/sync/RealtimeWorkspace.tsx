@@ -76,27 +76,46 @@ export function RealtimeWorkspaceProvider({
     }
     let disposed = false;
     let activeId: string | null = null;
+    const earlyEvents: { subscriptionId: string; apply: () => void }[] = [];
+    let earlyOverflow = false;
+    setSubscriptionId(null);
+    setStatus("connecting");
+    setError(null);
+    setResourceMap(new Map());
+    setConflicts([]);
+    const receive = (subscriptionId: string, apply: () => void): void => {
+      if (disposed) return;
+      if (activeId === null) {
+        if (earlyEvents.length >= 256) { earlyOverflow = true; return; }
+        earlyEvents.push({ subscriptionId, apply }); return;
+      }
+      if (subscriptionId === activeId) apply();
+    };
     const subscriptions = [
       client.addSyncListener("onSyncStatus", (event) => {
-        if (!disposed) setStatus(event.status as SyncStatus);
+        receive(event.subscriptionId, () => setStatus(event.status as SyncStatus));
       }),
       client.addSyncListener("onSyncBootstrap", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const resources = parseJson<SyncResource[]>(event.resourcesJson);
         setResourceMap(new Map(resources.map((item) => [keyOf(item.project_id, item.design_id, item.resource), item])));
         setError(null);
+        });
       }),
       client.addSyncListener("onSyncEvent", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const item = parseJson<SyncEvent>(event.eventJson);
         setResourceMap((previous) => {
+          const current = previous.get(keyOf(item.project_id, item.design_id, item.resource));
+          if (current && current.version >= item.version) return previous;
           const next = new Map(previous);
           next.set(keyOf(item.project_id, item.design_id, item.resource), item);
           return next;
         });
+        });
       }),
       client.addSyncListener("onSyncConflict", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const command = parseJson<SyncConflict["command"]>(event.commandJson);
         setConflicts((previous) => [
           ...previous.filter((item) => item.command.command_id !== command.command_id),
@@ -106,9 +125,10 @@ export function RealtimeWorkspaceProvider({
             currentPayload: parseJson<unknown>(event.currentPayloadJson),
           },
         ]);
+        });
       }),
       client.addSyncListener("onSyncError", (event) => {
-        if (!disposed) setError(event.message);
+        receive(event.subscriptionId, () => setError(event.message));
       }),
     ];
     void client.startSync(token).then((id) => {
@@ -117,6 +137,14 @@ export function RealtimeWorkspaceProvider({
         return;
       }
       activeId = id;
+      if (earlyOverflow) {
+        earlyEvents.length = 0;
+        setStatus("stopped");
+        setError("Project updates could not initialize. Reopen Cloud projects to retry.");
+        void client.stopSync?.(id);
+        return;
+      }
+      for (const event of earlyEvents.splice(0)) receive(event.subscriptionId, event.apply);
       setSubscriptionId(id);
     }).catch((cause: unknown) => {
       if (!disposed) {
@@ -126,6 +154,7 @@ export function RealtimeWorkspaceProvider({
     });
     return () => {
       disposed = true;
+      earlyEvents.length = 0;
       subscriptions.forEach((item) => item.remove());
       if (activeId !== null) void client.stopSync?.(activeId);
     };
@@ -156,19 +185,7 @@ export function RealtimeWorkspaceProvider({
       resource,
       payload,
     );
-    setResourceMap((previous) => {
-      const next = new Map(previous);
-      const key = keyOf(projectId, designId, resource);
-      const existing = previous.get(key);
-      next.set(key, {
-        project_id: projectId,
-        design_id: designId,
-        resource,
-        version: existing?.version ?? 0,
-        payload,
-      });
-      return next;
-    });
+    // Queued is not committed: only the authoritative journal updates the view.
     return commandId;
   }, [client, subscriptionId]);
 

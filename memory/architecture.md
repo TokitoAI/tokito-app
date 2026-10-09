@@ -38,6 +38,18 @@ Unbound legacy sync files must not be replayed under a newly signed-in account.
 commands with a different bearer token. Never derive cache identity from an
 unverified UI email, and never use the bearer token as a persistent cache key.
 
+Project connection status describes the project-update transport, not chat
+availability or snapshot freshness. Published project indexes and journal
+resources are reconciled deterministically; journal tombstones must not be
+resurrected by a late index response. Missing update dates stay unknown, never
+"just now". A durable local enqueue is not a server commit: only confirmed
+journal events replace visible synchronized resources.
+
+**How to apply:** scope native callbacks to their subscription, reject older
+resource revisions, guard late HTTP responses after navigation, and preserve
+the published snapshot's provenance. Never approximate schematic symbols with
+generic boxes to make an unavailable preview appear successful.
+
 **Why:** routing every utterance through the board-reference index disabled general
 conversation even when the local LLM was installed and healthy.
 

@@ -1,128 +1,35 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import { WebView } from "react-native-webview";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { ArrowLeft } from "phosphor-react-native";
 import type { CloudClient } from "../native/bridge";
-import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
-import { ErrorText } from "../ui/primitives";
+import { SnapshotViewer } from "../viewer/SnapshotViewer";
 
 export interface SchematicViewerScreenProps {
-  client: CloudClient;
-  token: string;
-  projectId: string;
-  artifactName: string;
-  onBack: () => void;
+  client: CloudClient; token: string; projectId: string; artifactName: string; onBack: () => void;
+  publishedAt?: string;
 }
-
-export function SchematicViewerScreen({
-  client,
-  token,
-  projectId,
-  artifactName,
-  onBack,
-}: SchematicViewerScreenProps): JSX.Element {
-  const { width, height } = useWindowDimensions();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [svg, setSvg] = useState<string | null>(null);
-
+export function SchematicViewerScreen({ client, token, projectId, artifactName, onBack, publishedAt }: SchematicViewerScreenProps): JSX.Element {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<{ key: string; svg?: string; error?: string } | null>(null);
+  const key = `${projectId}/${artifactName}/${publishedAt ?? ""}`;
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const art = await client.getArtifactText(token, projectId, artifactName);
-        if (!cancelled) setSvg(art.body);
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof CompanionError
-              ? err.message
-              : err instanceof Error
-                ? err.message
-                : "Failed to load SVG",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, token, projectId, artifactName]);
-
-  const html =
-    svg !== null
-      ? `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=8"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"/></head><body style="margin:0;background:${tokens.canvasBg};display:flex;justify-content:center;align-items:flex-start;min-height:100%;"><img alt="schematic" style="max-width:100%;height:auto" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}"/></body></html>`
-      : "";
-
-  return (
-    <View style={styles.root}>
-      <View style={styles.chrome}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={styles.back}>
-          <ArrowLeft size={18} color={tokens.accent} weight="regular" />
-          <Text style={styles.link}>Back</Text>
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>
-          {artifactName}
-        </Text>
-      </View>
-      {loading ? <ActivityIndicator color={tokens.accent} style={{ margin: 16 }} /> : null}
-      {error !== null ? (
-        <View style={{ padding: 16 }}>
-          <ErrorText>{error}</ErrorText>
-        </View>
-      ) : null}
-      {svg !== null ? (
-        <WebView
-          originWhitelist={["*"]}
-          style={{ flex: 1, width, height: height - 96, backgroundColor: tokens.canvasBg }}
-          scalesPageToFit
-          source={{ html }}
-          javaScriptEnabled={false}
-          domStorageEnabled={false}
-          allowFileAccess={false}
-          allowFileAccessFromFileURLs={false}
-          allowUniversalAccessFromFileURLs={false}
-          setSupportMultipleWindows={false}
-          onShouldStartLoadWithRequest={(req) => {
-            // Static HTML + data: SVG only — block navigations off the page.
-            const url = req.url;
-            return (
-              url === "about:blank" ||
-              url.startsWith("data:") ||
-              url.startsWith("about:srcdoc")
-            );
-          }}
-        />
-      ) : null}
-    </View>
-  );
+    setState(null);
+    void client.getArtifactText(token, projectId, artifactName).then((artifact) => {
+      if (artifact.contentType.split(";")[0].trim() !== "image/svg+xml") throw new Error("Unsupported drawing format");
+      if (!cancelled) setState({ key, svg: artifact.body });
+    }).catch(() => { if (!cancelled) setState({ key, error: "The drawing could not be downloaded. Check your connection and try again." }); });
+    return () => { cancelled = true; };
+  }, [client, token, projectId, artifactName, key, attempt]);
+  const current = state?.key === key ? state : null;
+  return <View style={styles.root}>
+    <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={styles.back}><ArrowLeft size={22} color={tokens.text} /></Pressable><View style={styles.identity}><Text style={styles.title}>Schematic</Text><Text numberOfLines={1} style={styles.subtitle}>{artifactName}</Text></View><Text style={styles.badge}>Snapshot</Text></View>
+    <View style={styles.notice}><Text style={styles.noticeText}>Published drawing{publishedAt && Number.isFinite(Date.parse(publishedAt)) ? ` · ${new Date(publishedAt).toLocaleDateString()}` : ""}. Newer edits may not be included.</Text></View>
+    {current?.svg !== undefined ? <SnapshotViewer key={`${key}/${attempt}`} svg={current.svg} /> : <View style={styles.state}>{current?.error ? <><Text style={styles.error}>{current.error}</Text><Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)} style={styles.retry}><Text style={styles.retryText}>Try again</Text></Pressable></> : <><ActivityIndicator color={tokens.accent} /><Text style={styles.subtitle}>Loading snapshot…</Text></>}</View>}
+  </View>;
 }
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: tokens.bg },
-  chrome: {
-    paddingTop: 48,
-    paddingHorizontal: tokens.space4,
-    paddingBottom: tokens.space3,
-    backgroundColor: tokens.bgChrome,
-    borderBottomWidth: 1,
-    borderBottomColor: tokens.border,
-    gap: tokens.space2,
-  },
-  back: { flexDirection: "row", alignItems: "center", gap: tokens.space2 },
-  link: { color: tokens.accent, fontWeight: "500" },
-  title: { color: tokens.text, fontSize: 16, fontWeight: "600" },
+  root: { flex: 1, backgroundColor: tokens.bg }, header: { minHeight: 72, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: tokens.bgChrome, borderBottomWidth: 1, borderBottomColor: tokens.border }, back: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 12 }, identity: { flex: 1, minWidth: 0, gap: 3 }, title: { color: tokens.text, fontSize: 18, fontWeight: "600" }, subtitle: { color: tokens.text2, fontSize: 12 }, badge: { color: tokens.text2, fontSize: 12, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: tokens.card }, notice: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: tokens.border }, noticeText: { color: tokens.text2, fontSize: 12, lineHeight: 17 }, state: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }, error: { color: tokens.text2, textAlign: "center", fontSize: 14, lineHeight: 21 }, retry: { minHeight: 48, paddingHorizontal: 22, justifyContent: "center", borderRadius: 12, backgroundColor: tokens.accent }, retryText: { color: tokens.accentInk, fontWeight: "600" },
 });

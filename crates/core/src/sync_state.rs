@@ -8,9 +8,17 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::{CloudError, SyncBootstrap, SyncCommand, SyncEvent, SyncResource};
 
 const MAX_RESOURCE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_OUTBOX_COMMANDS: i64 = 100;
 
 pub struct SyncStateStore {
     conn: Mutex<Connection>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BlockedSyncCommand {
+    pub command: SyncCommand,
+    pub current_version: u64,
+    pub current_payload_json: String,
 }
 
 impl SyncStateStore {
@@ -31,6 +39,10 @@ impl SyncStateStore {
     }
 
     fn init(conn: Connection) -> Result<Self, CloudError> {
+        conn.pragma_update(None, "synchronous", "FULL")
+            .map_err(db_error)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(db_error)?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS resources (
@@ -69,6 +81,11 @@ impl SyncStateStore {
     ) -> Result<(), CloudError> {
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
+        if bootstrap.cursor < read_cursor(&tx)? {
+            return Err(CloudError::Network(
+                "stale sync bootstrap; retry required".into(),
+            ));
+        }
         if let Some(project_id) = project_id {
             tx.execute(
                 "DELETE FROM resources WHERE project_id = ?1",
@@ -89,6 +106,9 @@ impl SyncStateStore {
     pub fn apply_event(&self, event: &SyncEvent) -> Result<(), CloudError> {
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
+        if event.seq <= read_cursor(&tx)? {
+            return Ok(());
+        }
         upsert_resource(
             &tx,
             &SyncResource {
@@ -160,7 +180,62 @@ impl SyncStateStore {
     }
 
     pub fn enqueue(&self, command: &SyncCommand) -> Result<(), CloudError> {
-        let body = serde_json::to_string(command).map_err(|_| CloudError::Unexpected)?;
+        self.enqueue_inner(command, false).map(|_| ())
+    }
+
+    /// Reserve the next resource revision and persist the command under one
+    /// lock/transaction. Never split these operations across bridge calls.
+    pub fn enqueue_next(&self, command: &SyncCommand) -> Result<SyncCommand, CloudError> {
+        self.enqueue_inner(command, true)
+    }
+
+    fn enqueue_inner(
+        &self,
+        command: &SyncCommand,
+        reserve: bool,
+    ) -> Result<SyncCommand, CloudError> {
+        let mut command = command.clone();
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let existing: Option<String> = tx
+            .query_row(
+                "SELECT body_json FROM outbox WHERE command_id = ?1",
+                params![command.command_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        if let Some(existing) = existing {
+            let stored: SyncCommand =
+                serde_json::from_str(&existing).map_err(|_| CloudError::Unexpected)?;
+            if reserve {
+                command.base_version = stored.base_version;
+            }
+            return if stored == command {
+                Ok(stored)
+            } else {
+                Err(CloudError::Network(
+                    "command ID already belongs to a different edit".into(),
+                ))
+            };
+        }
+        let count: i64 = tx
+            .query_row("SELECT COUNT(*) FROM outbox", [], |row| row.get(0))
+            .map_err(db_error)?;
+        if count >= MAX_OUTBOX_COMMANDS {
+            return Err(CloudError::Network(
+                "sync queue is full; reconnect or resolve pending edits".into(),
+            ));
+        }
+        if reserve {
+            command.base_version = next_version(
+                &tx,
+                &command.project_id,
+                command.design_id.as_deref(),
+                &command.resource,
+            )?;
+        }
+        let body = serde_json::to_string(&command).map_err(|_| CloudError::Unexpected)?;
         let payload = serde_json::to_vec(&command.payload).map_err(|_| CloudError::Unexpected)?;
         if payload.len() > MAX_RESOURCE_BYTES {
             return Err(CloudError::Network(format!(
@@ -171,14 +246,14 @@ impl SyncStateStore {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|value| value.as_millis() as i64)
             .unwrap_or(0);
-        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
-        conn.execute(
+        tx.execute(
             "INSERT INTO outbox(command_id, body_json, created_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(command_id) DO NOTHING",
             params![command.command_id, body, now],
         )
         .map_err(db_error)?;
-        Ok(())
+        tx.commit().map_err(db_error)?;
+        Ok(command)
     }
 
     pub fn next_base_version(
@@ -188,46 +263,22 @@ impl SyncStateStore {
         resource: &str,
     ) -> Result<u64, CloudError> {
         let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
-        let current: Option<i64> = conn
-            .query_row(
-                "SELECT version FROM resources
-                 WHERE project_id = ?1 AND design_id = ?2 AND resource = ?3",
-                params![project_id, design_id.unwrap_or(""), resource],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(db_error)?;
-        let queued: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM outbox
-                 WHERE blocked = 0
-                 AND json_extract(body_json, '$.project_id') = ?1
-                 AND COALESCE(json_extract(body_json, '$.design_id'), '') = ?2
-                 AND json_extract(body_json, '$.resource') = ?3",
-                params![project_id, design_id.unwrap_or(""), resource],
-                |row| row.get(0),
-            )
-            .map_err(db_error)?;
-        Ok(current.unwrap_or(0) as u64 + queued as u64)
+        next_version(&conn, project_id, design_id, resource)
     }
 
     pub fn pending(&self) -> Result<Vec<SyncCommand>, CloudError> {
         let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT body_json FROM outbox
-                 WHERE blocked = 0 ORDER BY rowid",
-            )
-            .map_err(db_error)?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(db_error)?;
-        let mut commands = Vec::new();
-        for row in rows {
-            let body = row.map_err(db_error)?;
-            commands.push(serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?);
-        }
-        Ok(commands)
+        pending_commands(&conn)
+    }
+
+    pub fn is_pending(&self, command_id: &str) -> Result<bool, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM outbox WHERE command_id = ?1 AND blocked = 0)",
+            params![command_id],
+            |row| row.get(0),
+        )
+        .map_err(db_error)
     }
 
     pub fn mark_conflict(
@@ -260,6 +311,31 @@ impl SyncStateStore {
         )
         .map_err(db_error)?;
         tx.commit().map_err(db_error)
+    }
+
+    /// Only conflict roots carry a server snapshot. Dependent edits remain
+    /// blocked behind that root and must not create duplicate recovery prompts.
+    pub fn conflicts(&self) -> Result<Vec<BlockedSyncCommand>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let mut stmt = conn.prepare("SELECT body_json, conflict_version, conflict_payload_json FROM outbox WHERE blocked=1 AND conflict_version IS NOT NULL AND conflict_payload_json IS NOT NULL ORDER BY rowid").map_err(db_error)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, u64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(db_error)?;
+        rows.map(|row| {
+            let (body, current_version, current_payload_json) = row.map_err(db_error)?;
+            Ok(BlockedSyncCommand {
+                command: serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?,
+                current_version,
+                current_payload_json,
+            })
+        })
+        .collect()
     }
 
     pub fn discard_command(&self, command_id: &str) -> Result<(), CloudError> {
@@ -339,11 +415,14 @@ impl SyncStateStore {
         for (base_version, (rowid, body)) in (version as u64..).zip(queued) {
             command = serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?;
             command.base_version = base_version;
+            // A changed precondition is a new command, never a retry of the
+            // old immutable request identity. Replace dependent IDs too.
+            command.command_id = uuid::Uuid::new_v4().to_string();
             let body = serde_json::to_string(&command).map_err(|_| CloudError::Unexpected)?;
             tx.execute(
-                "UPDATE outbox SET body_json = ?2, blocked = 0,
+                "UPDATE outbox SET body_json = ?2, command_id = ?3, blocked = 0,
                  conflict_version = NULL, conflict_payload_json = NULL WHERE rowid = ?1",
-                params![rowid, body],
+                params![rowid, body, command.command_id],
             )
             .map_err(db_error)?;
         }
@@ -387,6 +466,58 @@ impl SyncStateStore {
         }
         Ok(resources)
     }
+}
+
+fn read_cursor(conn: &Connection) -> Result<u64, CloudError> {
+    let value: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='cursor'", [], |row| {
+            row.get(0)
+        })
+        .optional()
+        .map_err(db_error)?;
+    value
+        .map(|v| v.parse().map_err(|_| CloudError::Unexpected))
+        .unwrap_or(Ok(0))
+}
+
+fn pending_commands(conn: &Connection) -> Result<Vec<SyncCommand>, CloudError> {
+    let mut stmt = conn
+        .prepare("SELECT body_json FROM outbox WHERE blocked=0 ORDER BY rowid")
+        .map_err(db_error)?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(db_error)?;
+    rows.map(|row| {
+        serde_json::from_str(&row.map_err(db_error)?).map_err(|_| CloudError::Unexpected)
+    })
+    .collect()
+}
+
+fn next_version(
+    conn: &Connection,
+    project_id: &str,
+    design_id: Option<&str>,
+    resource: &str,
+) -> Result<u64, CloudError> {
+    let current: Option<u64> = conn
+        .query_row(
+            "SELECT version FROM resources WHERE project_id=?1 AND design_id=?2 AND resource=?3",
+            params![project_id, design_id.unwrap_or(""), resource],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db_error)?;
+    let (queued, blocked): (Option<u64>, i64) = conn.query_row(
+        "SELECT MAX(json_extract(body_json, '$.base_version')), COALESCE(MAX(blocked),0) FROM outbox WHERE json_extract(body_json,'$.project_id')=?1 AND COALESCE(json_extract(body_json,'$.design_id'),'')=?2 AND json_extract(body_json,'$.resource')=?3",
+        params![project_id, design_id.unwrap_or(""), resource], |row| Ok((row.get(0)?, row.get(1)?))).map_err(db_error)?;
+    if blocked != 0 {
+        return Err(CloudError::Network(
+            "resolve the pending resource conflict before making another edit".into(),
+        ));
+    }
+    Ok(current
+        .unwrap_or(0)
+        .max(queued.map(|version| version.saturating_add(1)).unwrap_or(0)))
 }
 
 fn upsert_resource(conn: &Connection, resource: &SyncResource) -> Result<(), CloudError> {
@@ -491,8 +622,171 @@ mod tests {
         let pending = store.pending().unwrap();
         assert_eq!(pending[0].base_version, 4);
         assert_eq!(pending[1].base_version, 5);
-        store.mark_conflict("first", 6, "{}").unwrap();
-        store.discard_command("first").unwrap();
+        assert_ne!(pending[0].command_id, "first");
+        assert_ne!(pending[1].command_id, "second");
+        store
+            .mark_conflict(&pending[0].command_id, 6, "{}")
+            .unwrap();
+        store.discard_command(&pending[0].command_id).unwrap();
         assert!(store.pending().unwrap().is_empty());
+    }
+
+    fn command(id: &str) -> SyncCommand {
+        SyncCommand {
+            device_id: "d".into(),
+            command_id: id.into(),
+            project_id: "p".into(),
+            design_id: Some("s".into()),
+            resource: "bom".into(),
+            base_version: 0,
+            payload: serde_json::json!({"lines":[]}),
+        }
+    }
+
+    #[test]
+    fn concurrent_enqueues_reserve_unique_revisions_atomically() {
+        let store = std::sync::Arc::new(SyncStateStore::in_memory().unwrap());
+        let handles: Vec<_> = (0..20)
+            .map(|i| {
+                let store = store.clone();
+                std::thread::spawn(move || {
+                    store
+                        .enqueue_next(&command(&i.to_string()))
+                        .unwrap()
+                        .base_version
+                })
+            })
+            .collect();
+        let mut versions: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        versions.sort_unstable();
+        assert_eq!(versions, (0..20).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn duplicate_ids_cannot_silently_replace_edits_and_blocked_resources_reject_new_edits() {
+        let store = SyncStateStore::in_memory().unwrap();
+        let first = command("first");
+        store.enqueue_next(&first).unwrap();
+        store.enqueue_next(&first).unwrap();
+        let mut changed = first.clone();
+        changed.payload = serde_json::json!({"lines":[1]});
+        assert!(store.enqueue_next(&changed).is_err());
+        store.mark_conflict("first", 5, "{}").unwrap();
+        assert!(store.enqueue_next(&command("second")).is_err());
+    }
+
+    #[test]
+    fn old_events_and_bootstraps_do_not_rewind_cursor_or_materialized_resources() {
+        let store = SyncStateStore::in_memory().unwrap();
+        let event = SyncEvent {
+            seq: 10,
+            project_id: "p".into(),
+            design_id: Some("s".into()),
+            resource: "bom".into(),
+            version: 4,
+            command_id: "remote".into(),
+            actor_device_id: "other".into(),
+            payload: serde_json::json!({"new":true}),
+            created_at: 1,
+        };
+        store.apply_event(&event).unwrap();
+        let mut old = event.clone();
+        old.seq = 9;
+        old.version = 3;
+        old.payload = serde_json::json!({});
+        store.apply_event(&old).unwrap();
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 9,
+                    resources: vec![]
+                },
+                None
+            )
+            .is_err());
+        assert_eq!(store.cursor().unwrap(), 10);
+        assert_eq!(
+            store
+                .resource("p", Some("s"), "bom")
+                .unwrap()
+                .unwrap()
+                .payload,
+            event.payload
+        );
+    }
+
+    #[test]
+    fn reservation_after_remote_change_uses_revision_not_queue_length() {
+        let store = SyncStateStore::in_memory().unwrap();
+        store.enqueue_next(&command("first")).unwrap();
+        store
+            .apply_ack(&SyncEvent {
+                seq: 12,
+                project_id: "p".into(),
+                design_id: Some("s".into()),
+                resource: "bom".into(),
+                version: 7,
+                command_id: "remote".into(),
+                actor_device_id: "other".into(),
+                payload: serde_json::json!({}),
+                created_at: 1,
+            })
+            .unwrap();
+        assert_eq!(
+            store.enqueue_next(&command("second")).unwrap().base_version,
+            7
+        );
+        assert_eq!(store.cursor().unwrap(), 0);
+    }
+
+    #[test]
+    fn queue_is_bounded_and_conflict_invalidates_a_previously_loaded_batch() {
+        let store = SyncStateStore::in_memory().unwrap();
+        for i in 0..100 {
+            store.enqueue_next(&command(&i.to_string())).unwrap();
+        }
+        assert!(store.enqueue_next(&command("overflow")).is_err());
+        let batch = store.pending().unwrap();
+        store.mark_conflict(&batch[0].command_id, 2, "{}").unwrap();
+        assert!(!store.is_pending(&batch[1].command_id).unwrap());
+    }
+
+    #[test]
+    fn blocked_conflicts_survive_restart_and_rebase_replaces_all_request_ids() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-sync-conflict-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            store.enqueue_next(&command("original")).unwrap();
+            store.enqueue_next(&command("dependent")).unwrap();
+            store
+                .mark_conflict("original", 4, "{\"server\":true}")
+                .unwrap();
+        }
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            let conflicts = store.conflicts().unwrap();
+            assert_eq!(conflicts.len(), 1);
+            assert_eq!(conflicts[0].command.command_id, "original");
+            assert_eq!(conflicts[0].current_version, 4);
+            assert_eq!(conflicts[0].current_payload_json, "{\"server\":true}");
+            assert!(store.pending().unwrap().is_empty());
+            store.rebase_conflict("original").unwrap();
+            let pending = store.pending().unwrap();
+            assert_eq!(pending.len(), 2);
+            assert_eq!(pending[0].base_version, 4);
+            assert_eq!(pending[1].base_version, 5);
+            for edit in &pending {
+                assert!(!["original", "dependent"].contains(&edit.command_id.as_str()));
+                assert_eq!(edit.payload, command("original").payload);
+            }
+            assert_ne!(pending[0].command_id, pending[1].command_id);
+            assert!(store.conflicts().unwrap().is_empty());
+            assert!(store.rebase_conflict("original").is_err());
+            assert!(!store.is_pending("dependent").unwrap());
+        }
+        std::fs::remove_file(path).unwrap();
     }
 }

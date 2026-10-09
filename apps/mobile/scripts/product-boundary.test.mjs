@@ -23,8 +23,10 @@ test("mobile UI cannot regress into a CAD or workspace-management client", async
   }
   assert.doesNotMatch(source, /LiveSchematicEditor/);
   assert.doesNotMatch(source, /Touch-friendly tools|Edit canonical schematics/);
-  const desktopProductName = ["desk", "top"].join("");
-  assert.doesNotMatch(source, new RegExp(desktopProductName, "i"));
+  // Desktop/mobile project sync is supported. Protect the actual ownership
+  // boundary, not the word "desktop" in helpful snapshot provenance copy.
+  assert.doesNotMatch(source, /(?:postgres|sqlite):\/\//i);
+  assert.doesNotMatch(source, /(?:localhost|127\.0\.0\.1):1543[23]/);
 });
 
 test("realtime authoring is explicitly allowlisted", async () => {

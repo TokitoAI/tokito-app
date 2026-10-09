@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 import { ConversationClient } from "./conversationClient";
+import { chatFailure, ConversationScope } from "./conversationState";
 import { emptyRun, isActive, object, parseRun, reduceRun, string, type ChatRow, type ChatRun, type ChatThread, type RunView } from "./conversationModel";
 import { tokens } from "../theme";
 import { ErrorText, PrimaryButton } from "../ui/primitives";
@@ -28,22 +29,30 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   const [blocked, setBlocked] = useState<{ id: string; content: string } | null>(null);
   const epoch = useRef(0);
   const acceptedMessage = useRef<string | null>(null);
+  const scope = useRef(new ConversationScope());
+  const historyRequest = useRef(0);
+  const scopeKey = useRef("");
+  const sendingTicket = useRef<number | null>(null);
+  const [ready, setReady] = useState(false);
+  function updateDraft(text: string): void { scope.current.save(selected.current, text); setDraft(text); }
 
   async function load(client: ConversationClient, id: string, before: number | null = null): Promise<void> {
+    const ticket = scope.current.ticket();
+    const request = ++historyRequest.current;
     const page = await client.history(project, design, id, before);
-    if (connection.current !== client || selected.current !== id) return;
+    if (connection.current !== client || selected.current !== id || !scope.current.current(ticket) || request !== historyRequest.current) return;
     setOlder(page.olderCursor);
     setRows(prior => before === null ? page.messages : [...page.messages, ...prior.filter(r => !page.messages.some(m => m.id === r.id))]);
     if (before === null) {
       const [pending, recovered] = await Promise.all([client.queued(id), client.recoveredDraft(id)]);
-      if (connection.current !== client || selected.current !== id) return;
+      if (connection.current !== client || selected.current !== id || !scope.current.current(ticket) || request !== historyRequest.current) return;
       setBlocked(pending?.blocked ? pending : null);
       setSending(pending !== null && !pending.blocked);
       if (pending) {
         setRows(prior => prior.some(row => row.id === pending.id) ? prior : [...prior, { id: pending.id, runId: pending.runId, role: "user", content: pending.content }]);
         setNotice(pending.blocked ? null : "Message saved. Waiting for a connection…");
       }
-      if (recovered !== null) setDraft(previous => previous || recovered);
+      if (recovered !== null && !scope.current.draft(id)) updateDraft(recovered);
       setRun(page.latestRun);
       setView(emptyRun());
       if (page.latestRun !== null) await client.watch(page.latestRun.run_id);
@@ -56,6 +65,12 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
     try { client = new ConversationClient(getTokitoCompanionFfi()); }
     catch { setError("Install the current Tokito app to open design chat."); setBusy(false); return; }
     connection.current = client;
+    const key = JSON.stringify([baseUrl, token, project, design]);
+    const resumeThread = scopeKey.current === key ? selected.current : null;
+    if (scopeKey.current !== key) { scope.current.reset(); scopeKey.current = key; }
+    else scope.current.next();
+    sendingTicket.current = null;
+    setDraft(scope.current.draft(null)); setReady(false); setSending(false); setBlocked(null); setNotice(null);
     selected.current = null;
     setThread(null); setRows([]); setRun(null); setView(emptyRun()); setBusy(true); setError(null);
     const current = () => epoch.current === id && connection.current === client;
@@ -65,9 +80,11 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
         const accepted = parseRun(change.run);
         if (accepted.thread_id !== selected.current) return;
         acceptedMessage.current = accepted.run_id;
+        historyRequest.current++;
         setRun(accepted); setNotice(null); setSending(false);
         setView(emptyRun());
-        void client.watch(accepted.run_id).catch(() => setError("Unable to reconnect to the response. Reopen this conversation."));
+        const ticket = scope.current.ticket();
+        void client.watch(accepted.run_id).catch(error => { if (current() && scope.current.current(ticket)) setError(chatFailure(error)); });
       } else if (change.type === "event") {
         setView(previous => {
           try { return reduceRun(previous, change.event); }
@@ -77,9 +94,13 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
         const settled = parseRun(change.run);
         if (settled.thread_id !== selected.current) return;
         setRun(settled); setSending(false); setNotice(null);
+        const ticket = scope.current.ticket();
+        const request = ++historyRequest.current;
         void client.history(project, design, settled.thread_id).then(page => {
-          if (current() && selected.current === settled.thread_id) { setRows(page.messages); setOlder(page.olderCursor); }
-        }).catch(() => { if (current()) setError("The run finished, but saved history could not be refreshed. Reopen this conversation."); });
+          if (current() && scope.current.current(ticket) && request === historyRequest.current && selected.current === settled.thread_id) {
+            setRows(prior => [...prior.filter(row => !page.messages.some(message => message.id === row.id)), ...page.messages]);
+          }
+        }).catch(error => { if (current() && scope.current.current(ticket)) setError(chatFailure(error)); });
       } else if (change.type === "offline" || change.type === "reconnecting") setNotice("Connection interrupted. Retrying without sending twice…");
       else if (change.type === "blocked") {
         const message = object(change.message);
@@ -95,9 +116,10 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       const items = await client.threads(project, design);
       if (!current()) return;
       setThreads(items);
-      const first = items[0];
-      if (first) { selected.current = first.id; setThread(first.id); await load(client, first.id); }
-    }).catch(() => { if (current()) setError("Chat could not connect. Check your connection and try again."); })
+      setReady(true);
+      const first = items.find(item => item.id === resumeThread) ?? items[0];
+      if (first) { selected.current = first.id; setThread(first.id); setDraft(scope.current.draft(first.id)); await load(client, first.id); }
+    }).catch(error => { if (current()) setError(chatFailure(error)); })
       .finally(() => { if (current()) setBusy(false); });
     return () => { epoch.current++; connection.current = null; void client.close().catch(() => {}); };
     // The session owns its callbacks for this exact account/project scope.
@@ -106,29 +128,39 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   async function choose(id: string | null): Promise<void> {
     const client = connection.current;
     if (!client) return;
+    const ticket = scope.current.next();
+    sendingTicket.current = null;
+    setDraft(scope.current.draft(id));
     selected.current = id; acceptedMessage.current = null; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
-    try { await client.stopWatching(); if (id !== null) await load(client, id); }
-    catch { if (connection.current === client && selected.current === id) setError("Conversation could not be loaded. Try opening it again."); }
-    finally { if (connection.current === client && selected.current === id) setBusy(false); }
+    try { await client.stopWatching(); if (scope.current.current(ticket) && id !== null) await load(client, id); }
+    catch (error) { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }
+    finally { if (connection.current === client && scope.current.current(ticket)) setBusy(false); }
   }
   async function send(): Promise<void> {
     const client = connection.current;
     const content = draft.trim();
-    if (!client || !content || sending || blocked || isActive(run)) return;
+    if (!client || !ready || !content || sending || sendingTicket.current !== null || blocked || isActive(run)) return;
+    const ticket = scope.current.ticket();
+    sendingTicket.current = ticket;
     setSending(true); setError(null);
     try {
       let id = selected.current;
       if (id === null) {
         const created = await client.create(project, design, content.slice(0, 80));
-        if (connection.current !== client || selected.current !== null) return;
+        if (connection.current !== client || !scope.current.current(ticket) || selected.current !== null) return;
         id = created.id; selected.current = id; setThread(id); setThreads(items => [created, ...items]);
+        scope.current.save(null, ""); scope.current.save(id, content);
       }
       const pending = await client.send(project, design, id, content, version, version === 0 ? "planner" : "schematic");
-      if (connection.current !== client || selected.current !== id) return;
+      // A successful durable enqueue owns this text, even if navigation finished
+      // while it was pending. Do not leave a second sendable copy in its draft.
+      if (scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(id).trim() === content) scope.current.save(id, "");
+      if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
       const request = object(pending.request);
-      setRows(items => [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
-      setDraft(""); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…"); atBottom.current = true;
-    } catch { setSending(false); setError("Message could not be queued. Your draft is still here; try again."); }
+      setRows(items => items.some(item => item.id === request.message_id) ? items : [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
+      setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…"); atBottom.current = true;
+    } catch (error) { if (connection.current === client && scope.current.current(ticket)) { setSending(false); setError(chatFailure(error)); } }
+    finally { if (sendingTicket.current === ticket) sendingTicket.current = null; }
   }
   const active = sending || isActive(run);
   const hasSavedAnswer = run !== null && rows.some(r => r.role === "assistant" && r.runId === run.run_id);
@@ -137,29 +169,31 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       <Pressable accessibilityRole="button" onPress={() => void choose(null)} style={styles.thread}><Text style={styles.link}>New chat</Text></Pressable>
       {threads.map(t => <Pressable key={t.id} accessibilityRole="tab" accessibilityState={{ selected: thread === t.id }} onPress={() => void choose(t.id)} style={[styles.thread, thread === t.id && styles.selected]}><Text numberOfLines={1} style={styles.threadText}>{t.title || "Design conversation"}</Text></Pressable>)}
     </ScrollView></View>
-    {error ? <View style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Reconnect</Text></Pressable></View> : null}
+    {error ? <View style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Try again</Text></Pressable></View> : null}
     {blocked ? <View style={styles.feedback}><Text style={styles.muted}>This message was not sent. Restore it to review and send against the current design.</Text><PrimaryButton label="Restore message" onPress={() => {
       const client = connection.current;
       if (!client) return;
       const message = blocked;
       const originalThread = selected.current;
+      const ticket = scope.current.ticket();
       void client.restoreBlocked(message.id).then(content => {
-        if (connection.current !== client || selected.current !== originalThread) return;
-        setDraft(previous => previous ? `${previous}\n\n${content}` : content);
+        if (connection.current !== client || !scope.current.current(ticket) || selected.current !== originalThread) return;
+        const previous = scope.current.draft(originalThread);
+        updateDraft(previous ? `${previous}\n\n${content}` : content);
         setBlocked(null); setError(null); setNotice(null);
         setRows(previous => previous.filter(row => row.id !== message.id));
-      }).catch(() => setError("The message could not be restored. Reopen this conversation."));
+      }).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); });
     }} /></View> : null}
     <FlatList ref={list} data={rows} keyExtractor={r => r.id} style={styles.history} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}
       onScroll={e => { const n = e.nativeEvent; atBottom.current = n.contentSize.height - n.layoutMeasurement.height - n.contentOffset.y < 100; }} scrollEventThrottle={100}
       onContentSizeChange={() => { if (atBottom.current) list.current?.scrollToEnd({ animated: false }); }}
-      ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { if (connection.current && thread) void load(connection.current, thread, older).catch(() => setError("Earlier messages could not be loaded.")); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
+      ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { const client = connection.current; const ticket = scope.current.ticket(); if (client && thread) void load(client, thread, older).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
       ListEmptyComponent={busy ? <ActivityIndicator color={tokens.accent} style={styles.empty} /> : <View style={styles.empty}><Text style={styles.emptyTitle}>What would you like to build?</Text><Text style={styles.muted}>Ask about this design or describe a change. You review changes before they are applied.</Text></View>}
       renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" && styles.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text><Text selectable style={styles.body}>{item.content}</Text></View>}
       ListFooterComponent={<View>{!hasSavedAnswer && (view.text || active) ? <View style={styles.bubble}><Text style={styles.author}>Tokito</Text>{view.text ? <Text selectable style={styles.body}>{view.text}</Text> : <Text style={styles.muted}>{view.activity || "Working on your design…"}</Text>}</View> : null}{view.error ? <ErrorText>{view.error}</ErrorText> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
-    <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={setDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
-      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; if (c && run) void c.cancel(run.run_id).then(setRun).catch(() => setError("Could not request cancellation. Try again.")); }} /> : <PrimaryButton label="Send" disabled={busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
+    <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
+      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={!ready || busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
     </View>
   </KeyboardAvoidingView>;
 }

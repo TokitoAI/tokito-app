@@ -193,17 +193,14 @@ impl SyncSubscription {
         validate_resource_scope(&resource, design_id.as_deref())?;
         let payload =
             serde_json::from_str(&payload_json).map_err(|_| CompanionError::Unexpected)?;
-        let base_version =
-            self.store
-                .next_base_version(&project_id, design_id.as_deref(), &resource)?;
         let command_id = uuid::Uuid::new_v4().to_string();
-        self.store.enqueue(&SyncCommand {
+        self.store.enqueue_next(&SyncCommand {
             device_id: self.device_id.clone(),
             command_id: command_id.clone(),
             project_id,
             design_id,
             resource,
-            base_version,
+            base_version: 0,
             payload,
         })?;
         let _ = self.wake_outbox.send(());
@@ -486,6 +483,7 @@ impl CompanionClient {
         let resources_json =
             serde_json::to_string(&bootstrap.resources).map_err(|_| CompanionError::Unexpected)?;
         listener.on_bootstrap(bootstrap.cursor, resources_json);
+        replay_sync_conflicts(&store, listener.as_ref())?;
 
         let (stop_tx, stop_rx) = watch::channel(false);
         let (wake_tx, wake_rx) = mpsc::unbounded_channel();
@@ -509,6 +507,22 @@ impl CompanionClient {
         ));
         Ok(subscription)
     }
+}
+
+fn replay_sync_conflicts(
+    store: &SyncStateStore,
+    listener: &dyn SyncListener,
+) -> Result<(), CloudError> {
+    for conflict in store.conflicts()? {
+        let command_json =
+            serde_json::to_string(&conflict.command).map_err(|_| CloudError::Unexpected)?;
+        listener.on_conflict(
+            command_json,
+            conflict.current_version,
+            conflict.current_payload_json,
+        );
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -575,6 +589,14 @@ async fn run_outbox(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         for command in store.pending()? {
+            if *stop.borrow() {
+                return Ok(());
+            }
+            // SSE acknowledgements and conflicts may invalidate this batch
+            // while the preceding command was in flight.
+            if !store.is_pending(&command.command_id)? {
+                continue;
+            }
             match submit_sync_command(base_url, token, &command).await {
                 Ok(event) => store.apply_ack(&event)?,
                 Err(CloudError::Conflict {
@@ -585,6 +607,7 @@ async fn run_outbox(
                     let command_json =
                         serde_json::to_string(&command).map_err(|_| CloudError::Unexpected)?;
                     listener.on_conflict(command_json, current_version, current_payload);
+                    break;
                 }
                 Err(CloudError::Unauthorized) => return Err(CloudError::Unauthorized),
                 Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected) => {
@@ -619,6 +642,54 @@ mod tests {
     use super::*;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[derive(Debug, Default)]
+    struct RecoveryListener(std::sync::Mutex<Vec<(String, u64, String)>>);
+
+    impl SyncListener for RecoveryListener {
+        fn on_status(&self, _: String) {}
+        fn on_bootstrap(&self, _: u64, _: String) {}
+        fn on_event(&self, _: String) {}
+        fn on_conflict(&self, command: String, version: u64, payload: String) {
+            self.0.lock().unwrap().push((command, version, payload));
+        }
+        fn on_error(&self, _: String) {}
+    }
+
+    #[test]
+    fn startup_replays_persisted_conflicts_to_the_ui() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-sync-replay-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            store
+                .enqueue_next(&SyncCommand {
+                    device_id: "device".into(),
+                    command_id: "edit".into(),
+                    project_id: "project".into(),
+                    design_id: Some("design".into()),
+                    resource: "chat".into(),
+                    base_version: 0,
+                    payload: serde_json::json!({}),
+                })
+                .unwrap();
+            store.mark_conflict("edit", 8, "{\"remote\":true}").unwrap();
+        }
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            let listener = RecoveryListener::default();
+            replay_sync_conflicts(&store, &listener).unwrap();
+            let events = listener.0.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            let command: SyncCommand = serde_json::from_str(&events[0].0).unwrap();
+            assert_eq!(command.command_id, "edit");
+            assert_eq!(events[0].1, 8);
+            assert_eq!(events[0].2, "{\"remote\":true}");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn blocking_otp_verify_round_trip() {

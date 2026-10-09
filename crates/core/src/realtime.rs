@@ -268,6 +268,21 @@ where
     if !response.status().is_success() {
         return Err(response_error(response).await);
     }
+    if !response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(';')
+                .next()
+                .is_some_and(|mime| mime.trim() == "text/event-stream")
+        })
+    {
+        return Err(CloudError::Network(
+            "server did not return an event stream".into(),
+        ));
+    }
     on_status(RealtimeStatus::Live);
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
@@ -281,6 +296,7 @@ where
                 Some(Ok(chunk)) => {
                     buffer.extend_from_slice(&chunk);
                     while let Some(end) = event_boundary(&buffer) {
+                        if end > 2 * 1024 * 1024 { return Err(CloudError::Unexpected); }
                         let frame = buffer.drain(..end).collect::<Vec<_>>();
                         drain_separator(&mut buffer);
                         if let Some(event) = parse_sse_frame(&frame)? {
@@ -301,10 +317,12 @@ where
 }
 
 fn event_boundary(buffer: &[u8]) -> Option<usize> {
-    buffer
-        .windows(2)
-        .position(|window| window == b"\n\n")
-        .or_else(|| buffer.windows(4).position(|window| window == b"\r\n\r\n"))
+    let lf = buffer.windows(2).position(|window| window == b"\n\n");
+    let crlf = buffer.windows(4).position(|window| window == b"\r\n\r\n");
+    match (lf, crlf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 fn drain_separator(buffer: &mut Vec<u8>) {
@@ -343,6 +361,38 @@ fn parse_sse_frame(frame: &[u8]) -> Result<Option<SyncEvent>, CloudError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixed_line_endings_use_first_frame_boundary() {
+        assert_eq!(event_boundary(b"a\r\n\r\nb\n\n"), Some(1));
+    }
+
+    #[tokio::test]
+    async fn html_success_page_is_not_a_live_sync_connection() {
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw("<html>proxy</html>", "text/html"),
+            )
+            .mount(&server)
+            .await;
+        let (_tx, mut stop) = watch::channel(false);
+        let mut cursor = 0;
+        let mut live = false;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Ok(()),
+            &mut |status| live |= status == RealtimeStatus::Live
+        )
+        .await
+        .is_err());
+        assert!(!live);
+    }
 
     #[tokio::test]
     async fn broken_stream_keeps_only_committed_cursor_for_reconnect() {

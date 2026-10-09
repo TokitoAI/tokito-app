@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
 import type { BomLine, ProjectDetail, Proposal } from "../api/cloudHttp";
@@ -9,6 +9,7 @@ import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
 import { ProjectChat } from "../chat/ProjectChat";
+import { schematicSnapshots } from "../viewer/snapshotRuntime";
 
 type Section = "design" | "chat" | "review";
 
@@ -25,8 +26,8 @@ export interface ProjectDetailScreenProps {
 }
 
 export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSvg, onOpenLiveSchematic, onStartBench, showBack = true }: ProjectDetailScreenProps): JSX.Element {
-  const { width } = useWindowDimensions();
-  const tablet = width >= TABLET_MIN_WIDTH;
+  const { width, height } = useWindowDimensions();
+  const tablet = width >= TABLET_MIN_WIDTH && height >= 600;
   const realtime = useRealtimeWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,37 +36,44 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("design");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const request = useRef(0);
 
   const liveProject = realtime.getResource(projectId, null, "project")?.payload as Record<string, unknown> | undefined;
-  const liveDesigns = realtime.resources
-    .filter((item) => item.project_id === projectId && item.resource === "design")
+  const designResources = realtime.resources.filter((item) => item.project_id === projectId && item.resource === "design");
+  const liveDesigns = designResources
     .map((item) => {
       const payload = item.payload as Record<string, unknown> & { deleted?: boolean };
       return { id: item.design_id ?? "", name: typeof payload.name === "string" ? payload.name : item.design_id ?? "Design", deleted: payload.deleted === true };
     })
     .filter((item) => item.id.length > 0 && !item.deleted);
   const snapshotDesigns = detail?.designs.map((item) => ({ id: item.id, name: item.name })) ?? [];
-  const designs = liveDesigns.length > 0 ? liveDesigns : snapshotDesigns;
-  const activeDesignId = selectedDesignId ?? designs[0]?.id ?? null;
+  const designs = designResources.length > 0 ? liveDesigns : snapshotDesigns;
+  const activeDesignId = designs.some(design => design.id === selectedDesignId) ? selectedDesignId : designs[0]?.id ?? null;
   const activeDesignName = designs.find((item) => item.id === activeDesignId)?.name ?? "Design";
   const bomPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom")?.payload as { lines?: BomLine[] } | undefined;
   const displayedBom = bomPayload?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
   const suggestionPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "suggestions")?.payload as { items?: Proposal[] } | undefined;
   const displayedProposals = suggestionPayload?.items?.filter((item) => item.status === "pending") ?? proposals;
-  const hasLiveSchematic = activeDesignId !== null && realtime.getResource(projectId, activeDesignId, "schematic") !== undefined;
+  const hasSnapshot = detail !== null && activeDesignId !== null && schematicSnapshots(detail, activeDesignId).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
   const reload = useCallback(async () => {
+    const generation = ++request.current;
     setLoading(true);
     setError(null);
     const [project, pending] = await Promise.allSettled([client.getProject(token, projectId), client.listProposals(token, projectId, "pending")]);
+    if (generation !== request.current) return;
     if (project.status === "fulfilled") setDetail(project.value);
-    else if (liveProject === undefined) setError(message(project.reason, "Failed to load project"));
+    else setError(message(project.reason, "Published snapshot could not be loaded"));
     if (pending.status === "fulfilled") setProposals(pending.value);
     setLoading(false);
-  }, [client, token, projectId, liveProject]);
+  }, [client, token, projectId]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    setDetail(null); setProposals([]); setSelectedDesignId(null);
+    void reload();
+    return () => { request.current++; };
+  }, [reload]);
 
   async function decide(id: string, decision: "approve" | "reject"): Promise<void> {
     setBusyId(id);
@@ -92,7 +100,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
       <View style={styles.header}>
         {showBack ? <Pressable accessibilityRole="button" accessibilityLabel="Back to projects" onPress={onBack} style={styles.back}><ArrowLeft size={21} color={tokens.text} /></Pressable> : null}
         <View style={styles.identity}><Text style={styles.eyebrow}>PROJECT</Text><Text style={styles.title} numberOfLines={1}>{projectName}</Text><Text style={styles.subtitle} numberOfLines={1}>{activeDesignName}</Text></View>
-        <View accessibilityLabel={`Sync ${realtime.status}`} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{realtime.status === "live" ? "Live" : "Syncing"}</Text></View>
+        <View accessibilityLabel={`Project updates ${realtime.status}`} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{realtime.status === "live" ? "Updates connected" : "Updates offline"}</Text></View>
       </View>
       {designs.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.designRail} contentContainerStyle={styles.designTabs}>{designs.map((design) => <Pressable key={design.id} accessibilityRole="tab" accessibilityState={{ selected: activeDesignId === design.id }} onPress={() => setSelectedDesignId(design.id)} style={[styles.designTab, activeDesignId === design.id && styles.designTabActive]}><Text style={[styles.designTabText, activeDesignId === design.id && styles.designTabTextActive]}>{design.name}</Text></Pressable>)}</ScrollView> : null}
       <View accessibilityRole="tablist" style={[styles.nav, tablet && styles.navTablet]}>
@@ -112,10 +120,10 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
                 <View style={styles.flex}><Text style={styles.cardTitle}>Continue at the bench</Text><Muted>Open a private, on-device session with this project and design attached.</Muted></View>
                 <PrimaryButton label="Start" onPress={() => onStartBench(activeDesignId)} style={styles.benchAction} />
               </Card>
-              <Card onPress={hasLiveSchematic && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasLiveSchematic && styles.cardDisabled]}>
+              <Card onPress={hasSnapshot && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasSnapshot && styles.cardDisabled]}>
                 <View style={styles.schematicIcon}><Circuitry size={30} color={tokens.accent} /></View>
-                <View style={styles.flex}><Text style={styles.cardTitle}>{hasLiveSchematic ? "View schematic" : "No schematic available"}</Text><Muted>{hasLiveSchematic ? "Pan, zoom, and inspect this Cloud document." : "This Cloud workspace does not currently contain a schematic."}</Muted></View>
-                {hasLiveSchematic ? <Text style={styles.open}>View</Text> : null}
+                <View style={styles.flex}><Text style={styles.cardTitle}>{hasSnapshot ? "View schematic snapshot" : "No published snapshot"}</Text><Muted>{hasSnapshot ? "Inspect the published drawing. Newer edits may not be included." : "Publish a drawing from Tokito desktop to preview this design."}</Muted></View>
+                {hasSnapshot ? <Text style={styles.open}>View</Text> : null}
               </Card>
               {svgArtifacts.length > 0 ? <View style={styles.sectionHead}><SectionLabel>Published previews</SectionLabel></View> : null}
               {svgArtifacts.map((artifact) => <Card key={artifact.name} onPress={() => onOpenSvg(artifact.name)} style={styles.previewCard}><Text style={styles.previewName} numberOfLines={1}>{artifact.name}</Text><Text style={styles.open}>View</Text></Card>)}
