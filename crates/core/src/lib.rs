@@ -7,8 +7,11 @@
 
 pub mod auth;
 pub mod base_url;
+pub mod conversation_store;
+pub mod conversations;
 pub mod error;
 pub mod realtime;
+mod sse;
 pub mod sync;
 pub mod sync_state;
 

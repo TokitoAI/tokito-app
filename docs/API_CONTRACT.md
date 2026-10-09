@@ -2,8 +2,39 @@
 
 Auth, billing, and mobile resource routes are public `tokito-api` contracts
 used directly by this application. Cloud authentication is not required for a
-local bench session. These routes do not constitute a private integration with
-Tokito Desktop; Desktop does not directly publish to, poll, or apply this state.
+local bench session. Desktop and mobile are independent clients of versioned
+Cloud contracts; neither imports the other application's runtime or local data.
+
+## Shared conversations (implementation: #66 / tokito-api#220)
+
+The core client in `crates/core/src/conversations.rs` targets the versioned
+thread/run contract in `tokito-api/docs/SHARED_PROJECTS.md`. This foundation
+does not by itself expose the new chat flow in the installed application.
+
+- Threads are scoped by project and design under
+  `/v1/projects/{project_id}/designs/{design_id}/threads`.
+- Message submission uses immutable client-generated message/run IDs. A retry
+  resubmits exactly the same request, not a newly generated run. Only the server
+  authors assistant messages and constructs agent history.
+- `/v1/agent/runs/{run_id}/events` is authenticated SSE with `event: turn` and a
+  durable numeric ID. It carries the existing typed agent events. Disconnect is
+  not cancellation; cancellation has a separate authenticated endpoint.
+- The incremental decoder preserves UTF-8 across chunk boundaries, limits each
+  frame to 2 MiB, and never treats truncated data as a complete response.
+- The durable local conversation store binds each database to a verified account
+  and service-origin identity. Writes and cursors commit together. A foreign
+  account, divergent duplicate event, gap, or mismatched acknowledgement fails
+  closed. Conflicting requests remain quarantined rather than silently rebased.
+- The outbox is bounded to 100 requests and one pending submission per thread;
+  event payloads are bounded to 2 MiB and the cached events of a run to 64 MiB.
+  History/event reads are paged. Hitting a storage limit is an explicit failure,
+  never a reason to discard unsent messages or launch another model path.
+
+The native session layer must verify account identity before opening this store,
+persist before UI acknowledgement, and resume events from the committed cursor.
+It must query run status after a stream closes: EOF alone is not success.
+Shared-project approval is a separate revision-validated domain operation;
+neither a `suggestion` nor a completed AI run means the design was applied.
 
 ## Existing (implemented in tokito-api)
 
