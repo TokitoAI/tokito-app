@@ -26,6 +26,18 @@ is not a measured or visually verified fact. Keep this distinction in the dialog
 protocol and the native bench entry point.
 
 Shared Cloud conversation history and generation run journals are server-owned.
+Mobile review sends selected operation indices against the server-captured
+proposal, never a replacement schematic or a local suggestion-status mutation.
+Approval/rejection command IDs and bodies are persisted before transmission;
+uncertain responses replay the exact command. A receipt is successful only when
+its run/event identity and all selected applied/unchanged indices match. Stale or
+invalid proposals are blocked for explicit review, not silently rebased.
+
+Multi-sheet chat explicitly selects a canonical synchronized sheet. A single
+sheet can be inferred from the actual document; multiple sheets must never
+default to the first entry. The chosen sheet ID is persisted with the queued
+message, so retries cannot change its edit context.
+
 The native conversation session persists message IDs and streamed events before
 delivery; closing a viewer does not cancel a run. Only the explicit cancel API
 requests cancellation. The bridge shutdown method is named `shutdown`, not

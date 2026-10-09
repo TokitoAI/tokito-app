@@ -4,6 +4,13 @@ import type { TokitoCompanionFfiNative } from "../../modules/tokito-companion-ff
 import { ConversationClient } from "./conversationClient";
 import { chatFailure, ConversationScope } from "./conversationState";
 
+test("explicit sheet context crosses the native boundary unchanged", async () => {
+  let args: unknown[] = [];
+  const native = { sendConversationMessage: async (...values: unknown[]) => { args = values; return "{}"; } } as unknown as TokitoCompanionFfiNative;
+  await new ConversationClient(native).send("p", "d", "t", "Move R1", 7, "schematic", "radio");
+  assert.deepEqual(args.slice(1), ["p", "d", "t", "Move R1", "7", "schematic", "radio"]);
+});
+
 test("chat distinguishes missing deployment from connectivity and authentication", () => {
   assert.match(chatFailure(new Error("this sign-in method is not available right now")), /unavailable on the server/);
   assert.match(chatFailure(new Error("session expired")), /Sign in again/);

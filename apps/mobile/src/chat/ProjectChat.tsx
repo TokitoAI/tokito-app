@@ -7,9 +7,13 @@ import { chatFailure, ConversationScope } from "./conversationState";
 import { emptyRun, isActive, object, parseRun, reduceRun, string, type ChatRow, type ChatRun, type ChatThread, type RunView } from "./conversationModel";
 import { tokens } from "../theme";
 import { ErrorText, PrimaryButton } from "../ui/primitives";
+import { selectedSheet, type ChatSheet } from "./sheetContext";
 
-type Props = { baseUrl: string; token: string; project: string; design: string; version: number };
-export function ProjectChat({ baseUrl, token, project, design, version }: Props): JSX.Element {
+type Props = { baseUrl: string; token: string; project: string; design: string; version: number; sheets: ChatSheet[] };
+export function ProjectChat({ baseUrl, token, project, design, version, sheets }: Props): JSX.Element {
+  const [sheetChoice, setSheetChoice] = useState<string | null>(null);
+  const activeSheetId = selectedSheet(sheets, sheetChoice);
+  const needsSheet = version > 0 && activeSheetId === null;
   const connection = useRef<ConversationClient | null>(null);
   const selected = useRef<string | null>(null);
   const list = useRef<FlatList<ChatRow>>(null);
@@ -137,6 +141,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
     finally { if (connection.current === client && scope.current.current(ticket)) setBusy(false); }
   }
   async function send(): Promise<void> {
+    if (needsSheet) { setError("Choose the sheet you want Tokito to work on before sending."); return; }
     const client = connection.current;
     const content = draft.trim();
     if (!client || !ready || !content || sending || sendingTicket.current !== null || blocked || isActive(run)) return;
@@ -151,7 +156,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
         id = created.id; selected.current = id; setThread(id); setThreads(items => [created, ...items]);
         scope.current.save(null, ""); scope.current.save(id, content);
       }
-      const pending = await client.send(project, design, id, content, version, version === 0 ? "planner" : "schematic");
+      const pending = await client.send(project, design, id, content, version, version === 0 ? "planner" : "schematic", activeSheetId);
       // A successful durable enqueue owns this text, even if navigation finished
       // while it was pending. Do not leave a second sendable copy in its draft.
       if (scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(id).trim() === content) scope.current.save(id, "");
@@ -165,6 +170,8 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   const active = sending || isActive(run);
   const hasSavedAnswer = run !== null && rows.some(r => r.role === "assistant" && r.runId === run.run_id);
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    {sheets.length > 1 ? <View style={styles.toolbar}><Text style={styles.muted}>Work on sheet</Text><ScrollView horizontal contentContainerStyle={styles.threadList}>{sheets.map(sheet => <Pressable key={sheet.id} accessibilityRole="radio" accessibilityState={{ selected: activeSheetId === sheet.id }} disabled={active} onPress={() => setSheetChoice(sheet.id)} style={[styles.thread, activeSheetId === sheet.id && styles.selected]}><Text style={styles.threadText}>{sheet.name}</Text></Pressable>)}</ScrollView></View> : null}
+    {needsSheet && sheets.length === 0 ? <Text style={styles.muted}>Waiting for the design’s sheets to sync before editing.</Text> : null}
     <View style={styles.toolbar}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.threadList}>
       <Pressable accessibilityRole="button" onPress={() => void choose(null)} style={styles.thread}><Text style={styles.link}>New chat</Text></Pressable>
       {threads.map(t => <Pressable key={t.id} accessibilityRole="tab" accessibilityState={{ selected: thread === t.id }} onPress={() => void choose(t.id)} style={[styles.thread, thread === t.id && styles.selected]}><Text numberOfLines={1} style={styles.threadText}>{t.title || "Design conversation"}</Text></Pressable>)}

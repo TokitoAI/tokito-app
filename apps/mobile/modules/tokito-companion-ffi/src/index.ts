@@ -28,13 +28,18 @@ export type NativeAccount = {
 };
 
 export type TokitoCompanionFfiNative = {
+  openReviews(baseUrl: string, token: string, sessionId: string): Promise<string>;
+  closeReviews(sessionId: string): Promise<void>;
+  loadReviews(sessionId: string, project: string, design: string): Promise<string>;
+  localReviewCommands(sessionId: string, project: string, design: string): Promise<string>;
+  decideReview(sessionId: string, project: string, design: string, run: string, eventSeq: string, action: string, selectedJson: string): Promise<string>;
   openConversations(baseUrl: string, token: string, sessionId: string): Promise<string>;
   closeConversations(sessionId: string): Promise<void>;
   conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
   createConversation(sessionId: string, project: string, design: string, title: string): Promise<string>;
   conversationHistory(sessionId: string, project: string, design: string, thread: string, before: string | null): Promise<string>;
   cachedConversationHistory(sessionId: string, thread: string, after: string): Promise<string>;
-  sendConversationMessage(sessionId: string, project: string, design: string, thread: string, content: string, version: string, kind: string): Promise<string>;
+  sendConversationMessage(sessionId: string, project: string, design: string, thread: string, content: string, version: string, kind: string, activeSheetId: string | null): Promise<string>;
   cancelConversationRun(sessionId: string, run: string): Promise<string>;
   deleteConversation(sessionId: string, project: string, design: string, thread: string): Promise<void>;
   discardBlockedMessage(sessionId: string, messageId: string): Promise<boolean>;

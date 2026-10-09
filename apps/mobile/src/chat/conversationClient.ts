@@ -42,9 +42,9 @@ export class ConversationClient {
     if (page.thread.project_id !== project || page.thread.design_id !== design || page.thread.id !== thread) throw new Error("Conversation belongs to a different design");
     return page;
   }
-  async send(project: string, design: string, thread: string, content: string, version: number, kind: "planner" | "schematic" | "bom"): Promise<Record<string, unknown>> {
+  async send(project: string, design: string, thread: string, content: string, version: number, kind: "planner" | "schematic" | "bom", activeSheetId: string | null = null): Promise<Record<string, unknown>> {
     if (!Number.isSafeInteger(version) || version < 0) throw new Error("Refresh the design before sending");
-    return object(parseJson(await this.native.sendConversationMessage(this.id, project, design, thread, content, String(version), kind)));
+    return object(parseJson(await this.native.sendConversationMessage(this.id, project, design, thread, content, String(version), kind, activeSheetId)));
   }
   async cancel(run: string): Promise<ChatRun> {
     return parseRun(parseJson(await this.native.cancelConversationRun(this.id, run)));

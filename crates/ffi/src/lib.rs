@@ -6,7 +6,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod conversations;
+mod reviews;
 pub use conversations::{ConversationListener, ConversationSession, RunSubscription};
+pub use reviews::ReviewSession;
 
 use std::path::Path;
 use std::sync::{Arc, OnceLock};

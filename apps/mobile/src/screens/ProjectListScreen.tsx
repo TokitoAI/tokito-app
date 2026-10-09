@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     marginBottom: tokens.space4,
     gap: tokens.space3,
   },
-  brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: tokens.space3 },
+  brandRow: { width: "100%", flexShrink: 0, flexDirection: "row", alignItems: "center", gap: tokens.space3 },
   flex: { flex: 1 },
   brand: { color: tokens.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
   sub: { color: tokens.text2, marginTop: 2, fontSize: 12 },

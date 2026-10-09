@@ -150,6 +150,8 @@ impl ConversationSession {
             .map_err(|_| CompanionError::Unexpected)
     }
 
+    // Flat scalar arguments keep the Expo/UniFFI boundary bounded and typed.
+    #[allow(clippy::too_many_arguments)]
     pub fn send(
         &self,
         project: String,
@@ -158,6 +160,7 @@ impl ConversationSession {
         content: String,
         base_version: u64,
         kind: String,
+        active_sheet_id: Option<String>,
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
         if content.trim().is_empty() || content.len() > 64 * 1024 {
@@ -179,6 +182,7 @@ impl ConversationSession {
                 device_id: self.device.clone(),
                 content,
                 base_schematic_version: base_version,
+                active_sheet_id,
                 kind,
                 snapshot: None,
                 references: vec![],
@@ -486,6 +490,7 @@ mod tests {
                     "Build a sensor".into(),
                     0,
                     "planner".into(),
+                    None,
                 )
                 .unwrap(),
         )

@@ -508,6 +508,7 @@ mod tests {
                 device_id: "device".into(),
                 content: "test".into(),
                 base_schematic_version: 0,
+                active_sheet_id: None,
                 kind: crate::conversations::RunKind::Planner,
                 snapshot: None,
                 references: vec![],

@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
-import type { BomLine, ProjectDetail, Proposal } from "../api/cloudHttp";
+import type { BomLine, ProjectDetail } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
 import { CompanionError } from "../native/types";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
@@ -10,6 +10,8 @@ import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
 import { ProjectChat } from "../chat/ProjectChat";
 import { schematicSnapshots } from "../viewer/snapshotRuntime";
+import { ProjectReview } from "../review/ProjectReview";
+import { chatSheets } from "../chat/sheetContext";
 
 type Section = "design" | "chat" | "review";
 
@@ -32,10 +34,8 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
-  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("design");
-  const [busyId, setBusyId] = useState<string | null>(null);
   const request = useRef(0);
 
   const liveProject = realtime.getResource(projectId, null, "project")?.payload as Record<string, unknown> | undefined;
@@ -52,8 +52,6 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const activeDesignName = designs.find((item) => item.id === activeDesignId)?.name ?? "Design";
   const bomPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom")?.payload as { lines?: BomLine[] } | undefined;
   const displayedBom = bomPayload?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
-  const suggestionPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "suggestions")?.payload as { items?: Proposal[] } | undefined;
-  const displayedProposals = suggestionPayload?.items?.filter((item) => item.status === "pending") ?? proposals;
   const hasSnapshot = detail !== null && activeDesignId !== null && schematicSnapshots(detail, activeDesignId).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
@@ -61,38 +59,18 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
     const generation = ++request.current;
     setLoading(true);
     setError(null);
-    const [project, pending] = await Promise.allSettled([client.getProject(token, projectId), client.listProposals(token, projectId, "pending")]);
+    const [project] = await Promise.allSettled([client.getProject(token, projectId)]);
     if (generation !== request.current) return;
     if (project.status === "fulfilled") setDetail(project.value);
     else setError(message(project.reason, "Published snapshot could not be loaded"));
-    if (pending.status === "fulfilled") setProposals(pending.value);
     setLoading(false);
   }, [client, token, projectId]);
 
   useEffect(() => {
-    setDetail(null); setProposals([]); setSelectedDesignId(null);
+    setDetail(null); setSelectedDesignId(null);
     void reload();
     return () => { request.current++; };
   }, [reload]);
-
-  async function decide(id: string, decision: "approve" | "reject"): Promise<void> {
-    setBusyId(id);
-    setError(null);
-    try {
-      if (suggestionPayload?.items && activeDesignId !== null) {
-        await realtime.update(projectId, activeDesignId, "suggestions", {
-          items: suggestionPayload.items.map((item) => item.id === id ? { ...item, status: decision === "approve" ? "approved" : "rejected", decision } : item),
-        });
-      } else {
-        await client.decideProposal(token, projectId, id, decision);
-        await reload();
-      }
-    } catch (cause) {
-      setError(message(cause, "Decision failed"));
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   const projectName = typeof liveProject?.name === "string" ? liveProject.name : detail?.name ?? "Project";
   return (
@@ -106,9 +84,9 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
       <View accessibilityRole="tablist" style={[styles.nav, tablet && styles.navTablet]}>
         <Tab label="Design" icon={<Circuitry size={20} color={section === "design" ? tokens.text : tokens.text2} />} selected={section === "design"} onPress={() => setSection("design")} />
         <Tab label="Chat" icon={<ChatCircleDots size={20} color={section === "chat" ? tokens.text : tokens.text2} />} selected={section === "chat"} onPress={() => setSection("chat")} />
-        <Tab label={displayedProposals.length > 0 ? `Review ${displayedProposals.length}` : "Review"} icon={<Sparkle size={20} color={section === "review" ? tokens.text : tokens.text2} />} selected={section === "review"} onPress={() => setSection("review")} />
+        <Tab label="Review" icon={<Sparkle size={20} color={section === "review" ? tokens.text : tokens.text2} />} selected={section === "review"} onPress={() => setSection("review")} />
       </View>
-      {section === "chat" && activeDesignId !== null ? <ProjectChat key={`${projectId}:${activeDesignId}`} baseUrl={client.baseUrl()} token={token} project={projectId} design={activeDesignId} version={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} /> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
+      {section === "chat" && activeDesignId !== null ? <ProjectChat key={`${projectId}:${activeDesignId}`} baseUrl={client.baseUrl()} token={token} project={projectId} design={activeDesignId} version={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} sheets={chatSheets(realtime.getResource(projectId, activeDesignId, "schematic")?.payload)} /> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
         {loading ? <ActivityIndicator color={tokens.accent} /> : null}
         {error !== null ? <ErrorText>{error}</ErrorText> : null}
         {realtime.error !== null ? <ErrorText>{realtime.error}</ErrorText> : null}
@@ -137,11 +115,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
           </View>
         </View> : null}
         {section === "chat" ? <Empty title="Select a design first" body="Open a design in this project to start its conversation." /> : null}
-        {section === "review" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
-          <View style={styles.sectionHead}><Sparkle size={18} color={tokens.text} /><SectionLabel>AI proposals</SectionLabel></View><Text style={styles.help}>Review proposals owned by this Cloud workspace.</Text>
-          {displayedProposals.length === 0 && !loading ? <Empty title="All caught up" body="New proposals will appear here for explicit review." /> : null}
-          <View style={[styles.proposalGrid, tablet && styles.proposalGridTablet]}>{displayedProposals.map((item) => <Card key={item.id} style={[styles.proposalCard, tablet && styles.proposalCardTablet]}><Text style={styles.cardTitle}>{item.title}</Text><Muted>{item.summary}</Muted><View style={styles.actions}><PrimaryButton label="Approve" busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "approve")} style={styles.action} /><PrimaryButton label="Reject" danger busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "reject")} style={styles.action} /></View></Card>)}</View>
-        </View> : null}
+        {section === "review" ? activeDesignId === null ? <Empty title="Select a design first" body="Open a design to review its proposed changes." /> : <ProjectReview key={`${projectId}:${activeDesignId}`} base={client.baseUrl()} token={token} project={projectId} design={activeDesignId} revision={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} bomRevision={realtime.getResource(projectId, activeDesignId, "bom")?.version ?? 0} summaryVersion={realtime.getResource(projectId, activeDesignId, "conversations")?.version ?? 0} /> : null}
       </ScrollView>}
     </View>
   );

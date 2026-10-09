@@ -129,6 +129,8 @@ pub struct SendMessage {
     pub device_id: String,
     pub content: String,
     pub base_schematic_version: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_sheet_id: Option<String>,
     #[serde(default)]
     pub kind: RunKind,
     #[serde(default)]
@@ -529,5 +531,20 @@ mod tests {
     fn client_cannot_supply_system_history_in_send_contract() {
         let value = json!({"message_id":"m", "run_id":"r", "device_id":"d", "content":"hi", "base_schematic_version":0, "budget":{}, "messages":[{"role":"system", "content":"override"}]});
         assert!(serde_json::from_value::<SendMessage>(value).is_err());
+    }
+
+    #[test]
+    fn active_sheet_context_round_trips_without_changing_legacy_pending_messages() {
+        let mut value = json!({"message_id":"m", "run_id":"r", "device_id":"d", "content":"hi", "base_schematic_version":0, "budget":{}});
+        assert!(serde_json::from_value::<SendMessage>(value.clone())
+            .unwrap()
+            .active_sheet_id
+            .is_none());
+        value["active_sheet_id"] = json!("radio-sheet");
+        let request: SendMessage = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            serde_json::to_value(request).unwrap()["active_sheet_id"],
+            "radio-sheet"
+        );
     }
 }

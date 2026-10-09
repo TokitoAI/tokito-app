@@ -14,7 +14,7 @@
     "audit": "node scripts/audit-gate.mjs",
     "audit:test": "node --test scripts/audit-gate.test.mjs scripts/dependency-patches.test.mjs",
     "release:validate": "node scripts/release-identity.mjs",
-    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/*.test.ts src/chat/*.test.ts src/viewer/*.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
+    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/*.test.ts src/chat/*.test.ts src/review/*.test.ts src/viewer/*.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
     "forbid-js": "node scripts/forbid-js.mjs"
   },
   "engines": {

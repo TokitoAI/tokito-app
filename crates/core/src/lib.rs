@@ -11,6 +11,7 @@ pub mod conversation_store;
 pub mod conversations;
 pub mod error;
 pub mod realtime;
+pub mod reviews;
 mod sse;
 pub mod sync;
 pub mod sync_state;

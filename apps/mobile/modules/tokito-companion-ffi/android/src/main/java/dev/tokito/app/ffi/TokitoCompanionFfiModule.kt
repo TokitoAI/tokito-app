@@ -14,6 +14,7 @@ import uniffi.tokito_companion_ffi.SyncListener
 import uniffi.tokito_companion_ffi.SyncSubscription
 import uniffi.tokito_companion_ffi.ConversationListener
 import uniffi.tokito_companion_ffi.ConversationSession
+import uniffi.tokito_companion_ffi.ReviewSession
 import uniffi.tokito_companion_ffi.RunSubscription
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -27,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 class TokitoCompanionFfiModule : Module() {
   private val subscriptions = ConcurrentHashMap<String, SyncSubscription>()
   private val conversations = ConcurrentHashMap<String, ConversationSession>()
+  private val reviews = ConcurrentHashMap<String, ReviewSession>()
   private val runs = ConcurrentHashMap<String, Pair<String, RunSubscription>>()
 
   override fun definition() = ModuleDefinition {
@@ -40,10 +42,32 @@ class TokitoCompanionFfiModule : Module() {
       runs.clear()
       conversations.values.forEach { it.shutdown() }
       conversations.clear()
+      reviews.values.forEach { it.shutdown() }
+      reviews.clear()
     }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
       CompanionClient(baseUrl).baseUrl()
+    }
+
+    AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String ->
+      runFfi {
+        require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+        val context = requireNotNull(appContext.reactContext)
+        val preferences = context.getSharedPreferences("tokito-installation", 0)
+        val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
+          check(preferences.edit().putString("id", it).commit())
+        }
+        reviews.remove(sessionId)?.shutdown()
+        reviews[sessionId] = CompanionClient(baseUrl).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath)
+        sessionId
+      }
+    }
+    AsyncFunction("closeReviews") { sessionId: String -> reviews.remove(sessionId)?.shutdown() }
+    AsyncFunction("loadReviews") { sessionId: String, project: String, design: String -> runFfi { review(sessionId).load(project, design) } }
+    AsyncFunction("localReviewCommands") { sessionId: String, project: String, design: String -> runFfi { review(sessionId).localCommands(project, design) } }
+    AsyncFunction("decideReview") { sessionId: String, project: String, design: String, run: String, seq: String, action: String, selection: String ->
+      runFfi { review(sessionId).decide(project, design, run, seq.toULong(), action, selection) }
     }
 
     AsyncFunction("openConversations") { baseUrl: String, token: String, sessionId: String ->
@@ -83,8 +107,8 @@ class TokitoCompanionFfiModule : Module() {
     AsyncFunction("cachedConversationHistory") { sessionId: String, thread: String, after: String ->
       runFfi { conversation(sessionId).cachedHistory(thread, after.toULong()) }
     }
-    AsyncFunction("sendConversationMessage") { sessionId: String, project: String, design: String, thread: String, content: String, version: String, kind: String ->
-      runFfi { conversation(sessionId).send(project, design, thread, content, version.toULong(), kind) }
+    AsyncFunction("sendConversationMessage") { sessionId: String, project: String, design: String, thread: String, content: String, version: String, kind: String, activeSheetId: String? ->
+      runFfi { conversation(sessionId).send(project, design, thread, content, version.toULong(), kind, activeSheetId) }
     }
     AsyncFunction("cancelConversationRun") { sessionId: String, run: String ->
       runFfi { conversation(sessionId).cancel(run) }
@@ -378,6 +402,9 @@ class TokitoCompanionFfiModule : Module() {
 
   private fun conversation(id: String): ConversationSession = conversations[id]
     ?: throw CodedException("Unauthorized", "Open a signed-in conversation session first", null)
+
+  private fun review(id: String): ReviewSession = reviews[id]
+    ?: throw CodedException("Unauthorized", "Open a signed-in review session first", null)
 
   private companion object {
     const val TAG = "TokitoCompanionFfi"
