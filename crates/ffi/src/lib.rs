@@ -5,6 +5,9 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod conversations;
+pub use conversations::{ConversationListener, ConversationSession, RunSubscription};
+
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
@@ -461,11 +464,23 @@ impl CompanionClient {
         if state_path.trim().is_empty() || device_id.trim().is_empty() {
             return Err(CompanionError::Unexpected);
         }
+        let base_url = tokito_companion_core::conversations::origin(&self.base_url)?;
+        let account = runtime().block_on(core_me(&base_url, &token))?;
+        // Never reopen an unbound legacy outbox under a different account.
+        // Project-filtered journals need independent cursors as well.
+        use sha2::{Digest, Sha256};
+        let owner = format!(
+            "{base_url}|{}|{}",
+            account.email.to_lowercase(),
+            project_id.as_deref().unwrap_or("workspace")
+        );
+        let key = format!("{:x}", Sha256::digest(owner.as_bytes()));
+        let state_path = Path::new(&state_path).with_file_name(format!("sync-{key}.sqlite3"));
         listener.on_status("connecting".into());
-        let store = Arc::new(SyncStateStore::open(Path::new(&state_path))?);
+        let store = Arc::new(SyncStateStore::open(&state_path)?);
         let bootstrap = runtime().block_on(async {
-            register_device(&self.base_url, &token, &device_id, &device_label, &platform).await?;
-            bootstrap_realtime(&self.base_url, &token, project_id.as_deref()).await
+            register_device(&base_url, &token, &device_id, &device_label, &platform).await?;
+            bootstrap_realtime(&base_url, &token, project_id.as_deref()).await
         })?;
         store.apply_bootstrap(&bootstrap, project_id.as_deref())?;
         let resources_json =
@@ -481,7 +496,6 @@ impl CompanionClient {
             device_id,
         });
 
-        let base_url = self.base_url.clone();
         runtime().spawn(run_sync_session(
             base_url,
             token,

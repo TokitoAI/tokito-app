@@ -79,6 +79,7 @@ struct StatusBody {
 fn api_client() -> Result<reqwest::Client, CloudError> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| CloudError::Network(error.to_string()))
@@ -87,6 +88,7 @@ fn api_client() -> Result<reqwest::Client, CloudError> {
 fn stream_client() -> Result<reqwest::Client, CloudError> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| CloudError::Network(error.to_string()))
 }
@@ -197,15 +199,14 @@ where
             base,
             token,
             project_id,
-            cursor,
+            &mut cursor,
             &mut stop,
             &mut on_event,
             &mut on_status,
         )
         .await
         {
-            Ok(next_cursor) => {
-                cursor = next_cursor;
+            Ok(()) => {
                 attempt = 0;
                 if *stop.borrow() {
                     break;
@@ -241,11 +242,11 @@ async fn stream_once<FE, FS>(
     base: &str,
     token: &str,
     project_id: Option<&str>,
-    cursor: u64,
+    cursor: &mut u64,
     stop: &mut watch::Receiver<bool>,
     on_event: &mut FE,
     on_status: &mut FS,
-) -> Result<u64, CloudError>
+) -> Result<(), CloudError>
 where
     FE: FnMut(SyncEvent) -> Result<(), CloudError>,
     FS: FnMut(RealtimeStatus),
@@ -258,32 +259,35 @@ where
     if let Some(project_id) = project_id {
         request = request.query(&[("project_id", project_id)]);
     }
-    let response = request
-        .send()
-        .await
-        .map_err(|error| CloudError::Network(error.to_string()))?;
+    let response = tokio::select! {
+        _ = stop.changed() => return Ok(()),
+        result = tokio::time::timeout(Duration::from_secs(30), request.send()) => result
+            .map_err(|_| CloudError::Network("Connection timed out".into()))?
+            .map_err(|error| CloudError::Network(error.to_string()))?,
+    };
     if !response.status().is_success() {
         return Err(response_error(response).await);
     }
     on_status(RealtimeStatus::Live);
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
-    let mut last = cursor;
     loop {
         tokio::select! {
             changed = stop.changed() => {
-                if changed.is_err() || *stop.borrow() { return Ok(last); }
+                if changed.is_err() || *stop.borrow() { return Ok(()); }
             }
-            chunk = bytes.next() => match chunk {
+            chunk = tokio::time::timeout(Duration::from_secs(75), bytes.next()) => match chunk
+                .map_err(|_| CloudError::Network("Live updates paused; reconnecting".into()))? {
                 Some(Ok(chunk)) => {
                     buffer.extend_from_slice(&chunk);
                     while let Some(end) = event_boundary(&buffer) {
                         let frame = buffer.drain(..end).collect::<Vec<_>>();
                         drain_separator(&mut buffer);
                         if let Some(event) = parse_sse_frame(&frame)? {
-                            if event.seq > last {
-                                last = event.seq;
+                            if event.seq > *cursor {
+                                let next = event.seq;
                                 on_event(event)?;
+                                *cursor = next;
                             }
                         }
                     }
@@ -339,6 +343,41 @@ fn parse_sse_frame(frame: &[u8]) -> Result<Option<SyncEvent>, CloudError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn broken_stream_keeps_only_committed_cursor_for_reconnect() {
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_raw(
+            "event: sync\ndata: {\"seq\":9,\"project_id\":\"p\",\"resource\":\"project\",\"version\":1,\"command_id\":\"c\",\"actor_device_id\":\"d\",\"payload\":{},\"created_at\":1}\n\nevent: sync\ndata: invalid\n\n", "text/event-stream")).mount(&server).await;
+        let (_tx, mut stop) = watch::channel(false);
+        let mut cursor = 8;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Ok(()),
+            &mut |_| {}
+        )
+        .await
+        .is_err());
+        assert_eq!(cursor, 9);
+        let mut cursor = 8;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Err(CloudError::Unavailable),
+            &mut |_| {}
+        )
+        .await
+        .is_err());
+        assert_eq!(cursor, 8);
+    }
 
     #[test]
     fn parses_split_safe_multiline_sse() {

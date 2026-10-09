@@ -25,6 +25,19 @@ reference. Board-specific identities still require verified context; model outpu
 is not a measured or visually verified fact. Keep this distinction in the dialogue
 protocol and the native bench entry point.
 
+Shared Cloud conversation history and generation run journals are server-owned.
+The native conversation session persists message IDs and streamed events before
+delivery; closing a viewer does not cancel a run. Only the explicit cancel API
+requests cancellation. The bridge shutdown method is named `shutdown`, not
+`close`: UniFFI already generates Kotlin `close()` for object disposal.
+
+Cloud chat caches and sync outboxes are scoped to the verified account and API
+origin; project-filtered sync journals additionally get independent cache paths.
+Unbound legacy sync files must not be replayed under a newly signed-in account.
+**Why:** sharing a cache across accounts can send a previous user's pending
+commands with a different bearer token. Never derive cache identity from an
+unverified UI email, and never use the bearer token as a persistent cache key.
+
 **Why:** routing every utterance through the board-reference index disabled general
 conversation even when the local LLM was installed and healthy.
 

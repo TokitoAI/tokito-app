@@ -12,6 +12,9 @@ import uniffi.tokito_companion_ffi.CompanionClient
 import uniffi.tokito_companion_ffi.CompanionException
 import uniffi.tokito_companion_ffi.SyncListener
 import uniffi.tokito_companion_ffi.SyncSubscription
+import uniffi.tokito_companion_ffi.ConversationListener
+import uniffi.tokito_companion_ffi.ConversationSession
+import uniffi.tokito_companion_ffi.RunSubscription
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -23,19 +26,89 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class TokitoCompanionFfiModule : Module() {
   private val subscriptions = ConcurrentHashMap<String, SyncSubscription>()
+  private val conversations = ConcurrentHashMap<String, ConversationSession>()
+  private val runs = ConcurrentHashMap<String, Pair<String, RunSubscription>>()
 
   override fun definition() = ModuleDefinition {
     Name("TokitoCompanionFfi")
-    Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError")
+    Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError", "onConversationChange")
 
     OnDestroy {
       subscriptions.values.forEach { it.stop() }
       subscriptions.clear()
+      runs.values.forEach { it.second.stop() }
+      runs.clear()
+      conversations.values.forEach { it.shutdown() }
+      conversations.clear()
     }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
       CompanionClient(baseUrl).baseUrl()
     }
+
+    AsyncFunction("openConversations") { baseUrl: String, token: String, sessionId: String ->
+      runFfi {
+        require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+        val context = requireNotNull(appContext.reactContext)
+        val preferences = context.getSharedPreferences("tokito-installation", 0)
+        val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
+          check(preferences.edit().putString("id", it).commit())
+        }
+        conversations.remove(sessionId)?.shutdown()
+        val listener = object : ConversationListener {
+          override fun onChange(payloadJson: String) {
+            sendEvent("onConversationChange", mapOf("sessionId" to sessionId, "watchId" to "", "payloadJson" to payloadJson))
+          }
+        }
+        conversations[sessionId] = CompanionClient(baseUrl).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
+        sessionId
+      }
+    }
+
+    AsyncFunction("closeConversations") { sessionId: String ->
+      runs.entries.filter { it.value.first == sessionId }.forEach { (id, pair) ->
+        if (runs.remove(id, pair)) pair.second.stop()
+      }
+      conversations.remove(sessionId)?.shutdown()
+    }
+    AsyncFunction("conversationThreads") { sessionId: String, project: String, design: String ->
+      runFfi { conversation(sessionId).listThreads(project, design) }
+    }
+    AsyncFunction("createConversation") { sessionId: String, project: String, design: String, title: String ->
+      runFfi { conversation(sessionId).createThread(project, design, title) }
+    }
+    AsyncFunction("conversationHistory") { sessionId: String, project: String, design: String, thread: String, before: String? ->
+      runFfi { conversation(sessionId).history(project, design, thread, before?.toULong()) }
+    }
+    AsyncFunction("cachedConversationHistory") { sessionId: String, thread: String, after: String ->
+      runFfi { conversation(sessionId).cachedHistory(thread, after.toULong()) }
+    }
+    AsyncFunction("sendConversationMessage") { sessionId: String, project: String, design: String, thread: String, content: String, version: String, kind: String ->
+      runFfi { conversation(sessionId).send(project, design, thread, content, version.toULong(), kind) }
+    }
+    AsyncFunction("cancelConversationRun") { sessionId: String, run: String ->
+      runFfi { conversation(sessionId).cancel(run) }
+    }
+    AsyncFunction("deleteConversation") { sessionId: String, project: String, design: String, thread: String ->
+      runFfi { conversation(sessionId).deleteThread(project, design, thread) }
+    }
+    AsyncFunction("discardBlockedMessage") { sessionId: String, messageId: String ->
+      runFfi { conversation(sessionId).discardBlockedMessage(messageId) }
+    }
+    AsyncFunction("watchConversationRun") { sessionId: String, run: String, after: String, watchId: String ->
+      runFfi {
+        require(watchId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+        runs.remove(watchId)?.second?.stop()
+        val listener = object : ConversationListener {
+          override fun onChange(payloadJson: String) {
+            sendEvent("onConversationChange", mapOf("sessionId" to sessionId, "watchId" to watchId, "payloadJson" to payloadJson))
+          }
+        }
+        runs[watchId] = sessionId to conversation(sessionId).watchRun(run, after.toULong(), listener)
+        watchId
+      }
+    }
+    AsyncFunction("stopConversationRunWatch") { watchId: String -> runs.remove(watchId)?.second?.stop() }
 
     AsyncFunction("otpRequest") { baseUrl: String, email: String ->
       runFfi { CompanionClient(baseUrl).otpRequest(email) }
@@ -290,6 +363,9 @@ class TokitoCompanionFfiModule : Module() {
       throw CodedException("Unexpected", err.message ?: "unexpected native error", err)
     }
   }
+
+  private fun conversation(id: String): ConversationSession = conversations[id]
+    ?: throw CodedException("Unauthorized", "Open a signed-in conversation session first", null)
 
   private companion object {
     const val TAG = "TokitoCompanionFfi"

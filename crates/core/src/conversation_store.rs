@@ -137,6 +137,29 @@ impl ConversationStore {
         .collect()
     }
 
+    pub fn has_pending(&self, thread: &str) -> Result<bool, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM chat_outbox WHERE thread_id=?1)",
+            [thread],
+            |r| r.get(0),
+        )
+        .map_err(db_error)
+    }
+
+    /// Explicit user recovery for a rejected request; never silently resubmit
+    /// a stale engineering request against a newer schematic revision.
+    pub fn discard_blocked(&self, message_id: &str) -> Result<bool, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        Ok(conn
+            .execute(
+                "DELETE FROM chat_outbox WHERE message_id=?1 AND error IS NOT NULL",
+                [message_id],
+            )
+            .map_err(db_error)?
+            == 1)
+    }
+
     /// Retryable transport failures leave the same idempotency key queued.
     /// Conflicts/invalid requests are quarantined, never silently rebased.
     pub fn block(&self, message_id: &str, reason: &str) -> Result<(), CloudError> {

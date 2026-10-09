@@ -3,6 +3,7 @@ import { requireNativeModule } from "expo-modules-core";
 export type NativeEventSubscription = { remove(): void };
 
 export type SyncNativeEventMap = {
+  onConversationChange: { sessionId: string; watchId: string; payloadJson: string };
   onSyncStatus: { subscriptionId: string; status: string };
   onSyncBootstrap: { subscriptionId: string; cursor: string; resourcesJson: string };
   onSyncEvent: { subscriptionId: string; eventJson: string };
@@ -27,6 +28,18 @@ export type NativeAccount = {
 };
 
 type TokitoCompanionFfiNative = {
+  openConversations(baseUrl: string, token: string, sessionId: string): Promise<string>;
+  closeConversations(sessionId: string): Promise<void>;
+  conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
+  createConversation(sessionId: string, project: string, design: string, title: string): Promise<string>;
+  conversationHistory(sessionId: string, project: string, design: string, thread: string, before: string | null): Promise<string>;
+  cachedConversationHistory(sessionId: string, thread: string, after: string): Promise<string>;
+  sendConversationMessage(sessionId: string, project: string, design: string, thread: string, content: string, version: string, kind: string): Promise<string>;
+  cancelConversationRun(sessionId: string, run: string): Promise<string>;
+  deleteConversation(sessionId: string, project: string, design: string, thread: string): Promise<void>;
+  discardBlockedMessage(sessionId: string, messageId: string): Promise<boolean>;
+  watchConversationRun(sessionId: string, run: string, after: string, watchId: string): Promise<string>;
+  stopConversationRunWatch(watchId: string): Promise<void>;
   baseUrl(baseUrl: string): Promise<string>;
   otpRequest(baseUrl: string, email: string): Promise<void>;
   otpVerify(baseUrl: string, email: string, code: string): Promise<NativeSession>;

@@ -39,7 +39,7 @@ fn segment(value: &str) -> Result<&str, CloudError> {
     Ok(value)
 }
 
-fn origin(base: &str) -> Result<String, CloudError> {
+pub fn origin(base: &str) -> Result<String, CloudError> {
     let base = resolve_base_url(base);
     let url = reqwest::Url::parse(&base).map_err(|_| CloudError::Unexpected)?;
     let local = url.host_str().is_some_and(|host| {
