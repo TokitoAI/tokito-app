@@ -230,6 +230,22 @@ impl ConversationSession {
         serde_json::to_string(&self.store.blocked(&thread)?).map_err(|_| CompanionError::Unexpected)
     }
 
+    pub fn queued_message(&self, thread: String) -> Result<String, CompanionError> {
+        self.ensure_open()?;
+        serde_json::to_string(&self.store.queued_for_thread(&thread)?)
+            .map_err(|_| CompanionError::Unexpected)
+    }
+
+    pub fn recovered_draft(&self, thread: String) -> Result<Option<String>, CompanionError> {
+        self.ensure_open()?;
+        self.store.recovered_draft(&thread).map_err(Into::into)
+    }
+
+    pub fn restore_blocked_message(&self, message_id: String) -> Result<String, CompanionError> {
+        self.ensure_open()?;
+        self.store.restore_blocked(&message_id).map_err(Into::into)
+    }
+
     pub fn watch_run(
         &self,
         run: String,

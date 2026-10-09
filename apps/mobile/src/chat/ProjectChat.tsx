@@ -27,6 +27,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   const [retry, setRetry] = useState(0);
   const [blocked, setBlocked] = useState<{ id: string; content: string } | null>(null);
   const epoch = useRef(0);
+  const acceptedMessage = useRef<string | null>(null);
 
   async function load(client: ConversationClient, id: string, before: number | null = null): Promise<void> {
     const page = await client.history(project, design, id, before);
@@ -34,9 +35,15 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
     setOlder(page.olderCursor);
     setRows(prior => before === null ? page.messages : [...page.messages, ...prior.filter(r => !page.messages.some(m => m.id === r.id))]);
     if (before === null) {
-      const pending = await client.blocked(id);
+      const [pending, recovered] = await Promise.all([client.queued(id), client.recoveredDraft(id)]);
       if (connection.current !== client || selected.current !== id) return;
-      setBlocked(pending[0] ?? null);
+      setBlocked(pending?.blocked ? pending : null);
+      setSending(pending !== null && !pending.blocked);
+      if (pending) {
+        setRows(prior => prior.some(row => row.id === pending.id) ? prior : [...prior, { id: pending.id, runId: pending.runId, role: "user", content: pending.content }]);
+        setNotice(pending.blocked ? null : "Message saved. Waiting for a connection…");
+      }
+      if (recovered !== null) setDraft(previous => previous || recovered);
       setRun(page.latestRun);
       setView(emptyRun());
       if (page.latestRun !== null) await client.watch(page.latestRun.run_id);
@@ -57,6 +64,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       if (change.type === "accepted") {
         const accepted = parseRun(change.run);
         if (accepted.thread_id !== selected.current) return;
+        acceptedMessage.current = accepted.run_id;
         setRun(accepted); setNotice(null); setSending(false);
         setView(emptyRun());
         void client.watch(accepted.run_id).catch(() => setError("Unable to reconnect to the response. Reopen this conversation."));
@@ -98,7 +106,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   async function choose(id: string | null): Promise<void> {
     const client = connection.current;
     if (!client) return;
-    selected.current = id; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
+    selected.current = id; acceptedMessage.current = null; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
     try { await client.stopWatching(); if (id !== null) await load(client, id); }
     catch { if (connection.current === client && selected.current === id) setError("Conversation could not be loaded. Try opening it again."); }
     finally { if (connection.current === client && selected.current === id) setBusy(false); }
@@ -112,14 +120,14 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       let id = selected.current;
       if (id === null) {
         const created = await client.create(project, design, content.slice(0, 80));
-        if (connection.current !== client) return;
+        if (connection.current !== client || selected.current !== null) return;
         id = created.id; selected.current = id; setThread(id); setThreads(items => [created, ...items]);
       }
       const pending = await client.send(project, design, id, content, version, version === 0 ? "planner" : "schematic");
       if (connection.current !== client || selected.current !== id) return;
       const request = object(pending.request);
       setRows(items => [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
-      setDraft(""); setNotice("Message saved. Connecting…"); atBottom.current = true;
+      setDraft(""); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…"); atBottom.current = true;
     } catch { setSending(false); setError("Message could not be queued. Your draft is still here; try again."); }
   }
   const active = sending || isActive(run);
@@ -134,9 +142,10 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       const client = connection.current;
       if (!client) return;
       const message = blocked;
-      void client.restoreBlocked(message.id).then(() => {
-        if (connection.current !== client) return;
-        setDraft(previous => previous ? `${previous}\n\n${message.content}` : message.content);
+      const originalThread = selected.current;
+      void client.restoreBlocked(message.id).then(content => {
+        if (connection.current !== client || selected.current !== originalThread) return;
+        setDraft(previous => previous ? `${previous}\n\n${content}` : content);
         setBlocked(null); setError(null); setNotice(null);
         setRows(previous => previous.filter(row => row.id !== message.id));
       }).catch(() => setError("The message could not be restored. Reopen this conversation."));

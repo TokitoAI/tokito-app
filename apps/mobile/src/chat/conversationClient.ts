@@ -54,8 +54,18 @@ export class ConversationClient {
     if (!Array.isArray(items) || items.length > 100) throw new Error("Invalid pending message list");
     return items.map(item => { const request = object(object(item).request); return { id: string(request.message_id), content: string(request.content) }; });
   }
-  async restoreBlocked(messageId: string): Promise<void> {
-    if (!await this.native.discardBlockedMessage(this.id, messageId)) throw new Error("Message changed; reopen the conversation");
+  async queued(thread: string): Promise<{ id: string; runId: string; content: string; blocked: boolean } | null> {
+    const value = parseJson(await this.native.queuedConversationMessage(this.id, thread));
+    if (value === null) return null;
+    const item = object(value), message = object(item.message), request = object(message.request);
+    if (message.thread_id !== thread || typeof item.blocked !== "boolean") throw new Error("Invalid queued message");
+    return { id: string(request.message_id), runId: string(request.run_id), content: string(request.content), blocked: item.blocked };
+  }
+  async recoveredDraft(thread: string): Promise<string | null> {
+    return this.native.recoveredConversationDraft(this.id, thread);
+  }
+  async restoreBlocked(messageId: string): Promise<string> {
+    return this.native.restoreBlockedMessage(this.id, messageId);
   }
   async watch(run: string): Promise<void> {
     if (this.closed) return;

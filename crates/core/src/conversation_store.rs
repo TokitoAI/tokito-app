@@ -23,6 +23,12 @@ pub struct PendingMessage {
     pub request: SendMessage,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueuedMessage {
+    pub message: PendingMessage,
+    pub blocked: bool,
+}
+
 pub struct ConversationStore {
     conn: Mutex<Connection>,
 }
@@ -66,6 +72,7 @@ impl ConversationStore {
             CREATE INDEX IF NOT EXISTS chat_runs_thread ON chat_runs(thread_id);
             CREATE TABLE IF NOT EXISTS chat_events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,seq));
             CREATE TABLE IF NOT EXISTS chat_threads (thread_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_recovered_drafts (thread_id TEXT PRIMARY KEY, content TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_messages (thread_id TEXT NOT NULL, seq INTEGER NOT NULL, message_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(thread_id,seq), UNIQUE(thread_id,message_id));")
             .map_err(db_error)?;
         let tx = conn.transaction().map_err(db_error)?;
@@ -120,7 +127,66 @@ impl ConversationStore {
             params![message.request.message_id, message.thread_id, body],
         )
         .map_err(db_error)?;
+        tx.execute(
+            "DELETE FROM chat_recovered_drafts WHERE thread_id=?1",
+            [&message.thread_id],
+        )
+        .map_err(db_error)?;
         tx.commit().map_err(db_error)
+    }
+
+    /// Include quarantined and offline work so a reopened view cannot hide a
+    /// durable message or offer a second send into the same thread.
+    pub fn queued_for_thread(&self, thread: &str) -> Result<Option<QueuedMessage>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let row: Option<(String, bool)> = conn
+            .query_row(
+                "SELECT body,error IS NOT NULL FROM chat_outbox WHERE thread_id=?1",
+                [thread],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(db_error)?;
+        row.map(|(body, blocked)| {
+            Ok(QueuedMessage {
+                message: serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?,
+                blocked,
+            })
+        })
+        .transpose()
+    }
+
+    pub fn recovered_draft(&self, thread: &str) -> Result<Option<String>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        conn.query_row(
+            "SELECT content FROM chat_recovered_drafts WHERE thread_id=?1",
+            [thread],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_error)
+    }
+
+    /// Recovery is one durable transaction, not delete-then-copy through JS.
+    /// A process death before rendering the composer cannot erase the request.
+    pub fn restore_blocked(&self, message_id: &str) -> Result<String, CloudError> {
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let body: Option<String> = tx
+            .query_row(
+                "SELECT body FROM chat_outbox WHERE message_id=?1 AND error IS NOT NULL",
+                [message_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        let message: PendingMessage = serde_json::from_str(&body.ok_or(CloudError::Unexpected)?)
+            .map_err(|_| CloudError::Unexpected)?;
+        tx.execute("INSERT INTO chat_recovered_drafts(thread_id,content) VALUES(?1,?2) ON CONFLICT(thread_id) DO UPDATE SET content=excluded.content", params![message.thread_id, message.request.content]).map_err(db_error)?;
+        tx.execute("DELETE FROM chat_outbox WHERE message_id=?1", [message_id])
+            .map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        Ok(message.request.content)
     }
 
     pub fn pending(&self) -> Result<Vec<PendingMessage>, CloudError> {
@@ -333,6 +399,11 @@ impl ConversationStore {
             .map_err(db_error)?;
         tx.execute("DELETE FROM chat_threads WHERE thread_id=?1", [thread_id])
             .map_err(db_error)?;
+        tx.execute(
+            "DELETE FROM chat_recovered_drafts WHERE thread_id=?1",
+            [thread_id],
+        )
+        .map_err(db_error)?;
         tx.commit().map_err(db_error)
     }
 
@@ -506,6 +577,32 @@ mod tests {
         changed.thread_id = "another".into();
         assert!(store.acknowledge(&changed).is_err());
         assert_eq!(store.run("r").unwrap().unwrap().thread_id, "t");
+    }
+
+    #[test]
+    fn restored_message_is_durable_until_requeued() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-chat-recovery-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let store = ConversationStore::open(&path, "owner").unwrap();
+            store.enqueue(&pending()).unwrap();
+            assert!(!store.queued_for_thread("t").unwrap().unwrap().blocked);
+            assert!(store.queued_for_thread("other").unwrap().is_none());
+            store.block("m", "stale_revision").unwrap();
+            assert!(store.queued_for_thread("t").unwrap().unwrap().blocked);
+            assert_eq!(store.restore_blocked("m").unwrap(), "test");
+            assert!(!store.has_pending("t").unwrap());
+        }
+        {
+            let store = ConversationStore::open(&path, "owner").unwrap();
+            assert_eq!(store.recovered_draft("t").unwrap().as_deref(), Some("test"));
+            assert!(store.recovered_draft("other").unwrap().is_none());
+            store.enqueue(&pending()).unwrap();
+            assert!(store.recovered_draft("t").unwrap().is_none());
+        }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
