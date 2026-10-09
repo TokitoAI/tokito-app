@@ -24,6 +24,14 @@ class SherpaBundleConfigTest {
     }
 
     @Test
+    fun autoUsesEncoderMetadataInsteadOfForcingArchitecture() {
+        val root = createBundle()
+        val configFile = File(root, "voice-runtime.json")
+        configFile.writeText(configFile.readText().replace("zipformer2", "auto"))
+        assertEquals("", SherpaBundleConfig.load(root).sttModelType)
+    }
+
+    @Test
     fun rejectsPathTraversal() {
         val root = createBundle(encoder = "../outside.onnx")
 

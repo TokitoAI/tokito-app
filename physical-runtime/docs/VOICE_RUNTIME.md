@@ -92,6 +92,26 @@ cleared on confirmation, rejection, invalid input, or cancellation.
   `24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b`.
   Its embedded model card identifies the LJSpeech dataset as public domain.
 
+The model manager imports a signed `voice` bundle before runtime initialization.
+Its `bundle/` directory contains `voice-runtime.json`,
+`voice-models.manifest.json`, and the inventoried models and phonemizer data.
+The runtime reads only `models/voice/active/bundle`; installation validates the
+speech inventory and configuration before atomic activation. Limits are 512 MiB
+archive/expanded size and 1024 ZIP entries.
+
+Bundle tooling uses `model_type: auto`; Sherpa reads the encoder's ONNX metadata.
+Do not force every Zipformer archive to the original `zipformer` architecture:
+Kroko's encoder declares `zipformer2`, and forcing the wrong native backend can
+terminate the Android process instead of returning a Kotlin exception.
+
+The Kroko model card names CC-BY-SA community terms but its linked LICENSE file
+is empty; do not label its weights Apache-2.0. The LJSpeech card describes
+dataset licensing, and bundled eSpeak data has separate GPL terms. These
+existing candidates are local evaluation artifacts, not approved public model
+releases. A local evaluation APK admits their explicit license reference with
+`-Ptokito.models.allowEvaluation=true`; standard builds reject that reference.
+Signatures, inventory checks, and resource limits still apply.
+
 Release tooling provisions speech artifacts before runtime initialization; they
 are not stored in this Git repository. A release manifest must pin the exact
 upstream revision, file digests, attribution text, and license for every

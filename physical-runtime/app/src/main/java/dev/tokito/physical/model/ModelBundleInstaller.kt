@@ -28,7 +28,7 @@ data class ModelInstallPolicy(
     val maxEntries: Int = 256,
 ) {
     init {
-        require(capability in setOf("dialogue", "vision"))
+        require(capability in setOf("dialogue", "vision", "voice"))
         require(runtimeRevision.isNotBlank() && abi.isNotBlank())
         require(allowedLicenses.isNotEmpty() && allowedLicenses.none(String::isBlank))
         require(

@@ -5,13 +5,14 @@
   "description": "Tokito mobile app — project review, Cloud sync, and fully native physical bench assistance",
   "main": "index.ts",
   "scripts": {
+    "postinstall": "patch-package --error-on-fail && node --test scripts/dependency-patches.test.mjs",
     "start": "expo start",
     "android": "expo run:android",
     "prebuild:android": "expo prebuild --platform android --non-interactive",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ index.ts",
     "audit": "node scripts/audit-gate.mjs",
-    "audit:test": "node --test scripts/audit-gate.test.mjs",
+    "audit:test": "node --test scripts/audit-gate.test.mjs scripts/dependency-patches.test.mjs",
     "release:validate": "node scripts/release-identity.mjs",
     "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/physicalSync.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
     "forbid-js": "node scripts/forbid-js.mjs"
@@ -44,6 +45,7 @@
     "@typescript-eslint/parser": "^8.65.0",
     "babel-preset-expo": "~57.0.0",
     "eslint": "^10.8.0",
+    "patch-package": "8.0.1",
     "tsx": "^4.19.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.65.0"

@@ -1,19 +1,22 @@
 # Mobile dependency audit policy
 
-CI evaluates `npm audit` through `apps/mobile/scripts/audit-gate.mjs`. The gate
-fails on every critical advisory and every high advisory that is not explicitly
-identified, package-bound, justified, and time-bounded in that script. Tests
-prove that new and expired advisories fail closed.
+`npm run audit` rejects unresolved high and critical advisories. The former
+time-limited image-size exceptions have been removed. Do not use forced Expo
+downgrades or blanket advisory exemptions to make the gate pass.
 
-## Temporary upstream exception
+Two upstream packages currently need local source repairs:
 
-Two high-severity `image-size` denial-of-service advisories are temporarily
-accepted through 2026-09-30. Metro uses this parser during local application
-asset builds; the mobile runtime does not accept arbitrary files through it.
-As of 2026-08-18, npm publishes `image-size` 2.0.2 as latest and no patched
-release exists, while npm's proposed forced remediation downgrades Expo from SDK
-57 to incompatible SDK 53.
+- `braces` 3.0.3: bound recursive parse/compile/expand/stringify depth, including
+  direct AST input (GHSA-vfj7-8cjw-p6xm).
+- `node-forge` 1.4.0: reject extra DigestAlgorithm fields during RSA PKCS#1 v1.5
+  signature verification (GHSA-86w9-cpqp-85rv).
 
-The exception is not a blanket severity waiver: it matches the two GHSA IDs and
-the `image-size` package exactly. A patched upstream release should replace the
-exception immediately; otherwise CI begins failing after the expiry date.
+`patch-package` applies the tracked patches during `npm ci`. Postinstall runs
+regressions for deeply nested and cyclic inputs and malformed RSA signatures.
+The audit gate verifies exact installed versions and SHA-256 source hashes
+before recognizing either repair. A nested unverified installation fails the
+gate. The raw npm report still counts these published versions as vulnerable;
+the gate reports repairs separately and does not rewrite that report.
+
+When upstream fixes are available, replace the dependency, remove the patch and
+attestation together, and retain the behavioral regressions where practical.

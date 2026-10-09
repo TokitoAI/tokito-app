@@ -19,6 +19,11 @@ android {
 
     defaultConfig {
         minSdk = 27
+        consumerProguardFiles("proguard-rules.pro")
+        buildConfigField("boolean", "ALLOW_EVALUATION_MODELS",
+            providers.gradleProperty("tokito.models.allowEvaluation").orElse("false").get().also {
+                require(it in setOf("true", "false"))
+            })
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("long", "DIALOGUE_TURN_DEADLINE_MS", "${dialogueTurnDeadlineMs}L")
         buildConfigField("int", "DIALOGUE_MAX_PREDICT_TOKENS", dialogueMaxPredictTokens)
@@ -26,11 +31,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            // Only the final application can see bridge and shell reachability.
+            isMinifyEnabled = false
         }
     }
 

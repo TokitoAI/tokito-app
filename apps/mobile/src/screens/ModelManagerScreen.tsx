@@ -25,24 +25,25 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
   }, [refresh]);
 
   const importBundle = useCallback(async (capability: ModelCapability) => {
+    if (busy !== null) return;
     setError(null);
-    const selection = await DocumentPicker.getDocumentAsync({
-      type: "application/zip",
-      copyToCacheDirectory: false,
-      multiple: false,
-    });
-    if (selection.canceled) return;
     setBusy(capability);
     try {
+      const selection = await DocumentPicker.getDocumentAsync({
+        type: "application/zip",
+        copyToCacheDirectory: false,
+        multiple: false,
+      });
+      if (selection.canceled) return;
       const installed = await TokitoPhysical.installModelBundle(capability, selection.assets[0].uri);
       await refresh();
-      Alert.alert("Model ready", `${installed.modelId} ${installed.modelRevision} is now active.`);
+      Alert.alert("Model installed", `${installed.modelId} ${installed.modelRevision} is now active.`);
     } catch (cause) {
       setError(message(cause));
     } finally {
       setBusy(null);
     }
-  }, [refresh]);
+  }, [busy, refresh]);
 
   const rollback = useCallback((capability: ModelCapability) => {
     Alert.alert(
@@ -69,7 +70,7 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
     <View style={styles.root}>
       <View style={styles.header}>
         <View style={styles.headerSide}>
-          <GhostButton label="Back" onPress={onBack} icon={<ArrowLeft size={18} color={tokens.accent} />} />
+          <GhostButton label="Back" onPress={onBack} disabled={busy !== null} icon={<ArrowLeft size={18} color={tokens.accent} />} />
         </View>
         <Text accessibilityRole="header" style={styles.title}>Local models</Text>
         <View style={styles.headerSide} />
@@ -79,10 +80,10 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
           Import a Tokito-signed bundle from this device. Verification finishes before the active model changes.
         </Text>
         {error === null ? null : <ErrorText>{error}</ErrorText>}
-        {(["dialogue", "vision"] as const).map((capability) => {
+        {(["dialogue", "voice", "vision"] as const).map((capability) => {
           const bundle = bundles.find((candidate) => candidate.capability === capability);
           const installed = bundle?.modelId !== null && bundle?.modelId !== undefined;
-          const label = capability === "dialogue" ? "Conversation" : "Board vision";
+          const label = { dialogue: "Conversation", voice: "Speech", vision: "Board vision" }[capability];
           return (
             <Card key={capability}>
               <View style={styles.cardHeader}>
@@ -97,11 +98,11 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
                   )}
                 </View>
                 <View
-                  accessibilityLabel={installed ? "Ready" : "Not installed"}
+                  accessibilityLabel={installed ? "Installed" : "Not installed"}
                   style={[styles.status, installed ? styles.ready : styles.missing]}
                 >
                   <Text style={[styles.statusText, installed && styles.readyText]}>
-                    {installed ? "Ready" : "Missing"}
+                    {installed ? "Installed" : "Missing"}
                   </Text>
                 </View>
               </View>

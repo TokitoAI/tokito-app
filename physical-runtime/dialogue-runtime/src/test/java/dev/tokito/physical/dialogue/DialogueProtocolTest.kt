@@ -6,6 +6,12 @@ import org.junit.Test
 
 class DialogueProtocolTest {
     private val protocol = DialogueProtocol(DialogueLimits())
+
+    @Test fun generalQuestionsRemainSeparateFromBoardIdentityClaims() {
+        assertEquals(null, protocol.ungroundedIdentityClarification(DialogueRequest(utterance = "What does a resistor do?")))
+        assertTrue(protocol.ungroundedIdentityClarification(DialogueRequest(utterance = "Where is R17?")) is DialogueOutcome.Clarification)
+        assertTrue(protocol.conversationalSystemPrompt().contains("require supplied verified evidence"))
+    }
     private val capability = Capability(
         name = "locate_component",
         version = 1,

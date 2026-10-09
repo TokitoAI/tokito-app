@@ -3,6 +3,11 @@ import test from "node:test";
 
 import { evaluateAudit } from "./audit-gate.mjs";
 
+test("registry errors and missing reports fail closed", () => {
+  assert.notDeepEqual(evaluateAudit({ error: { code: 'ENOTFOUND' } }).failures, []);
+  assert.notDeepEqual(evaluateAudit({}).failures, []);
+});
+
 const allowed = {
   vulnerabilities: {
     "image-size": {
@@ -21,10 +26,9 @@ const allowed = {
   },
 };
 
-test("accepts only the bounded unpatched build-time advisory", () => {
-  const result = evaluateAudit(allowed, new Date("2026-08-18T00:00:00Z"));
-  assert.deepEqual(result.failures, []);
-  assert.equal(result.acknowledged.size, 1);
+test("previously exempted upstream advisories fail without a source repair", () => {
+  const result = evaluateAudit(allowed);
+  assert.match(result.failures.join('\n'), /GHSA-w3rx-r6r6-pgpr/);
 });
 
 test("rejects an unacknowledged high advisory", () => {
@@ -41,11 +45,12 @@ test("rejects an unacknowledged high advisory", () => {
       },
     ],
   };
-  const result = evaluateAudit(report, new Date("2026-08-18T00:00:00Z"));
+  const result = evaluateAudit(report);
   assert.match(result.failures.join("\n"), /GHSA-aaaa-bbbb-cccc/);
 });
 
-test("rejects an expired exception", () => {
-  const result = evaluateAudit(allowed, new Date("2026-10-01T00:00:00Z"));
-  assert.match(result.failures.join("\n"), /expired/);
+test("accepts a verified repair only for its exact advisory and package", () => {
+  const id = 'GHSA-w3rx-r6r6-pgpr';
+  assert.deepEqual(evaluateAudit(allowed, new Map([[id, 'image-size']])).failures, []);
+  assert.notDeepEqual(evaluateAudit(allowed, new Map([[id, 'wrong-package']])).failures, []);
 });
