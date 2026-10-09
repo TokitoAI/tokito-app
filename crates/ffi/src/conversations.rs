@@ -461,13 +461,13 @@ async fn watch_run(
         let result = tokio::select! {
             _ = stop.changed() => return, _ = session_stop.changed() => return,
             result = async {
-                let run = api::get_run(&base, &token, &run_id).await?;
-                store.acknowledge(&run)?;
                 loop {
                     let events = store.events(&run_id, delivered)?;
                     if events.is_empty() { break; }
                     for event in events { delivered = event.seq; emit(listener.as_ref(), serde_json::json!({"type":"event","run_id":run_id,"event":event})); }
                 }
+                let run = api::get_run(&base, &token, &run_id).await?;
+                store.acknowledge(&run)?;
                 let mut cursor = store.cursor(&run_id)?;
                 api::stream_run(&base, &token, &run_id, &mut cursor, stream_stop, |event| {
                     store.apply_event(&run_id, &event)?;
@@ -612,5 +612,62 @@ mod tests {
             .await
             .unwrap();
         });
+    }
+
+    #[tokio::test]
+    async fn saved_run_events_are_delivered_before_unavailable_network() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        store
+            .acknowledge(&api::Run {
+                run_id: "r".into(),
+                project_id: "p".into(),
+                design_id: "d".into(),
+                thread_id: "t".into(),
+                message_id: "m".into(),
+                status: "running".into(),
+                created_at: 1,
+                updated_at: 1,
+            })
+            .unwrap();
+        store.apply_event("r", &api::RunEvent { seq: 1, event: serde_json::json!({"type":"assistant_text_delta","text":"saved response"}) }).unwrap();
+        let listener = Arc::new(Listener::default());
+        let (_session_stop, session_rx) = watch::channel(false);
+        let (stop, receiver) = watch::channel(false);
+        let task = tokio::spawn(watch_run(
+            server.uri(),
+            "token".into(),
+            String::new(),
+            "r".into(),
+            0,
+            store,
+            session_rx,
+            receiver,
+            listener.clone(),
+        ));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if listener
+                    .0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event["type"] == "event")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send(true).unwrap();
+        task.await.unwrap();
+        let events = listener.0.lock().unwrap();
+        assert_eq!(events[0]["event"]["event"]["text"], "saved response");
     }
 }

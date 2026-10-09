@@ -203,7 +203,7 @@ impl SyncStateStore {
                     design_id: (!design_id.is_empty()).then(|| design_id.into()),
                     resource: resource.into(),
                     version: row.get::<_, i64>(0)? as u64,
-                    payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null),
+                    payload: decode_cached_payload(&payload, 1)?,
                 })
             },
         )
@@ -479,7 +479,7 @@ impl SyncStateStore {
                 design_id: (!design_id.is_empty()).then_some(design_id),
                 resource: row.get(2)?,
                 version: row.get::<_, i64>(3)? as u64,
-                payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null),
+                payload: decode_cached_payload(&payload, 4)?,
             })
         };
         let mut resources = Vec::new();
@@ -498,6 +498,16 @@ impl SyncStateStore {
         }
         Ok(resources)
     }
+}
+
+fn decode_cached_payload(payload: &str, column: usize) -> rusqlite::Result<serde_json::Value> {
+    serde_json::from_str(payload).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
 }
 
 fn read_cursor(conn: &Connection) -> Result<u64, CloudError> {
@@ -628,6 +638,14 @@ fn db_error(error: rusqlite::Error) -> CloudError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn malformed_cache_is_not_reinterpreted_as_null_content() {
+        let store = super::SyncStateStore::open(std::path::Path::new(":memory:")).unwrap();
+        store.conn.lock().unwrap().execute("INSERT INTO resources(project_id,design_id,resource,version,payload_json) VALUES('p','d','schematic',1,'broken-json')", []).unwrap();
+        assert!(store.resource("p", Some("d"), "schematic").is_err());
+        assert!(store.resources(None).is_err());
+        assert!(store.resources(Some("p")).is_err());
+    }
     use super::*;
 
     #[test]
