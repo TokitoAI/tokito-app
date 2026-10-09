@@ -65,6 +65,7 @@ export type SyncResourceName =
   | "schematic"
   | "bom"
   | "chat"
+  | "conversations"
   | "suggestions"
   | "physical_sessions";
 
