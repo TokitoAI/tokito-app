@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
 import type { BomLine, ProjectDetail, Proposal } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
@@ -8,9 +8,9 @@ import { CompanionError } from "../native/types";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
+import { ProjectChat } from "../chat/ProjectChat";
 
 type Section = "design" | "chat" | "review";
-type ChatMessage = { id: string; role: string; content: string; created_at?: string };
 
 export interface ProjectDetailScreenProps {
   client: CloudClient;
@@ -34,7 +34,6 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("design");
-  const [chatDraft, setChatDraft] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const liveProject = realtime.getResource(projectId, null, "project")?.payload as Record<string, unknown> | undefined;
@@ -51,8 +50,6 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const activeDesignName = designs.find((item) => item.id === activeDesignId)?.name ?? "Design";
   const bomPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom")?.payload as { lines?: BomLine[] } | undefined;
   const displayedBom = bomPayload?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
-  const chatPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "chat")?.payload as { messages?: ChatMessage[] } | undefined;
-  const chatMessages = chatPayload?.messages ?? [];
   const suggestionPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "suggestions")?.payload as { items?: Proposal[] } | undefined;
   const displayedProposals = suggestionPayload?.items?.filter((item) => item.status === "pending") ?? proposals;
   const hasLiveSchematic = activeDesignId !== null && realtime.getResource(projectId, activeDesignId, "schematic") !== undefined;
@@ -69,21 +66,6 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   }, [client, token, projectId, liveProject]);
 
   useEffect(() => { void reload(); }, [reload]);
-
-  async function sendChat(): Promise<void> {
-    const content = chatDraft.trim();
-    if (content.length === 0 || activeDesignId === null) return;
-    setChatDraft("");
-    try {
-      await realtime.update(projectId, activeDesignId, "chat", {
-        ...(chatPayload ?? {}),
-        messages: [...chatMessages, { id: `companion-${Date.now()}-${Math.random().toString(16).slice(2)}`, role: "user", content, created_at: new Date().toISOString() }],
-      });
-    } catch (cause) {
-      setChatDraft(content);
-      setError(message(cause, "Message could not be sent"));
-    }
-  }
 
   async function decide(id: string, decision: "approve" | "reject"): Promise<void> {
     setBusyId(id);
@@ -118,7 +100,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
         <Tab label="Chat" icon={<ChatCircleDots size={20} color={section === "chat" ? tokens.text : tokens.text2} />} selected={section === "chat"} onPress={() => setSection("chat")} />
         <Tab label={displayedProposals.length > 0 ? `Review ${displayedProposals.length}` : "Review"} icon={<Sparkle size={20} color={section === "review" ? tokens.text : tokens.text2} />} selected={section === "review"} onPress={() => setSection("review")} />
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
+      {section === "chat" && activeDesignId !== null ? <ProjectChat key={`${projectId}:${activeDesignId}`} baseUrl={client.baseUrl()} token={token} project={projectId} design={activeDesignId} version={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} /> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
         {loading ? <ActivityIndicator color={tokens.accent} /> : null}
         {error !== null ? <ErrorText>{error}</ErrorText> : null}
         {realtime.error !== null ? <ErrorText>{realtime.error}</ErrorText> : null}
@@ -146,18 +128,13 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
             </View>
           </View>
         </View> : null}
-        {section === "chat" ? <View style={[styles.panel, tablet && styles.chatPanelTablet]}>
-          <View style={styles.sectionHead}><ChatCircleDots size={18} color={tokens.text} /><SectionLabel>Design chat</SectionLabel></View>
-          {chatMessages.length === 0 ? <Empty title="Start a design conversation" body="Ask about this Cloud design." /> : null}
-          <View style={styles.chatHistory}>{chatMessages.map((item) => <View key={item.id} style={[styles.chatBubble, item.role === "user" && styles.chatBubbleUser]}><Text style={styles.chatRole}>{item.role === "user" ? "You" : "Tokito"}</Text><Text style={styles.chatText}>{item.content}</Text></View>)}</View>
-          {activeDesignId !== null ? <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={chatDraft} onChangeText={setChatDraft} placeholder="Ask about this design…" placeholderTextColor={tokens.text3} multiline style={styles.chatInput} /><PrimaryButton label="Send" disabled={chatDraft.trim().length === 0} onPress={() => void sendChat()} style={styles.send} /></View> : null}
-        </View> : null}
+        {section === "chat" ? <Empty title="Select a design first" body="Open a design in this project to start its conversation." /> : null}
         {section === "review" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
           <View style={styles.sectionHead}><Sparkle size={18} color={tokens.text} /><SectionLabel>AI proposals</SectionLabel></View><Text style={styles.help}>Review proposals owned by this Cloud workspace.</Text>
           {displayedProposals.length === 0 && !loading ? <Empty title="All caught up" body="New proposals will appear here for explicit review." /> : null}
           <View style={[styles.proposalGrid, tablet && styles.proposalGridTablet]}>{displayedProposals.map((item) => <Card key={item.id} style={[styles.proposalCard, tablet && styles.proposalCardTablet]}><Text style={styles.cardTitle}>{item.title}</Text><Muted>{item.summary}</Muted><View style={styles.actions}><PrimaryButton label="Approve" busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "approve")} style={styles.action} /><PrimaryButton label="Reject" danger busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "reject")} style={styles.action} /></View></Card>)}</View>
         </View> : null}
-      </ScrollView>
+      </ScrollView>}
     </View>
   );
 }
