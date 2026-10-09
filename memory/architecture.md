@@ -57,6 +57,12 @@ resurrected by a late index response. Missing update dates stay unknown, never
 "just now". A durable local enqueue is not a server commit: only confirmed
 journal events replace visible synchronized resources.
 
+HTTP acknowledgements retain a durable snapshot lower bound separately from
+the SSE replay cursor. A bootstrap older than that bound is rejected even if
+it omits the acknowledged resource. Never advance the replay cursor from an
+HTTP receipt: that would skip unrelated preceding events. A resource revision
+has immutable content; contradictory same-revision payloads fail atomically.
+
 **How to apply:** scope native callbacks to their subscription, reject older
 resource revisions, guard late HTTP responses after navigation, and preserve
 the published snapshot's provenance. Never approximate schematic symbols with

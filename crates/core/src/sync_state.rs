@@ -81,7 +81,7 @@ impl SyncStateStore {
     ) -> Result<(), CloudError> {
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
-        if bootstrap.cursor < read_cursor(&tx)? {
+        if bootstrap.cursor < read_cursor(&tx)? || bootstrap.cursor < acknowledged_cursor(&tx)? {
             return Err(CloudError::Network(
                 "stale sync bootstrap; retry required".into(),
             ));
@@ -169,6 +169,13 @@ impl SyncStateStore {
                 payload: event.payload.clone(),
             },
         )?;
+        // This is a snapshot lower bound, not an SSE replay cursor. Advancing
+        // the latter here would skip unrelated events preceding this receipt.
+        let acknowledged = acknowledged_cursor(&tx)?.max(event.seq);
+        tx.execute(
+            "INSERT INTO meta(key,value) VALUES('acknowledged_cursor',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![acknowledged.to_string()],
+        ).map_err(db_error)?;
         tx.execute(
             "DELETE FROM outbox WHERE command_id = ?1",
             params![event.command_id],
@@ -600,6 +607,21 @@ fn set_cursor(conn: &Connection, cursor: u64) -> Result<(), CloudError> {
     Ok(())
 }
 
+fn acknowledged_cursor(conn: &Connection) -> Result<u64, CloudError> {
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key='acknowledged_cursor'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db_error)?;
+    value
+        .map(|value| value.parse().map_err(|_| CloudError::Unexpected))
+        .transpose()
+        .map(|value| value.unwrap_or(0))
+}
+
 fn db_error(error: rusqlite::Error) -> CloudError {
     CloudError::Network(format!("sync state: {error}"))
 }
@@ -623,6 +645,15 @@ mod tests {
             created_at: 1,
         };
         store.apply_ack(&event).unwrap();
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 9,
+                    resources: vec![]
+                },
+                Some("p")
+            )
+            .is_err());
         let mut resource = store.resource("p", Some("d"), "bom").unwrap().unwrap();
         resource.version = 3;
         resource.payload = serde_json::json!({"lines":[3]});
@@ -704,6 +735,65 @@ mod tests {
                 .payload["name"],
             "original"
         );
+    }
+
+    #[test]
+    fn acknowledgement_snapshot_floor_survives_restart_without_skipping_sse() {
+        let directory =
+            std::env::temp_dir().join(format!("tokito-ack-floor-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("sync.sqlite3");
+        let resource = SyncResource {
+            project_id: "p".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 1,
+            payload: serde_json::json!({"name":"acknowledged"}),
+        };
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            store
+                .apply_ack(&SyncEvent {
+                    seq: 12,
+                    project_id: resource.project_id.clone(),
+                    design_id: None,
+                    resource: resource.resource.clone(),
+                    version: 1,
+                    command_id: "c".into(),
+                    actor_device_id: "d".into(),
+                    payload: resource.payload.clone(),
+                    created_at: 1,
+                })
+                .unwrap();
+            assert_eq!(store.cursor().unwrap(), 0);
+        }
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            assert!(store
+                .apply_bootstrap(
+                    &SyncBootstrap {
+                        cursor: 11,
+                        resources: vec![]
+                    },
+                    None
+                )
+                .is_err());
+            assert_eq!(store.cursor().unwrap(), 0);
+            assert_eq!(
+                store.resource("p", None, "project").unwrap().unwrap(),
+                resource
+            );
+            store
+                .apply_bootstrap(
+                    &SyncBootstrap {
+                        cursor: 12,
+                        resources: vec![resource],
+                    },
+                    None,
+                )
+                .unwrap();
+            assert_eq!(store.cursor().unwrap(), 12);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
