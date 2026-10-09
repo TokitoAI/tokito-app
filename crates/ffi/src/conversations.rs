@@ -49,14 +49,14 @@ impl CompanionClient {
         let key = format!("{:x}", Sha256::digest(owner.as_bytes()));
         let path = Path::new(&storage_dir).join(format!("chat-{key}.sqlite3"));
         let store = Arc::new(ConversationStore::open(&path, &owner)?);
-        let (stop, receiver) = watch::channel(false);
+        let (stop, _) = watch::channel(false);
         let (wake, wake_rx) = mpsc::channel(1);
         runtime().spawn(outbox(
             base.clone(),
             token.clone(),
             (device_id.clone(), storage_dir.clone()),
             store.clone(),
-            receiver,
+            stop.clone(),
             wake_rx,
             listener.clone(),
         ));
@@ -308,7 +308,7 @@ impl ConversationSession {
             run,
             after,
             self.store.clone(),
-            self.stop.subscribe(),
+            self.stop.clone(),
             receiver,
             listener,
         ));
@@ -343,10 +343,11 @@ async fn outbox(
     token: String,
     registration: (String, String),
     store: Arc<ConversationStore>,
-    mut stop: watch::Receiver<bool>,
+    session_stop: watch::Sender<bool>,
     mut wake: mpsc::Receiver<()>,
     listener: Arc<dyn ConversationListener>,
 ) {
+    let mut stop = session_stop.subscribe();
     let (device, identity_path) = registration;
     let mut delay = 1;
     let mut registered = false;
@@ -362,6 +363,7 @@ async fn outbox(
             match result {
                 Ok(_) => registered = true,
                 Err(CloudError::Unauthorized) => {
+                    session_stop.send_replace(true);
                     revoke_identity(&identity_path, &base, &token);
                     emit(
                         listener.as_ref(),
@@ -407,6 +409,7 @@ async fn outbox(
                     );
                 }
                 Err(CloudError::Unauthorized) => {
+                    session_stop.send_replace(true);
                     revoke_identity(&identity_path, &base, &token);
                     emit(
                         listener.as_ref(),
@@ -448,10 +451,11 @@ async fn watch_run(
     run_id: String,
     mut delivered: u64,
     store: Arc<ConversationStore>,
-    mut session_stop: watch::Receiver<bool>,
+    session_shutdown: watch::Sender<bool>,
     mut stop: watch::Receiver<bool>,
     listener: Arc<dyn ConversationListener>,
 ) {
+    let mut session_stop = session_shutdown.subscribe();
     let mut delay = 1;
     loop {
         if *stop.borrow() || *session_stop.borrow() {
@@ -489,6 +493,7 @@ async fn watch_run(
             }
             Ok(_) => delay = 1,
             Err(CloudError::Unauthorized) => {
+                session_shutdown.send_replace(true);
                 revoke_identity(&identity_path, &base, &token);
                 emit(
                     listener.as_ref(),
@@ -615,6 +620,122 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn background_auth_rejection_closes_session_and_preserves_queue() {
+        for reject_registration in [true, false] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/v1/companion/devices"))
+                .respond_with(if reject_registration {
+                    ResponseTemplate::new(401)
+                } else {
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"device","label":"test","platform":"android","last_seen_at":1}))
+                })
+                .mount(&server).await;
+            Mock::given(method("POST"))
+                .and(path("/v1/projects/p/designs/d/threads/t/messages"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server)
+                .await;
+            let store =
+                Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+            let (stop, _) = watch::channel(false);
+            let (wake, wake_rx) = mpsc::channel(1);
+            let listener = Arc::new(Listener::default());
+            let session = ConversationSession {
+                base: server.uri(),
+                token: "token".into(),
+                device: "device".into(),
+                store: store.clone(),
+                stop: stop.clone(),
+                wake,
+                listener: listener.clone(),
+                identity_path: String::new(),
+            };
+            session
+                .send(
+                    "p".into(),
+                    "d".into(),
+                    "t".into(),
+                    "Queued draft".into(),
+                    0,
+                    "planner".into(),
+                    None,
+                )
+                .unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                outbox(
+                    server.uri(),
+                    "token".into(),
+                    ("device".into(), String::new()),
+                    store.clone(),
+                    stop,
+                    wake_rx,
+                    listener.clone(),
+                ),
+            )
+            .await
+            .unwrap();
+            assert!(matches!(
+                session.ensure_open(),
+                Err(CompanionError::Unauthorized)
+            ));
+            assert!(matches!(
+                session.send(
+                    "p".into(),
+                    "d".into(),
+                    "other".into(),
+                    "Must not enqueue".into(),
+                    0,
+                    "planner".into(),
+                    None
+                ),
+                Err(CompanionError::Unauthorized)
+            ));
+            assert_eq!(store.pending().unwrap().len(), 1);
+            assert_eq!(
+                listener.0.lock().unwrap().last().unwrap()["type"],
+                "unauthorized"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn run_auth_rejection_stops_sibling_workers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        let (session_stop, mut sibling) = watch::channel(false);
+        let (_stop, receiver) = watch::channel(false);
+        let listener = Arc::new(Listener::default());
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            watch_run(
+                server.uri(),
+                "token".into(),
+                String::new(),
+                "r".into(),
+                0,
+                store,
+                session_stop.clone(),
+                receiver,
+                listener.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+        sibling.changed().await.unwrap();
+        assert!(*session_stop.borrow());
+        assert_eq!(
+            listener.0.lock().unwrap().last().unwrap()["type"],
+            "unauthorized"
+        );
+    }
+
+    #[tokio::test]
     async fn saved_run_events_are_delivered_before_unavailable_network() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -636,7 +757,7 @@ mod tests {
             .unwrap();
         store.apply_event("r", &api::RunEvent { seq: 1, event: serde_json::json!({"type":"assistant_text_delta","text":"saved response"}) }).unwrap();
         let listener = Arc::new(Listener::default());
-        let (_session_stop, session_rx) = watch::channel(false);
+        let (session_stop, _) = watch::channel(false);
         let (stop, receiver) = watch::channel(false);
         let task = tokio::spawn(watch_run(
             server.uri(),
@@ -645,7 +766,7 @@ mod tests {
             "r".into(),
             0,
             store,
-            session_rx,
+            session_stop,
             receiver,
             listener.clone(),
         ));
