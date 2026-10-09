@@ -86,6 +86,31 @@ impl SyncStateStore {
                 "stale sync bootstrap; retry required".into(),
             ));
         }
+        let mut seen = std::collections::HashSet::new();
+        for resource in &bootstrap.resources {
+            if project_id.is_some_and(|project| project != resource.project_id)
+                || !seen.insert((
+                    &resource.project_id,
+                    &resource.design_id,
+                    &resource.resource,
+                ))
+            {
+                return Err(CloudError::Unexpected);
+            }
+            // HTTP acknowledgements can be ahead of the SSE cursor. Validate
+            // before replacing the snapshot so bootstrap cannot erase them.
+            validate_resource_revision(&tx, resource)?;
+            let newer: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM resources WHERE project_id=?1 AND design_id=?2 AND resource=?3 AND version>?4)",
+                params![resource.project_id, resource.design_id.as_deref().unwrap_or(""), resource.resource, resource.version as i64],
+                |row| row.get(0),
+            ).map_err(db_error)?;
+            if newer {
+                return Err(CloudError::Network(
+                    "bootstrap predates acknowledged resource; retry required".into(),
+                ));
+            }
+        }
         if let Some(project_id) = project_id {
             tx.execute(
                 "DELETE FROM resources WHERE project_id = ?1",
@@ -521,6 +546,7 @@ fn next_version(
 }
 
 fn upsert_resource(conn: &Connection, resource: &SyncResource) -> Result<(), CloudError> {
+    validate_resource_revision(conn, resource)?;
     let payload = serde_json::to_string(&resource.payload).map_err(|_| CloudError::Unexpected)?;
     conn.execute(
         "INSERT INTO resources(project_id, design_id, resource, version, payload_json)
@@ -537,6 +563,30 @@ fn upsert_resource(conn: &Connection, resource: &SyncResource) -> Result<(), Clo
         ],
     )
     .map_err(db_error)?;
+    Ok(())
+}
+
+fn validate_resource_revision(
+    conn: &Connection,
+    resource: &SyncResource,
+) -> Result<(), CloudError> {
+    if resource.version > i64::MAX as u64 {
+        return Err(CloudError::Unexpected);
+    }
+    let existing: Option<(u64, String)> = conn.query_row(
+        "SELECT version,payload_json FROM resources WHERE project_id=?1 AND design_id=?2 AND resource=?3",
+        params![resource.project_id, resource.design_id.as_deref().unwrap_or(""), resource.resource],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(db_error)?;
+    if let Some((version, payload)) = existing {
+        if resource.version == version
+            && serde_json::from_str::<serde_json::Value>(&payload)
+                .map_err(|_| CloudError::Unexpected)?
+                != resource.payload
+        {
+            return Err(CloudError::Unexpected);
+        }
+    }
     Ok(())
 }
 
@@ -557,6 +607,104 @@ fn db_error(error: rusqlite::Error) -> CloudError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_cannot_erase_newer_ack_or_cross_scope() {
+        let store = SyncStateStore::in_memory().unwrap();
+        let event = SyncEvent {
+            seq: 10,
+            project_id: "p".into(),
+            design_id: Some("d".into()),
+            resource: "bom".into(),
+            version: 4,
+            command_id: "ack".into(),
+            actor_device_id: "device".into(),
+            payload: serde_json::json!({"lines":[4]}),
+            created_at: 1,
+        };
+        store.apply_ack(&event).unwrap();
+        let mut resource = store.resource("p", Some("d"), "bom").unwrap().unwrap();
+        resource.version = 3;
+        resource.payload = serde_json::json!({"lines":[3]});
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 7,
+                    resources: vec![resource.clone()]
+                },
+                Some("p")
+            )
+            .is_err());
+        assert_eq!(store.cursor().unwrap(), 0);
+        assert_eq!(
+            store
+                .resource("p", Some("d"), "bom")
+                .unwrap()
+                .unwrap()
+                .version,
+            4
+        );
+        resource.project_id = "other".into();
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 11,
+                    resources: vec![resource]
+                },
+                Some("p")
+            )
+            .is_err());
+        assert_eq!(store.cursor().unwrap(), 0);
+    }
+
+    #[test]
+    fn revision_identity_is_immutable_and_duplicate_bootstrap_is_rejected() {
+        let store = SyncStateStore::in_memory().unwrap();
+        let mut resource = SyncResource {
+            project_id: "p".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 1,
+            payload: serde_json::json!({"name":"original"}),
+        };
+        store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 1,
+                    resources: vec![resource.clone()],
+                },
+                None,
+            )
+            .unwrap();
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 2,
+                    resources: vec![resource.clone(), resource.clone()]
+                },
+                None
+            )
+            .is_err());
+        resource.payload = serde_json::json!({"name":"different"});
+        assert!(store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 2,
+                    resources: vec![resource]
+                },
+                None
+            )
+            .is_err());
+        assert_eq!(store.cursor().unwrap(), 1);
+        assert_eq!(
+            store
+                .resource("p", None, "project")
+                .unwrap()
+                .unwrap()
+                .payload["name"],
+            "original"
+        );
+    }
 
     #[test]
     fn event_resource_cursor_and_outbox_commit_together() {
