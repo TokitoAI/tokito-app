@@ -38,6 +38,7 @@ export type TokitoCompanionFfiNative = {
   cancelConversationRun(sessionId: string, run: string): Promise<string>;
   deleteConversation(sessionId: string, project: string, design: string, thread: string): Promise<void>;
   discardBlockedMessage(sessionId: string, messageId: string): Promise<boolean>;
+  blockedConversationMessages(sessionId: string, thread: string): Promise<string>;
   watchConversationRun(sessionId: string, run: string, after: string, watchId: string): Promise<string>;
   stopConversationRunWatch(watchId: string): Promise<void>;
   baseUrl(baseUrl: string): Promise<string>;

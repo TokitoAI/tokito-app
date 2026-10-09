@@ -147,6 +147,23 @@ impl ConversationStore {
         .map_err(db_error)
     }
 
+    pub fn blocked(&self, thread: &str) -> Result<Vec<PendingMessage>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let mut query = conn
+            .prepare(
+                "SELECT body FROM chat_outbox WHERE thread_id=?1 AND error IS NOT NULL LIMIT 100",
+            )
+            .map_err(db_error)?;
+        let result = query
+            .query_map([thread], |r| r.get::<_, String>(0))
+            .map_err(db_error)?
+            .map(|row| {
+                serde_json::from_str(&row.map_err(db_error)?).map_err(|_| CloudError::Unexpected)
+            })
+            .collect();
+        result
+    }
+
     /// Explicit user recovery for a rejected request; never silently resubmit
     /// a stale engineering request against a newer schematic revision.
     pub fn discard_blocked(&self, message_id: &str) -> Result<bool, CloudError> {
@@ -465,6 +482,20 @@ mod tests {
         run.design_id = "other".into();
         assert!(store.acknowledge(&run).is_err());
         assert_eq!(store.pending().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn blocked_messages_require_explicit_recovery_and_remain_thread_scoped() {
+        let store = store();
+        store.enqueue(&pending()).unwrap();
+        assert!(!store.discard_blocked("m").unwrap());
+        store.block("m", "revision conflict").unwrap();
+        assert!(store.pending().unwrap().is_empty());
+        assert!(store.has_pending("t").unwrap());
+        assert!(store.blocked("other").unwrap().is_empty());
+        assert_eq!(store.blocked("t").unwrap()[0].request.content, "test");
+        assert!(store.discard_blocked("m").unwrap());
+        assert!(!store.has_pending("t").unwrap());
     }
 
     #[test]

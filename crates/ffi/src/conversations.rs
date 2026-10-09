@@ -225,6 +225,11 @@ impl ConversationSession {
         self.store.discard_blocked(&message_id).map_err(Into::into)
     }
 
+    pub fn blocked_messages(&self, thread: String) -> Result<String, CompanionError> {
+        self.ensure_open()?;
+        serde_json::to_string(&self.store.blocked(&thread)?).map_err(|_| CompanionError::Unexpected)
+    }
+
     pub fn watch_run(
         &self,
         run: String,

@@ -95,6 +95,9 @@ class TokitoCompanionFfiModule : Module() {
     AsyncFunction("discardBlockedMessage") { sessionId: String, messageId: String ->
       runFfi { conversation(sessionId).discardBlockedMessage(messageId) }
     }
+    AsyncFunction("blockedConversationMessages") { sessionId: String, thread: String ->
+      runFfi { conversation(sessionId).blockedMessages(thread) }
+    }
     AsyncFunction("watchConversationRun") { sessionId: String, run: String, after: String, watchId: String ->
       runFfi {
         require(watchId.matches(Regex("[A-Za-z0-9_-]{1,128}")))

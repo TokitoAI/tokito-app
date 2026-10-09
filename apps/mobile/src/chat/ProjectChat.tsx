@@ -25,6 +25,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [blocked, setBlocked] = useState<{ id: string; content: string } | null>(null);
   const epoch = useRef(0);
 
   async function load(client: ConversationClient, id: string, before: number | null = null): Promise<void> {
@@ -33,6 +34,9 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
     setOlder(page.olderCursor);
     setRows(prior => before === null ? page.messages : [...page.messages, ...prior.filter(r => !page.messages.some(m => m.id === r.id))]);
     if (before === null) {
+      const pending = await client.blocked(id);
+      if (connection.current !== client || selected.current !== id) return;
+      setBlocked(pending[0] ?? null);
       setRun(page.latestRun);
       setView(emptyRun());
       if (page.latestRun !== null) await client.watch(page.latestRun.run_id);
@@ -69,7 +73,13 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
           if (current() && selected.current === settled.thread_id) { setRows(page.messages); setOlder(page.olderCursor); }
         }).catch(() => { if (current()) setError("The run finished, but saved history could not be refreshed. Reopen this conversation."); });
       } else if (change.type === "offline" || change.type === "reconnecting") setNotice("Connection interrupted. Retrying without sending twice…");
-      else if (change.type === "blocked") { setSending(false); setError("The design changed before this message could start. Review the latest design before retrying."); }
+      else if (change.type === "blocked") {
+        const message = object(change.message);
+        if (message.thread_id !== selected.current) return;
+        const request = object(message.request);
+        setBlocked({ id: string(request.message_id), content: string(request.content) });
+        setSending(false); setError("The design changed before this message could start. Review the latest design before retrying.");
+      }
       else if (change.type === "unauthorized") { setSending(false); setError("Your session expired. Sign in again to continue."); }
       else { setSending(false); setError("Chat could not update. Reopen the conversation to recover your saved messages."); }
     }).then(async () => {
@@ -88,15 +98,15 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
   async function choose(id: string | null): Promise<void> {
     const client = connection.current;
     if (!client) return;
-    selected.current = id; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBusy(true);
+    selected.current = id; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
     try { await client.stopWatching(); if (id !== null) await load(client, id); }
-    catch { setError("Conversation could not be loaded. Try opening it again."); }
-    finally { setBusy(false); }
+    catch { if (connection.current === client && selected.current === id) setError("Conversation could not be loaded. Try opening it again."); }
+    finally { if (connection.current === client && selected.current === id) setBusy(false); }
   }
   async function send(): Promise<void> {
     const client = connection.current;
     const content = draft.trim();
-    if (!client || !content || sending || isActive(run)) return;
+    if (!client || !content || sending || blocked || isActive(run)) return;
     setSending(true); setError(null);
     try {
       let id = selected.current;
@@ -120,6 +130,17 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       {threads.map(t => <Pressable key={t.id} accessibilityRole="tab" accessibilityState={{ selected: thread === t.id }} onPress={() => void choose(t.id)} style={[styles.thread, thread === t.id && styles.selected]}><Text numberOfLines={1} style={styles.threadText}>{t.title || "Design conversation"}</Text></Pressable>)}
     </ScrollView></View>
     {error ? <View style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Reconnect</Text></Pressable></View> : null}
+    {blocked ? <View style={styles.feedback}><Text style={styles.muted}>This message was not sent. Restore it to review and send against the current design.</Text><PrimaryButton label="Restore message" onPress={() => {
+      const client = connection.current;
+      if (!client) return;
+      const message = blocked;
+      void client.restoreBlocked(message.id).then(() => {
+        if (connection.current !== client) return;
+        setDraft(previous => previous ? `${previous}\n\n${message.content}` : message.content);
+        setBlocked(null); setError(null); setNotice(null);
+        setRows(previous => previous.filter(row => row.id !== message.id));
+      }).catch(() => setError("The message could not be restored. Reopen this conversation."));
+    }} /></View> : null}
     <FlatList ref={list} data={rows} keyExtractor={r => r.id} style={styles.history} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}
       onScroll={e => { const n = e.nativeEvent; atBottom.current = n.contentSize.height - n.layoutMeasurement.height - n.contentOffset.y < 100; }} scrollEventThrottle={100}
       onContentSizeChange={() => { if (atBottom.current) list.current?.scrollToEnd({ animated: false }); }}
@@ -129,7 +150,7 @@ export function ProjectChat({ baseUrl, token, project, design, version }: Props)
       ListFooterComponent={<View>{!hasSavedAnswer && (view.text || active) ? <View style={styles.bubble}><Text style={styles.author}>Tokito</Text>{view.text ? <Text selectable style={styles.body}>{view.text}</Text> : <Text style={styles.muted}>{view.activity || "Working on your design…"}</Text>}</View> : null}{view.error ? <ErrorText>{view.error}</ErrorText> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
     <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={setDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
-      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; if (c && run) void c.cancel(run.run_id).then(setRun).catch(() => setError("Could not request cancellation. Try again.")); }} /> : <PrimaryButton label="Send" disabled={busy || sending || !draft.trim()} onPress={() => void send()} />}
+      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; if (c && run) void c.cancel(run.run_id).then(setRun).catch(() => setError("Could not request cancellation. Try again.")); }} /> : <PrimaryButton label="Send" disabled={busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
     </View>
   </KeyboardAvoidingView>;
 }

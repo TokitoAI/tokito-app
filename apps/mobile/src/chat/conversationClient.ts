@@ -1,5 +1,5 @@
 import type { TokitoCompanionFfiNative, NativeEventSubscription } from "../../modules/tokito-companion-ffi/src";
-import { object, parseHistory, parseJson, parseRun, parseThread, type ChatHistory, type ChatRun, type ChatThread } from "./conversationModel";
+import { object, string, parseHistory, parseJson, parseRun, parseThread, type ChatHistory, type ChatRun, type ChatThread } from "./conversationModel";
 
 let instance = 0;
 /** One native session per signed-in project view; sign-out disposes all workers. */
@@ -48,6 +48,14 @@ export class ConversationClient {
   }
   async cancel(run: string): Promise<ChatRun> {
     return parseRun(parseJson(await this.native.cancelConversationRun(this.id, run)));
+  }
+  async blocked(thread: string): Promise<{ id: string; content: string }[]> {
+    const items = parseJson(await this.native.blockedConversationMessages(this.id, thread));
+    if (!Array.isArray(items) || items.length > 100) throw new Error("Invalid pending message list");
+    return items.map(item => { const request = object(object(item).request); return { id: string(request.message_id), content: string(request.content) }; });
+  }
+  async restoreBlocked(messageId: string): Promise<void> {
+    if (!await this.native.discardBlockedMessage(this.id, messageId)) throw new Error("Message changed; reopen the conversation");
   }
   async watch(run: string): Promise<void> {
     if (this.closed) return;
