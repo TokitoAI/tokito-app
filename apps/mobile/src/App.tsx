@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { createCloudClient, type CloudClient } from "./native/bridge";
@@ -49,7 +50,17 @@ function defaultCloudBaseUrl(): string {
   return extra?.cloudBaseUrl ?? "";
 }
 
-export default function App({
+export default function App(props: AppProps): JSX.Element {
+  return (
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <SafeAreaView style={styles.root}>
+        <AppContent {...props} />
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+}
+
+function AppContent({
   cloudBaseUrl = defaultCloudBaseUrl(),
   useMemoryStore = false,
 }: AppProps): JSX.Element {

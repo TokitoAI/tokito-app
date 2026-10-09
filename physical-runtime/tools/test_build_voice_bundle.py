@@ -45,6 +45,27 @@ class InventoryDigestTest(unittest.TestCase):
 
 
 class AssembleTest(unittest.TestCase):
+    def test_plain_names_are_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stt, tts = make_sources(root)
+            for file in stt.glob('*.onnx'):
+                if '.int8.' in file.name:
+                    file.unlink()
+                else:
+                    file.rename(stt / (file.name.split('-')[0] + '.onnx'))
+            (stt / 'joiner.onnx').write_bytes(b'JOIN')
+            assemble(stt, tts, root / 'bundle')
+            self.assertEqual((root / 'bundle/stt/encoder.onnx').read_bytes(), b'ENC32')
+
+    def test_ambiguous_models_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stt, tts = make_sources(root)
+            (stt / 'encoder-other.int8.onnx').write_bytes(b'OTHER')
+            with self.assertRaisesRegex(ValueError, 'ambiguous encoder'):
+                assemble(stt, tts, root / 'bundle')
+
     def test_bundle_layout_config_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -59,7 +80,7 @@ class AssembleTest(unittest.TestCase):
 
             config = json.loads((bundle / "voice-runtime.json").read_text())
             self.assertEqual(config["stt"]["engine"], "sherpa-onnx-online-transducer")
-            self.assertEqual(config["stt"]["model_type"], "zipformer")
+            self.assertEqual(config["stt"]["model_type"], "auto")
             self.assertEqual(config["tts"]["engine"], "sherpa-onnx-vits")
             self.assertEqual(config["tts"]["data_dir"], "tts/espeak-ng-data")
             self.assertGreaterEqual(config["tts"]["speaker_id"], 0)

@@ -71,6 +71,7 @@ class TokitoVoiceRuntimeTest {
         val fixture = Fixture()
         fixture.runtime.initialize()
         fixture.runtime.startListening()
+        fixture.recognizer.onStop = { fixture.audio.emit(FloatArray(320)) }
         fixture.runtime.speak("Place the diode with the stripe facing USB.")
 
         assertEquals(2, fixture.recognizer.startCount)
@@ -93,6 +94,8 @@ class TokitoVoiceRuntimeTest {
         awaitLatch(fixture.synthesizer.entered)
 
         assertTrue(fixture.runtime.state.value is VoiceRuntimeState.Synthesizing)
+        repeat(8) { fixture.audio.emit(FloatArray(320) { if (it % 2 == 0) 0.15f else -0.15f }) }
+        assertEquals("Ambient sound must not interrupt synthesis", 1L, fixture.synthesizer.stopped.count)
         fixture.synthesizer.releasePlayback.countDown()
         started.await()
         assertTrue(fixture.runtime.state.value is VoiceRuntimeState.Speaking)
@@ -190,16 +193,20 @@ class TokitoVoiceRuntimeTest {
         var started = false
         var startCount = 0
         var stopCount = 0
+        var onStop: (() -> Unit)? = null
 
         override fun start() {
             started = true
             startCount++
         }
 
-        override fun accept(samples: FloatArray, sampleRate: Int) = Unit
+        override fun accept(samples: FloatArray, sampleRate: Int) {
+            check(started) { "recognizer is not listening" }
+        }
         override fun stop() {
             started = false
             stopCount++
+            onStop?.invoke()
         }
 
         override fun setListener(listener: StreamingRecognizer.Listener?) {

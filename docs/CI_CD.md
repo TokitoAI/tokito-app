@@ -42,3 +42,21 @@ ordinary build workers, or artifacts.
 
 Exact-device iQOO acceptance remains a separately recorded hardware gate. It
 cannot be replaced by CI, an emulator, or a successful package build.
+
+The unified app has optional device acceptance instrumentation under
+`apps/mobile/device-tests`. After importing signed bundles in Local models, build
+`:app:assembleRelease :app:assembleReleaseAndroidTest` with
+`-Ptokito.deviceTests=true`, install both APKs, and run
+`adb shell am instrument -w -r -e class dev.tokito.app.LocalModelsDeviceTest
+dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner`.
+This runs model resolution, multiple actual NPU generations, and speech playback
+inside `dev.tokito.app`. Model files stay in that app's private storage; the
+instrumentation APK has no production launcher. Local candidate models may
+also require `-Ptokito.models.allowEvaluation=true` as documented by the voice
+runtime. Do not set that property in publication builds.
+
+Keep the device awake and unlocked during instrumentation. Tests foreground the
+launcher; an OEM may suspend background NPU work while locked. Restore any temporary
+USB stay-awake setting afterward. Inspect the instrumentation summary, not only the
+ADB exit code: ADB can exit zero when tests failed. These checks do not certify
+held-out physical-board recognition or authorize candidate-model redistribution.

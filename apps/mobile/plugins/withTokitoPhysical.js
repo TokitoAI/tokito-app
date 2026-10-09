@@ -8,6 +8,7 @@ const {
 const SETTINGS_MARKER = "// tokito-physical: generated integration";
 const DEPENDENCY_MARKER = "// tokito-physical: native shell dependency";
 const REPOSITORY_MARKER = "// tokito-physical: sherpa release repository";
+const DEVICE_TEST_MARKER = "// tokito-physical: unified device acceptance";
 
 function withPhysicalSettings(config) {
   return withSettingsGradle(config, (result) => {
@@ -56,6 +57,24 @@ function withPhysicalDependency(config) {
         `dependencies {\n    ${DEPENDENCY_MARKER}\n    implementation project(':tokito-physical-shell')`,
       );
     }
+    if (!result.modResults.contents.includes(DEVICE_TEST_MARKER)) {
+      result.modResults.contents += `
+${DEVICE_TEST_MARKER}
+if (project.findProperty('tokito.deviceTests') == 'true') {
+  android {
+    testBuildType 'release'
+    defaultConfig { testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
+    sourceSets.androidTest.java.srcDir '../../device-tests'
+  }
+  dependencies {
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation project(':dialogue-runtime')
+    androidTestImplementation project(':voice-runtime')
+  }
+}
+`;
+    }
     return result;
   });
 }
@@ -88,6 +107,10 @@ allprojects {
 
 function withPhysicalMinSdk(config) {
   return withGradleProperties(config, (result) => {
+    // GenieX loads plugins by filesystem path from nativeLibraryDir.
+    const packaging = result.modResults.find((item) => item.key === "expo.useLegacyPackaging");
+    if (packaging) packaging.value = "true";
+    else result.modResults.push({ type: "property", key: "expo.useLegacyPackaging", value: "true" });
     const existing = result.modResults.find((item) => item.key === "android.minSdkVersion");
     if (existing) {
       existing.value = "27";

@@ -2,13 +2,13 @@
 """Assemble an operator-provisioned Sherpa ONNX voice bundle for the app.
 
 The Android voice runtime loads its models from app-private storage at
-`voice-models/sherpa-onnx-<version>/`, described by two files it verifies
+`models/voice/active/bundle/`, described by two files it verifies
 strictly: `voice-runtime.json` (engines, model file paths, TTS voice
 settings -- see `SherpaBundleConfig.load`) and `voice-models.manifest.json`
 (a full inventory whose per-file sizes/digests and canonical inventory
 digest are checked by `ModelInventory.verify`). Model binaries never enter
-Git (docs/RELEASE.md); this tool builds the bundle directory an operator
-pushes to the device.
+Git (docs/RELEASE.md); wrap this output as `bundle/` with build_model_bundle.py
+and import the signed voice ZIP through the unified model manager.
 
 The digest scheme replicates ModelInventory exactly: every file except the
 manifest itself is listed with its size and SHA-256, and the inventory
@@ -84,18 +84,23 @@ def assemble(
     """Builds the bundle from extracted k2-fsa archives: a streaming
     zipformer transducer directory and a vits-piper voice directory."""
 
-    def pick(directory: Path, stem: str) -> Path:
+    def pick(directory: Path, stem: str, quantized: bool = True) -> Path:
         # prefer the quantized variant where one exists; the fp32 decoder is
         # kept regardless (int8 transducer decoders are not recommended)
-        for name in (f"{stem}.{stt_variant}.onnx", f"{stem}.onnx"):
-            matches = sorted(directory.glob(f"*{name}"))
+        patterns = (f"{stem}*.{stt_variant}.onnx", f"{stem}*.onnx") if quantized else (f"{stem}*.onnx",)
+        for pattern in patterns:
+            matches = sorted(directory.glob(pattern))
+            if not quantized:
+                matches = [file for file in matches if not file.name.endswith('.int8.onnx')]
             if matches:
+                if len(matches) != 1:
+                    raise ValueError(f"ambiguous {stem} models in {directory}")
                 return matches[0]
         raise FileNotFoundError(f"no {stem} model found in {directory}")
 
-    encoder = pick(stt_dir, "encoder-epoch-99-avg-1")
-    decoder = next(iter(sorted(stt_dir.glob("decoder-*[!8].onnx"))), None) or pick(stt_dir, "decoder-epoch-99-avg-1")
-    joiner = pick(stt_dir, "joiner-epoch-99-avg-1")
+    encoder = pick(stt_dir, "encoder")
+    decoder = pick(stt_dir, "decoder", quantized=False)
+    joiner = pick(stt_dir, "joiner")
     stt_tokens = stt_dir / "tokens.txt"
     tts_model = next(iter(sorted(tts_dir.glob("*.onnx"))))
     tts_tokens = tts_dir / "tokens.txt"
@@ -123,7 +128,7 @@ def assemble(
         "languages": ["en"],
         "stt": {
             "engine": "sherpa-onnx-online-transducer",
-            "model_type": "zipformer",
+            "model_type": "auto",
             "encoder": "stt/encoder.onnx",
             "decoder": "stt/decoder.onnx",
             "joiner": "stt/joiner.onnx",
@@ -146,7 +151,7 @@ def assemble(
         "files": len(manifest["files"]),
         "total_bytes": total,
         "inventory_sha256": manifest["inventory_sha256"],
-        "device_path": f"files/voice-models/sherpa-onnx-{RUNTIME_VERSION}/",
+        "device_path": "files/models/voice/active/bundle/",
     }
 
 

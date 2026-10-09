@@ -33,7 +33,7 @@ internal class SherpaBackendFactory(
     private val config: VoiceRuntimeConfig,
 ) : VoiceBackendFactory {
     private val appContext = context.applicationContext
-    private val modelRoot = File(appContext.filesDir, "voice-models/sherpa-onnx-$SHERPA_VERSION")
+    private val modelRoot = File(appContext.filesDir, "models/voice/active/bundle")
     private val inventory = ModelInventory(modelRoot, SHERPA_VERSION)
 
     override suspend fun prepare(): PreparedBackend = withContext(Dispatchers.IO) {
@@ -90,7 +90,7 @@ internal data class SherpaBundleConfig(
                 "unsupported streaming recognizer engine"
             }
             val modelType = stt.getString("model_type")
-            require(modelType in setOf("zipformer", "zipformer2", "lstm")) {
+            require(modelType in setOf("auto", "zipformer", "zipformer2", "lstm")) {
                 "unsupported streaming recognizer model type"
             }
             val tts = document.getJSONObject("tts")
@@ -105,7 +105,7 @@ internal data class SherpaBundleConfig(
                 decoder = resolveFile(root, stt.getString("decoder")),
                 joiner = resolveFile(root, stt.getString("joiner")),
                 sttTokens = resolveFile(root, stt.getString("tokens")),
-                sttModelType = modelType,
+                sttModelType = if (modelType == "auto") "" else modelType,
                 ttsModel = resolveFile(root, tts.getString("model")),
                 ttsTokens = resolveFile(root, tts.getString("tokens")),
                 ttsDataDir = resolveDirectory(root, tts.getString("data_dir")),
@@ -292,7 +292,9 @@ private class SherpaSpeechSynthesizer(
             // Generate one bounded utterance, then retain cancellation during playback.
             val generated = tts.generate(text, bundle.ttsSpeakerId, bundle.ttsSpeed)
             check(generated.samples.isNotEmpty()) { "local TTS produced no audio" }
-            check(continueSynthesis.get()) { "local TTS was cancelled" }
+            // Touch interruption / focus loss is normal control flow, not a
+            // synthesis failure. The runtime reports SpeechFinished(interrupted).
+            if (!continueSynthesis.get()) return
             check(SystemClock.elapsedRealtime() < deadline) {
                 "local TTS exceeded its bounded deadline"
             }

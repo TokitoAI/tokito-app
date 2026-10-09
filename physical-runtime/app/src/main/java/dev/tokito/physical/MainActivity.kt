@@ -111,6 +111,20 @@ class MainActivity : AppCompatActivity() {
             windowInsets
         }
 
+        val voiceMargins = binding.voiceControls.layoutParams as android.widget.FrameLayout.LayoutParams
+        val voiceBaseStart = voiceMargins.marginStart
+        val voiceBaseBottom = voiceMargins.bottomMargin
+        ViewCompat.setOnApplyWindowInsetsListener(binding.voiceControls) { view, windowInsets ->
+            val insets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
+            view.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
+                marginStart = voiceBaseStart + maxOf(insets.left, insets.right)
+                bottomMargin = voiceBaseBottom + insets.bottom
+            }
+            windowInsets
+        }
+
         sessionId = requireNotNull(intent.getStringExtra(EXTRA_SESSION_ID)) {
             "Physical sessions must be opened through the Tokito session boundary"
         }
@@ -378,9 +392,20 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun respondLocally(utterance: String): String {
         val reference = boardReference
-            ?: return "No verified board reference is loaded."
-        val grounded = reference.index.groundedAnswer(utterance)
-            ?: return "I couldn't match that to verified ${reference.identity.model} data. Please repeat the component name."
+        val grounded = reference?.index?.groundedAnswer(utterance)
+        if (grounded == null) {
+            // The dialogue policy asks for evidence when a question refers to
+            // an unidentified component. General electronics questions do not
+            // require a board-specific reference.
+            return when (val result = dialogue.respond(DialogueRequest(
+                utterance = utterance,
+                deadlineMs = BuildConfig.DIALOGUE_TURN_DEADLINE_MS,
+            ))) {
+                is DialogueOutcome.Response -> result.text
+                is DialogueOutcome.Clarification -> result.question
+                is DialogueOutcome.ToolProposal -> error("No physical tools were offered for this conversation")
+            }
+        }
         grounded.boardTarget?.let { target ->
             val accepted = ar.highlightBoardTarget(target)
             android.util.Log.i(

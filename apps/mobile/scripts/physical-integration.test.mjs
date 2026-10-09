@@ -44,6 +44,8 @@ test("Physical runtime is embedded as libraries in the Tokito APK", async () => 
   }
   assert.match(physicalGradle, /id\("com\.android\.library"\)/);
   assert.doesNotMatch(physicalGradle, /applicationId\s*=/);
+  assert.doesNotMatch(physicalGradle, /isMinifyEnabled\s*=\s*true/,
+    "An embedded library must retain classes reached from the Expo bridge; shrink only in the final APK");
 });
 
 test("Expo bridge remains a low-rate control plane", async () => {

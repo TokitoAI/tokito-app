@@ -14,7 +14,10 @@ import zipfile
 
 MANIFEST = "model.manifest.json"
 SIGNATURE = "model.manifest.sig"
-ALLOWED_LICENSES = {"apache-2.0", "mit", "bsd-3-clause"}
+ALLOWED_LICENSES = {
+    "apache-2.0", "mit", "bsd-3-clause", "agpl-3.0-only",
+    "licenseref-kroko-piper-espeak-local-evaluation",
+}
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
@@ -98,7 +101,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("source", type=Path)
     result.add_argument("output", type=Path)
     result.add_argument("--signing-key", type=Path, required=True)
-    result.add_argument("--capability", choices=("dialogue", "vision"), required=True)
+    result.add_argument("--capability", choices=("dialogue", "vision", "voice"), required=True)
     result.add_argument("--model-id", required=True)
     result.add_argument("--model-revision", required=True)
     result.add_argument("--runtime-revision", default="1")

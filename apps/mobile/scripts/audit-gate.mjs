@@ -3,27 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-
-const EXCEPTIONS = new Map([
-  [
-    "GHSA-w3rx-r6r6-pgpr",
-    {
-      package: "image-size",
-      expires: "2026-09-30",
-      reason:
-        "Metro invokes the parser only during trusted local asset builds; upstream has no patched release yet.",
-    },
-  ],
-  [
-    "GHSA-5p2g-fcmc-qvqq",
-    {
-      package: "image-size",
-      expires: "2026-09-30",
-      reason:
-        "Metro invokes the parser only during trusted local asset builds; upstream has no patched release yet.",
-    },
-  ],
-]);
+import { verifiedDependencyRepairs } from "./dependency-patches.mjs";
 
 function advisoryId(advisory) {
   const match = advisory.url?.match(/\/advisories\/(GHSA-[A-Za-z0-9-]+)$/);
@@ -51,9 +31,11 @@ function rootAdvisories(report, name, visited = new Set()) {
   return roots;
 }
 
-export function evaluateAudit(report, now = new Date()) {
+export function evaluateAudit(report, repairs = new Map()) {
+  if (report.error || !report.vulnerabilities || typeof report.vulnerabilities !== "object") {
+    return { failures: ["npm audit did not return a valid vulnerability report"] };
+  }
   const failures = [];
-  const acknowledged = new Map();
   for (const [name, vulnerability] of Object.entries(report.vulnerabilities ?? {})) {
     if (!new Set(["high", "critical"]).has(vulnerability.severity)) continue;
     const roots = rootAdvisories(report, name).filter((advisory) =>
@@ -64,26 +46,11 @@ export function evaluateAudit(report, now = new Date()) {
       continue;
     }
     for (const advisory of roots) {
-      const exception = EXCEPTIONS.get(advisory.id);
-      if (!exception) {
-        failures.push(`${name}: unacknowledged ${advisory.id} (${advisory.title ?? advisory.name})`);
-        continue;
-      }
-      if (advisory.name !== exception.package) {
-        failures.push(
-          `${name}: ${advisory.id} moved from ${exception.package} to ${advisory.name}`,
-        );
-        continue;
-      }
-      const expiry = new Date(`${exception.expires}T23:59:59Z`);
-      if (now > expiry) {
-        failures.push(`${name}: ${advisory.id} exception expired on ${exception.expires}`);
-        continue;
-      }
-      acknowledged.set(advisory.id, exception);
+      if (repairs.get(advisory.id) === advisory.name) continue;
+      failures.push(`${name}: unresolved ${advisory.id} (${advisory.title ?? advisory.name})`);
     }
   }
-  return { failures: [...new Set(failures)], acknowledged };
+  return { failures: [...new Set(failures)] };
 }
 
 function loadAuditReport() {
@@ -109,20 +76,17 @@ function loadAuditReport() {
 
 function main() {
   const report = loadAuditReport();
-  const { failures, acknowledged } = evaluateAudit(report);
-  for (const [id, exception] of acknowledged) {
-    console.log(
-      `ACKNOWLEDGED ${id} package=${exception.package} expires=${exception.expires}: ${exception.reason}`,
-    );
-  }
+  const repairs = verifiedDependencyRepairs(report);
+  const { failures } = evaluateAudit(report, repairs);
+  for (const [id, name] of repairs) console.log(`REPAIRED ${id} package=${name}: installed source SHA-256 verified`);
   if (failures.length > 0) {
     for (const failure of failures) console.error(`BLOCKED ${failure}`);
     return 1;
   }
   const counts = report.metadata?.vulnerabilities ?? {};
   console.log(
-    `Dependency audit passed: critical=${counts.critical ?? 0} high=${counts.high ?? 0}; ` +
-      `${acknowledged.size} bounded upstream advisories acknowledged.`,
+    `Dependency audit passed: no unresolved high/critical advisories; upstream report critical=${counts.critical ?? 0} high=${counts.high ?? 0}; ` +
+      `${repairs.size} source-verified repairs.`,
   );
   return 0;
 }

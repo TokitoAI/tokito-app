@@ -200,21 +200,22 @@ class TokitoVoiceRuntime internal constructor(
         lifecycleMutex.withLock {
             check(mode == Mode.READY || mode == Mode.LISTENING || mode == Mode.AWAITING_WAKE) { "voice runtime is not ready to speak" }
             resumeMode = mode.takeIf { it == Mode.LISTENING || it == Mode.AWAITING_WAKE }
-            if (resumeMode != null) withContext(Dispatchers.Default) { requireBackend().recognizer.stop() }
+            val previousMode = mode
+            withContext(Dispatchers.Default) {
+                val recognizer = requireBackend().recognizer
+                synchronized(recognizer) {
+                    mode = Mode.SPEAKING
+                    if (resumeMode != null) recognizer.stop()
+                }
+            }
             if (!focusGate.acquireSpeech { scope.launch { interruptSpeech() } }) {
                 if (resumeMode != null) requireBackend().recognizer.start()
+                mode = previousMode
                 throw IllegalStateException("audio focus denied")
             }
             speechInterrupted.set(false)
             mode = Mode.SPEAKING
-            bargeInDetector = if (audioInput.supportsEchoCancellation) {
-                AdaptiveBargeInDetector(audioInput.sampleRate, config.bargeIn) { rms, threshold ->
-                    _events.tryEmit(VoiceEvent.BargeInDetected(rms, threshold))
-                    interruptSpeechLocked()
-                }
-            } else {
-                null
-            }
+            bargeInDetector = null
             _state.value = VoiceRuntimeState.Synthesizing(utteranceId)
         }
 
@@ -222,6 +223,15 @@ class TokitoVoiceRuntime internal constructor(
         try {
             withContext(Dispatchers.IO) {
                 requireBackend().synthesizer.speak(text) {
+                    // Only detect interruption once there is actual playback.
+                    // Ambient input during synthesis must not cancel a reply
+                    // before the user has heard it.
+                    if (audioInput.supportsEchoCancellation) {
+                        bargeInDetector = AdaptiveBargeInDetector(audioInput.sampleRate, config.bargeIn) { rms, threshold ->
+                            _events.tryEmit(VoiceEvent.BargeInDetected(rms, threshold))
+                            interruptSpeechLocked()
+                        }
+                    }
                     _state.value = VoiceRuntimeState.Speaking(utteranceId)
                     _events.tryEmit(VoiceEvent.SpeechStarted(utteranceId, text))
                     onPlaybackStarted()
@@ -284,7 +294,12 @@ class TokitoVoiceRuntime internal constructor(
                 }
             }.onFailure(::handleRecognitionFailure)
             Mode.LISTENING -> runCatching {
-                requireBackend().recognizer.accept(samples, audioInput.sampleRate)
+                val recognizer = requireBackend().recognizer
+                synchronized(recognizer) {
+                    // A queued microphone frame may have observed LISTENING
+                    // immediately before the playback transition stopped STT.
+                    if (mode == Mode.LISTENING) recognizer.accept(samples, audioInput.sampleRate)
+                }
             }.onFailure(::handleRecognitionFailure)
             Mode.SPEAKING -> bargeInDetector?.accept(samples)
             else -> Unit
