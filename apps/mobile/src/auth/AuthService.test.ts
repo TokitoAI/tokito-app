@@ -6,6 +6,12 @@ import type { Account, CompanionClientPort, Session } from "../native/types";
 import { CompanionError } from "../native/types";
 
 class FakeClient implements CompanionClientPort {
+  online = true;
+  forgotten: string | null = null;
+  async resolveIdentity(token: string): Promise<{ account: Account; online: boolean }> {
+    return { account: await this.me(token), online: this.online };
+  }
+  async forgetIdentity(token: string): Promise<void> { this.forgotten = token; }
   base = "https://api.tokito.dev";
   failMe = false;
   lastOtpEmail: string | null = null;
@@ -78,8 +84,24 @@ describe("AuthService", () => {
   it("signOut clears store", async () => {
     const store = new MemorySessionStore();
     await store.setSession({ token: "jwt-1", email: "u@lab.dev", plan: "free" });
-    const auth = new AuthService(new FakeClient(), store);
+    const client = new FakeClient();
+    const auth = new AuthService(client, store);
     await auth.signOut();
     assert.equal(await store.getSession(), null);
+    assert.equal(client.forgotten, "jwt-1");
+  });
+
+  it("restores only the native verified identity during an outage", async () => {
+    const store = new MemorySessionStore();
+    await store.setSession({ token: "jwt-1", email: "untrusted@lab.dev", plan: "pro" });
+    const client = new FakeClient();
+    client.online = false;
+    const state = await new AuthService(client, store).restore();
+    assert.equal(state.status, "signed_in");
+    if (state.status === "signed_in") {
+      assert.equal(state.online, false);
+      assert.equal(state.account.email, "u@lab.dev");
+      assert.equal(state.account.plan, "free");
+    }
   });
 });

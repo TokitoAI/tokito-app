@@ -1537,11 +1537,13 @@ dependencies = [
 name = "tokito-companion-core"
 version = "0.2.2"
 dependencies = [
+ "base64",
  "futures-util",
  "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "uuid",

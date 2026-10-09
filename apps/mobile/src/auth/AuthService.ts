@@ -4,7 +4,7 @@ import type { SessionStore } from "./sessionStore";
 
 export type AuthState =
   | { status: "signed_out" }
-  | { status: "signed_in"; session: Session; account: Account };
+  | { status: "signed_in"; session: Session; account: Account; online: boolean };
 
 /**
  * OTP sign-in + session restore against Tokito Cloud via the UniFFI client port.
@@ -44,14 +44,14 @@ export class AuthService {
       return { status: "signed_out" };
     }
     try {
-      const account = await this.client.me(session.token);
+      const { account, online } = await this.client.resolveIdentity(session.token);
       const refreshed: Session = {
         token: session.token,
         email: account.email,
         plan: account.plan,
       };
       await this.store.setSession(refreshed);
-      return { status: "signed_in", session: refreshed, account };
+      return { status: "signed_in", session: refreshed, account, online };
     } catch (err) {
       if (err instanceof CompanionError && err.kind === "Unauthorized") {
         await this.store.clear();
@@ -62,7 +62,12 @@ export class AuthService {
   }
 
   async signOut(): Promise<void> {
-    await this.store.clear();
+    const session = await this.store.getSession();
+    try {
+      if (session) await this.client.forgetIdentity(session.token);
+    } finally {
+      await this.store.clear();
+    }
   }
 
   async currentAccount(session: Session): Promise<Account> {

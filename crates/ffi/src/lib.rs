@@ -6,6 +6,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod conversations;
+mod identity;
+mod preview;
+pub use identity::ResolvedIdentity;
 mod reviews;
 pub use conversations::{ConversationListener, ConversationSession, RunSubscription};
 pub use reviews::ReviewSession;
@@ -464,7 +467,10 @@ impl CompanionClient {
             return Err(CompanionError::Unexpected);
         }
         let base_url = tokito_companion_core::conversations::origin(&self.base_url)?;
-        let account = runtime().block_on(core_me(&base_url, &token))?;
+        let verified = identity::identity_store(&state_path)?;
+        let account = runtime()
+            .block_on(verified.resolve(&base_url, &token))?
+            .account;
         // Never reopen an unbound legacy outbox under a different account.
         // Project-filtered journals need independent cursors as well.
         use sha2::{Digest, Sha256};
@@ -477,14 +483,10 @@ impl CompanionClient {
         let state_path = Path::new(&state_path).with_file_name(format!("sync-{key}.sqlite3"));
         listener.on_status("connecting".into());
         let store = Arc::new(SyncStateStore::open(&state_path)?);
-        let bootstrap = runtime().block_on(async {
-            register_device(&base_url, &token, &device_id, &device_label, &platform).await?;
-            bootstrap_realtime(&base_url, &token, project_id.as_deref()).await
-        })?;
-        store.apply_bootstrap(&bootstrap, project_id.as_deref())?;
+        let cached = store.resources(project_id.as_deref())?;
         let resources_json =
-            serde_json::to_string(&bootstrap.resources).map_err(|_| CompanionError::Unexpected)?;
-        listener.on_bootstrap(bootstrap.cursor, resources_json);
+            serde_json::to_string(&cached).map_err(|_| CompanionError::Unexpected)?;
+        listener.on_bootstrap(store.cursor()?, resources_json);
         replay_sync_conflicts(&store, listener.as_ref())?;
 
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -493,14 +495,14 @@ impl CompanionClient {
             stop: stop_tx.clone(),
             wake_outbox: wake_tx,
             store: Arc::clone(&store),
-            device_id,
+            device_id: device_id.clone(),
         });
 
         runtime().spawn(run_sync_session(
             base_url,
             token,
             project_id,
-            bootstrap.cursor,
+            (device_id, device_label, platform),
             store,
             listener,
             stop_tx,
@@ -532,13 +534,49 @@ async fn run_sync_session(
     base_url: String,
     token: String,
     project_id: Option<String>,
-    cursor: u64,
+    device: (String, String, String),
     store: Arc<SyncStateStore>,
     listener: Arc<dyn SyncListener>,
     stop_tx: watch::Sender<bool>,
-    stop_rx: watch::Receiver<bool>,
+    mut stop_rx: watch::Receiver<bool>,
     wake_rx: mpsc::UnboundedReceiver<()>,
 ) {
+    // Reconnection must finish registration and a consistent bootstrap before
+    // any queued writes or SSE replay. Cached reads remain available meanwhile.
+    let cursor = loop {
+        if *stop_rx.borrow() {
+            return;
+        }
+        let connect = async {
+            register_device(&base_url, &token, &device.0, &device.1, &device.2).await?;
+            let snapshot = bootstrap_realtime(&base_url, &token, project_id.as_deref()).await?;
+            store.apply_bootstrap(&snapshot, project_id.as_deref())?;
+            let json =
+                serde_json::to_string(&snapshot.resources).map_err(|_| CloudError::Unexpected)?;
+            listener.on_bootstrap(snapshot.cursor, json);
+            Ok::<u64, CloudError>(snapshot.cursor)
+        };
+        let result = tokio::select! {
+            result = connect => result,
+            _ = stop_rx.changed() => return,
+        };
+        match result {
+            Ok(cursor) => break cursor,
+            Err(CloudError::Network(_) | CloudError::Unavailable) => {
+                listener.on_status("reconnecting".into())
+            }
+            Err(error) => {
+                let _ = stop_tx.send(true);
+                listener.on_error(error.to_string());
+                listener.on_status("stopped".into());
+                return;
+            }
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {},
+            _ = stop_rx.changed() => return,
+        }
+    };
     let stream_store = Arc::clone(&store);
     let stream_listener = Arc::clone(&listener);
     let status_listener = Arc::clone(&listener);
@@ -656,6 +694,62 @@ mod tests {
             self.0.lock().unwrap().push((command, version, payload));
         }
         fn on_error(&self, _: String) {}
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn offline_sync_does_not_transmit_outbox_before_registration_and_is_cancellable() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let store = Arc::new(SyncStateStore::open(Path::new(":memory:")).unwrap());
+        store
+            .enqueue_next(&SyncCommand {
+                device_id: "device".into(),
+                command_id: "pending".into(),
+                project_id: "project".into(),
+                design_id: Some("design".into()),
+                resource: "chat".into(),
+                base_version: 0,
+                payload: serde_json::json!({"text":"keep me"}),
+            })
+            .unwrap();
+        let (stop, receiver) = watch::channel(false);
+        let (_wake, wake_rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(run_sync_session(
+            server.uri(),
+            "token".into(),
+            None,
+            ("device".into(), "Test".into(), "android".into()),
+            store.clone(),
+            Arc::new(RecoveryListener::default()),
+            stop.clone(),
+            receiver,
+            wake_rx,
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if !server.received_requests().await.unwrap().is_empty() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.pending().unwrap().len(), 1);
+        assert!(server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|request| request.url.path().ends_with("/devices")));
     }
 
     #[test]

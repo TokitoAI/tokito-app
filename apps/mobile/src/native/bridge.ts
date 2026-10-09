@@ -241,6 +241,20 @@ export class NativeCompanionClient implements CloudClient {
     }
   }
 
+  async resolveIdentity(token: string): Promise<{ account: Account; online: boolean }> {
+    try {
+      const result = JSON.parse(await this.native.resolveIdentity(this.base, token));
+      if (typeof result?.online !== "boolean") throw CompanionError.unexpected();
+      return { account: { email: requireString(result?.account?.email, "email"), plan: requireString(result?.account?.plan, "plan") }, online: result.online };
+    }
+    catch (err) { throw mapNativeError(err); }
+  }
+
+  async forgetIdentity(token: string): Promise<void> {
+    try { await this.native.forgetIdentity(this.base, token); }
+    catch (err) { throw mapNativeError(err); }
+  }
+
   async listProjects(token: string): Promise<ProjectListItem[]> {
     try {
       return await this.native.listProjects(this.base, token);

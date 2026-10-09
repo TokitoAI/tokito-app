@@ -17,3 +17,15 @@ status when showing plan chrome.
 
 **How to apply:** map status codes in `CloudError` from the public API contract.
 Prefer wiremock + fixtures over live network in CI.
+
+Offline account restore uses the Rust verified-identity store, not the email or
+plan in JavaScript secure-session state. Only a successful `/v1/auth/me` response
+creates the origin/token-fingerprint binding. The local retention window is at
+most 24 hours and never exceeds JWT expiry; decoding expiry is not signature
+verification. Raw bearer tokens are not stored in this SQLite cache.
+
+**Why:** an outage must not turn an unverified UI account into permission to open
+another account's project cache. An explicit 401 revokes the binding; malformed
+responses fail closed. Sign-out clears both the binding and secure session.
+Cached identity permits private local reads, not server authorization or a claim
+that the update transport is live.

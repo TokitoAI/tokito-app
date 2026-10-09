@@ -9,7 +9,6 @@ import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
 import { ProjectChat } from "../chat/ProjectChat";
-import { schematicSnapshots } from "../viewer/snapshotRuntime";
 import { ProjectReview } from "../review/ProjectReview";
 import { chatSheets } from "../chat/sheetContext";
 import { canonicalBom } from "../sync/canonicalBom";
@@ -55,7 +54,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const schematicResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "schematic");
   const projectedBom = bomResource === undefined ? null : canonicalBom(bomResource.payload, schematicResource?.payload);
   const displayedBom = projectedBom?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
-  const hasSnapshot = detail !== null && activeDesignId !== null && schematicSnapshots(detail, activeDesignId).length > 0;
+  const hasSnapshot = chatSheets(schematicResource?.payload).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
   const reload = useCallback(async () => {
@@ -103,7 +102,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
               </Card>
               <Card onPress={hasSnapshot && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasSnapshot && styles.cardDisabled]}>
                 <View style={styles.schematicIcon}><Circuitry size={30} color={tokens.accent} /></View>
-                <View style={styles.flex}><Text style={styles.cardTitle}>{hasSnapshot ? "View schematic snapshot" : "No published snapshot"}</Text><Muted>{hasSnapshot ? "Inspect the published drawing. Newer edits may not be included." : "Publish a drawing from Tokito desktop to preview this design."}</Muted></View>
+                <View style={styles.flex}><Text style={styles.cardTitle}>{hasSnapshot ? "View schematic" : "No schematic yet"}</Text><Muted>{hasSnapshot ? "Inspect the current synchronized drawing." : "A drawing will appear when this design has a synchronized schematic."}</Muted></View>
                 {hasSnapshot ? <Text style={styles.open}>View</Text> : null}
               </Card>
               {svgArtifacts.length > 0 ? <View style={styles.sectionHead}><SectionLabel>Published previews</SectionLabel></View> : null}

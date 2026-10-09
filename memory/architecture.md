@@ -69,10 +69,22 @@ it omits the acknowledged resource. Never advance the replay cursor from an
 HTTP receipt: that would skip unrelated preceding events. A resource revision
 has immutable content; contradictory same-revision payloads fail atomically.
 
+Sync startup emits the account-scoped persisted resources before connecting.
+Device registration and a consistent bootstrap must succeed before the outbox
+or SSE worker starts. Network/service outages retry cancellably, keeping queued
+commands intact; protocol/authentication failures stop instead of inventing a
+successful connection. Cached account restore is specified in `auth-contract.md`.
+
 **How to apply:** scope native callbacks to their subscription, reject older
 resource revisions, guard late HTTP responses after navigation, and preserve
 the published snapshot's provenance. Never approximate schematic symbols with
 generic boxes to make an unavailable preview appear successful.
+
+The current schematic viewer uses the revision-bound canonical preview endpoint,
+not legacy published artifacts or getProject success. Rust verifies project,
+design, sheet, revision and SHA-256 before passing SVG to the inert image viewer.
+The UI chooses actual synchronized sheets, rejects late responses after navigation,
+and labels a retained older drawing stale while requesting the new revision.
 
 **Why:** routing every utterance through the board-reference index disabled general
 conversation even when the local LLM was installed and healthy.

@@ -132,6 +132,11 @@ async function request(input: string, init?: RequestInit): Promise<Response> {
 }
 
 export class HttpCloudClient implements CompanionClientPort {
+  // Node/CI transport has no device-private identity cache.
+  async resolveIdentity(token: string): Promise<{ account: Account; online: boolean }> {
+    return { account: await this.me(token), online: true };
+  }
+  async forgetIdentity(token: string): Promise<void> { void token; /* This HTTP test client stores no identity. */ }
   readonly base: string;
 
   constructor(baseUrl: string) {

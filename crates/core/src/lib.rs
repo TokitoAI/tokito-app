@@ -10,11 +10,13 @@ pub mod base_url;
 pub mod conversation_store;
 pub mod conversations;
 pub mod error;
+pub mod preview;
 pub mod realtime;
 pub mod reviews;
 mod sse;
 pub mod sync;
 pub mod sync_state;
+pub mod verified_identity;
 
 pub use auth::{me, oauth_exchange, otp_request, otp_verify, CloudAccount, CloudSession};
 pub use base_url::{resolve_base_url, DEFAULT_CLOUD_BASE};

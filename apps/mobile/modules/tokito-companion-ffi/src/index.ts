@@ -28,6 +28,7 @@ export type NativeAccount = {
 };
 
 export type TokitoCompanionFfiNative = {
+  getSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string>;
   openReviews(baseUrl: string, token: string, sessionId: string): Promise<string>;
   closeReviews(sessionId: string): Promise<void>;
   loadReviews(sessionId: string, project: string, design: string): Promise<string>;
@@ -54,6 +55,8 @@ export type TokitoCompanionFfiNative = {
   otpVerify(baseUrl: string, email: string, code: string): Promise<NativeSession>;
   oauthExchange(baseUrl: string, code: string): Promise<NativeSession>;
   me(baseUrl: string, token: string): Promise<NativeAccount>;
+  resolveIdentity(baseUrl: string, token: string): Promise<string>;
+  forgetIdentity(baseUrl: string, token: string): Promise<void>;
   listProjects(baseUrl: string, token: string): Promise<
     Array<{ id: string; name: string; slug: string; updated_at: string }>
   >;

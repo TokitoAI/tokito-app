@@ -10,6 +10,8 @@ description = "Tokito Companion domain client — Tokito Cloud auth and sync con
 
 [dependencies]
 futures-util = "0.3"
+base64 = "0.22"
+sha2 = "0.10"
 reqwest.workspace = true
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde.workspace = true

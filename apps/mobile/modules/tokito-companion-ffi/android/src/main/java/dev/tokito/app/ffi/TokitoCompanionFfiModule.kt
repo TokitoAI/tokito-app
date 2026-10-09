@@ -50,6 +50,10 @@ class TokitoCompanionFfiModule : Module() {
       CompanionClient(baseUrl).baseUrl()
     }
 
+    AsyncFunction("getSchematicPreview") { base: String, token: String, project: String, design: String, version: String, sheet: String ->
+      runFfi { uniffi.tokito_companion_ffi.getSchematicPreview(base, token, project, design, version.toULong(), sheet) }
+    }
+
     AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String ->
       runFfi {
         require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
@@ -179,6 +183,21 @@ class TokitoCompanionFfiModule : Module() {
           "email" to account.email,
           "plan" to account.plan,
         )
+      }
+    }
+
+    AsyncFunction("resolveIdentity") { baseUrl: String, token: String ->
+      runFfi {
+        val context = requireNotNull(appContext.reactContext)
+        val identity = CompanionClient(baseUrl).resolveIdentity(token, context.filesDir.resolve("tokito/verified-identity.sqlite3").absolutePath)
+        JSONObject(mapOf("account" to mapOf("email" to identity.account.email, "plan" to identity.account.plan), "online" to identity.online)).toString()
+      }
+    }
+
+    AsyncFunction("forgetIdentity") { baseUrl: String, token: String ->
+      runFfi {
+        val context = requireNotNull(appContext.reactContext)
+        CompanionClient(baseUrl).forgetIdentity(token, context.filesDir.resolve("tokito/verified-identity.sqlite3").absolutePath)
       }
     }
 
