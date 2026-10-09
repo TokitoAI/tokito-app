@@ -651,6 +651,18 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    #[test]
+    fn cancelled_board_request_never_executes_or_restarts() {
+        let request = BoardSymbolRequest::new(
+            "https://example.invalid".into(),
+            "tenant-key".repeat(4),
+            "board@1".into(),
+        );
+        request.cancel();
+        assert_eq!(request.execute(), Err(CompanionError::Unavailable));
+        assert_eq!(request.execute(), Err(CompanionError::Unavailable));
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn blocking_otp_verify_round_trip() {
         let server = MockServer::start().await;

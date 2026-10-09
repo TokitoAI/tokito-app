@@ -523,7 +523,7 @@ class MainActivity : AppCompatActivity() {
         val identity = boardReference?.identity
         binding.generateSymbolsButton.visibility = if (BoardSymbolServices.active != null) View.VISIBLE else View.GONE
         binding.generateSymbolsButton.isEnabled = arRegistered && identity?.placementBound == true &&
-            identity?.revision != null && symbolJob?.isActive != true
+            identity.revision != null && symbolJob?.isActive != true
     }
 
     private fun requestBoardSymbolDrafts() {
@@ -542,7 +542,8 @@ class MainActivity : AppCompatActivity() {
             .setMessage(getString(R.string.symbol_generation_consent, reference.identity.model, reference.identity.revision))
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.generate_symbols) { _, _ ->
-                if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision) return@setPositiveButton
+                if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision ||
+                    BoardSymbolServices.active !== service || symbolJob?.isActive == true) return@setPositiveButton
                 val progress = MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.generating_symbols)
                     .setMessage(R.string.generating_symbols_detail)

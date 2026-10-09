@@ -41,14 +41,15 @@ class TokitoCompanionFfiModule : Module() {
       subscriptions.values.forEach { it.stop() }
       subscriptions.clear()
       BoardSymbolServices.active = null
-      symbolRequests.forEach { it.cancel() }
-      symbolExecutor.shutdownNow()
+      symbolRequests.forEach { runCatching { it.cancel() } }
+      // Cancelled queued calls must run their finally block to release UniFFI objects.
+      symbolExecutor.shutdown()
     }
 
     AsyncFunction("configureBoardSymbolService") { baseUrl: String?, token: String? ->
       if (baseUrl == null || token == null) {
         BoardSymbolServices.active = null
-        symbolRequests.forEach { it.cancel() }
+        symbolRequests.forEach { runCatching { it.cancel() } }
       } else {
         val endpoint = java.net.URI(baseUrl)
         require(endpoint.scheme == "https" && endpoint.host != null && endpoint.rawUserInfo == null &&
@@ -60,8 +61,8 @@ class TokitoCompanionFfiModule : Module() {
           suspendCancellableCoroutine { continuation ->
             val request = BoardSymbolRequest(baseUrl, token, revision)
             symbolRequests.add(request)
-            continuation.invokeOnCancellation { request.cancel() }
-            symbolExecutor.execute {
+            continuation.invokeOnCancellation { runCatching { request.cancel() } }
+            val operation = Runnable {
               try {
                 val result = request.execute()
                 if (continuation.isActive) continuation.resume(result)
@@ -73,6 +74,15 @@ class TokitoCompanionFfiModule : Module() {
                 symbolRequests.remove(request)
                 request.close()
               }
+            }
+            try {
+              symbolExecutor.execute(operation)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+              symbolRequests.remove(request)
+              request.close()
+              if (continuation.isActive) continuation.resumeWithException(
+                IllegalStateException("Symbol generation is unavailable."),
+              )
             }
           }
         }
