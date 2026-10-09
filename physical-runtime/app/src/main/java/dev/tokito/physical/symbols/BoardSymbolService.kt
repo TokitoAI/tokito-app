@@ -79,7 +79,11 @@ object BoardSymbolDrafts {
                     append("Datasheet citations: ${symbol.getJSONArray("citations").length()}\n\n")
                 }
                 "abstained" -> append(": needs verified part and datasheet evidence\n\n")
-                else -> append(": service unavailable; try again later\n\n")
+                else -> append(if (part.optString("code") == "result_size_limit") {
+                    ": draft is too large for mobile review\n\n"
+                } else {
+                    ": service unavailable; try again later\n\n"
+                })
             }
         }
     }

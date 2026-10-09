@@ -46,7 +46,7 @@ import java.io.File
 import org.json.JSONObject
 import dev.tokito.physical.symbols.BoardSymbolServices
 import dev.tokito.physical.symbols.BoardSymbolDrafts
-import kotlinx.coroutines.Job
+import dev.tokito.physical.symbols.BoardSymbolOperation
 import kotlinx.coroutines.CancellationException
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sessionId: String
     private lateinit var resourceGovernor: DeviceResourceGovernor
     private var arRegistered = false
-    private var symbolJob: Job? = null
+    private val symbolOperation by lazy { BoardSymbolOperation(lifecycleScope, ::updateSymbolAction) }
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        symbolJob?.cancel()
+        symbolOperation.cancel()
         if (::call.isInitialized) lifecycleScope.launch { call.stop() }
         if (::ar.isInitialized) ar.stop()
         super.onStop()
@@ -523,13 +523,13 @@ class MainActivity : AppCompatActivity() {
         val identity = boardReference?.identity
         binding.generateSymbolsButton.visibility = if (BoardSymbolServices.active != null) View.VISIBLE else View.GONE
         binding.generateSymbolsButton.isEnabled = arRegistered && identity?.placementBound == true &&
-            identity.revision != null && symbolJob?.isActive != true
+            identity.revision != null && !symbolOperation.busy
     }
 
     private fun requestBoardSymbolDrafts() {
         val reference = boardReference ?: return
         val service = BoardSymbolServices.active ?: return
-        if (!arRegistered || !reference.identity.placementBound || reference.identity.revision == null || symbolJob?.isActive == true) return
+        if (!arRegistered || !reference.identity.placementBound || reference.identity.revision == null || symbolOperation.busy) return
         val contextRevision = reference.identity.contextRevision
         val expectedContext = sessionStore.session(sessionId)?.context?.contextRevision
         if (expectedContext != null && expectedContext != contextRevision) {
@@ -543,23 +543,25 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(R.string.generate_symbols) { _, _ ->
                 if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision ||
-                    BoardSymbolServices.active !== service || symbolJob?.isActive == true) return@setPositiveButton
+                    BoardSymbolServices.active !== service || symbolOperation.busy) return@setPositiveButton
                 val progress = MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.generating_symbols)
                     .setMessage(R.string.generating_symbols_detail)
-                    .setNegativeButton(android.R.string.cancel) { _, _ -> symbolJob?.cancel() }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> symbolOperation.cancel() }
                     .setCancelable(false).create()
                 progress.show()
-                symbolJob = lifecycleScope.launch {
+                symbolOperation.start {
                     try {
                         val raw = service.generate(contextRevision)
-                        if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision) return@launch
+                        if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision ||
+                            BoardSymbolServices.active !== service) return@start
                         val result = withContext(Dispatchers.IO) {
                             BoardSymbolDrafts.validate(raw, contextRevision).also {
                                 BoardSymbolDrafts.save(filesDir, raw, contextRevision)
                             }
                         }
-                        if (!arRegistered) return@launch
+                        if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision ||
+                            BoardSymbolServices.active !== service) return@start
                         val text = android.widget.TextView(this@MainActivity).apply {
                             text = BoardSymbolDrafts.summary(result)
                             setPadding(24, 16, 24, 16)
@@ -578,9 +580,6 @@ class MainActivity : AppCompatActivity() {
                             .setPositiveButton(android.R.string.ok, null).show()
                     } finally {
                         progress.dismiss()
-                        // A new coroutine has not been installed while the action is busy.
-                        symbolJob = null
-                        updateSymbolAction()
                     }
                 }
                 updateSymbolAction()
@@ -692,7 +691,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderArState(state: ArSessionController.State) {
         arRegistered = state.registered
-        if (!arRegistered) symbolJob?.cancel()
+        if (!arRegistered) symbolOperation.cancel()
         updateSymbolAction()
         binding.trackingChip.text = state.label
         binding.trackingChip.contentDescription = state.detail

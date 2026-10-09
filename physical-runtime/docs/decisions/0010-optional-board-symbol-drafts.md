@@ -25,7 +25,10 @@ or published native catalog symbols. Automated publication gates are unchanged.
 Transport forbids redirects and embedded URL credentials, bounds response bytes
 and time, and carries cancellation through UniFFI. Lifecycle stop and registration
 loss cancel work; stale results are discarded. Private drafts remain local review
-artifacts and cannot alter authored placement, accepted pin evidence, design data,
+artifacts. The request remains busy until cancellation cleanup completes; a new
+request cannot overwrite the operation being cleaned up. The active service and
+board context are checked again after local persistence before results appear.
+Private drafts cannot alter authored placement, accepted pin evidence, design data,
 Cloud realtime or the catalog. The tenant key is stored in Expo SecureStore,
 held only in memory by the configured port, and removable from Local models.
 

@@ -73,3 +73,9 @@ minimum Android SDK is 27. LiteRT is pinned to 1.4.1 because Expo 57's Pika
 compiler supports Kotlin 2.1.x while LiteRT 2.2 metadata requires Kotlin 2.3;
 do not upgrade either side independently without building the unified APK.
 
+Optional board symbol draft operations use a lifecycle-confined
+`BoardSymbolOperation`. Cancellation does not release the busy state until the
+job completes cleanup, and immediate completion cannot leave a stale job busy.
+Results are rechecked against the active service and exact board context after
+local persistence. These are private drafts, never accepted assembly evidence.
+

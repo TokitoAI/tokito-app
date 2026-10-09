@@ -22,4 +22,12 @@ class BoardSymbolDraftsTest {
         document.getJSONArray("components").put(JSONObject("""{"reference":"U1","status":"existing"}"""))
         assertThrows(IllegalArgumentException::class.java) { BoardSymbolDrafts.validate(document.toString(), "board@1") }
     }
+
+    @Test fun oversizedDraftExplainsTheReviewLimit() {
+        val document = JSONObject(raw)
+        document.getJSONArray("components").getJSONObject(0)
+            .put("status", "unavailable").put("code", "result_size_limit")
+        val validated = BoardSymbolDrafts.validate(document.toString(), "board@1")
+        assertTrue(BoardSymbolDrafts.summary(validated).contains("too large for mobile review"))
+    }
 }
