@@ -80,6 +80,21 @@ impl VerifiedIdentityStore {
         Ok(())
     }
 
+    /// Read a previously verified binding for local data only. Never use this
+    /// as server authorization or to claim that a connection is live.
+    pub fn cached_account(
+        &self,
+        origin: &str,
+        token: &str,
+    ) -> Result<Option<CloudAccount>, CloudError> {
+        let origin = crate::conversations::origin(origin)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| CloudError::Unexpected)?
+            .as_secs();
+        self.cached(&origin, token, now)
+    }
+
     /// A transport outage may reopen only an exact previously verified binding.
     /// Explicit rejection always revokes it; malformed responses fail closed.
     pub async fn resolve(&self, origin: &str, token: &str) -> Result<VerifiedIdentity, CloudError> {

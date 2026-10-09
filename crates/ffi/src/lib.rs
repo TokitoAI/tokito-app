@@ -501,6 +501,7 @@ impl CompanionClient {
         runtime().spawn(run_sync_session(
             base_url,
             token,
+            state_path.to_string_lossy().into_owned(),
             project_id,
             (device_id, device_label, platform),
             store,
@@ -533,6 +534,7 @@ fn replay_sync_conflicts(
 async fn run_sync_session(
     base_url: String,
     token: String,
+    identity_path: String,
     project_id: Option<String>,
     device: (String, String, String),
     store: Arc<SyncStateStore>,
@@ -566,6 +568,10 @@ async fn run_sync_session(
                 listener.on_status("reconnecting".into())
             }
             Err(error) => {
+                if matches!(error, CloudError::Unauthorized) {
+                    let _ = identity::identity_store(&identity_path)
+                        .and_then(|store| store.revoke(&base_url, &token).map_err(Into::into));
+                }
                 let _ = stop_tx.send(true);
                 listener.on_error(error.to_string());
                 listener.on_status("stopped".into());
@@ -612,6 +618,10 @@ async fn run_sync_session(
     };
     let _ = stop_tx.send(true);
     if let Err(error) = result {
+        if matches!(error, CloudError::Unauthorized) {
+            let _ = identity::identity_store(&identity_path)
+                .and_then(|store| store.revoke(&base_url, &token).map_err(Into::into));
+        }
         listener.on_error(error.to_string());
     }
     listener.on_status("stopped".into());
@@ -720,6 +730,7 @@ mod tests {
         let task = tokio::spawn(run_sync_session(
             server.uri(),
             "token".into(),
+            String::new(),
             None,
             ("device".into(), "Test".into(), "android".into()),
             store.clone(),
@@ -785,6 +796,62 @@ mod tests {
             assert_eq!(events[0].2, "{\"remote\":true}");
         }
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sync_authorization_rejection_revokes_offline_identity() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/auth/me"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"email":"qa@example.test","plan":"free"})),
+            )
+            .mount(&server)
+            .await;
+        let dir = std::env::temp_dir().join(format!("identity-sync-{}", uuid::Uuid::new_v4()));
+        let state_path = dir.join("sync.sqlite3").to_string_lossy().into_owned();
+        let token = "header.eyJleHAiOjQxMDI0NDQ4MDB9.signature";
+        let identities = identity::identity_store(&state_path).unwrap();
+        assert!(
+            identities
+                .resolve(&server.uri(), token)
+                .await
+                .unwrap()
+                .online
+        );
+        assert!(identities
+            .cached_account(&server.uri(), token)
+            .unwrap()
+            .is_some());
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let store = Arc::new(SyncStateStore::open(Path::new(":memory:")).unwrap());
+        let (stop, receiver) = watch::channel(false);
+        let (_wake, wake_rx) = mpsc::unbounded_channel();
+        run_sync_session(
+            server.uri(),
+            token.into(),
+            state_path,
+            None,
+            ("device".into(), "Test".into(), "android".into()),
+            store,
+            Arc::new(RecoveryListener::default()),
+            stop.clone(),
+            receiver,
+            wake_rx,
+        )
+        .await;
+        assert!(*stop.borrow());
+        assert!(identities
+            .cached_account(&server.uri(), token)
+            .unwrap()
+            .is_none());
+        drop(identities);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
