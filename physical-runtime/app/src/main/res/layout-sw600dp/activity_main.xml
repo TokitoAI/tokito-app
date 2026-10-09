@@ -60,6 +60,19 @@
         android:orientation="vertical">
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/generateSymbolsButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/generate_symbols"
+            android:contentDescription="@string/generate_symbols_description"
+            android:textAllCaps="false"
+            android:visibility="gone"
+            app:cornerRadius="8dp"
+            app:strokeColor="@color/tokito_border" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/previewDigitalTwinButton"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="wrap_content"

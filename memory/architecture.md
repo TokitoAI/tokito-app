@@ -1,5 +1,13 @@
 # Architecture facts
 
+Optional board-symbol generation uses a shell-injected cancellable port and
+Rust/UniFFI HTTPS transport. A registered physical board still requires reviewed
+authored context and explicit per-action authorization. DS-ViRe uses private,
+operator-reviewed app-dataset bindings; partial visual labels cannot create
+exact part IDs. Returned SVG/JSON symbols remain app-private drafts and do not
+replace assembly evidence or publish catalog revisions. Tenant keys belong in
+SecureStore, not contexts or realtime payloads. See Physical ADR 0010.
+
 The embedded Physical shell must not run R8 independently: its public classes
 are called by the Expo bridge in another module. Shrink only at the final APK
 boundary, propagating consumer rules from native libraries.

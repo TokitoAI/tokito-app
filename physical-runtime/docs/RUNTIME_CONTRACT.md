@@ -242,6 +242,13 @@ reference designator.
 
 ## Compatibility
 
+The optional board-symbol draft action in ADR 0010 is a shell-injected service,
+not a physical model tool or observation. Availability requires a configured
+tenant service, reviewed authored board context and live registration. Its
+bounded port accepts only the exact context revision and returns private
+`dsvire.board-symbols.v1` drafts. It never grants pin evidence, publication or
+placement authority and is absent when its service is not configured.
+
 - Major schema/tool version changes are incompatible and rejected.
 - Minor versions are additive; unknown optional fields are preserved or ignored
   according to generated conformance tests.

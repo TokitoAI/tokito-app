@@ -16,6 +16,10 @@ review with a private, offline-first camera and AR assistant.
 
 ## Architecture
 
+Optional [board symbol drafts](docs/BOARD_SYMBOL_DRAFTS.md) use reviewed
+app-dataset bindings and explicitly authorized DS-ViRe requests. Generated
+symbols remain private drafts; local board inspection works independently.
+
 ```text
 React Native product shell
   |-- authentication, projects, review, chat, settings

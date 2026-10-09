@@ -31,6 +31,7 @@ import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile } from "./ui/primitives";
+import { restoreSymbolService } from "./symbols/serviceSettings";
 
 type Route =
   | { name: "projects" }
@@ -84,6 +85,7 @@ function AppContent({
 
   useEffect(() => {
     void applySystemChrome();
+    void restoreSymbolService().catch(() => { /* Optional service cannot block local bench use. */ });
   }, []);
 
   const baseUrl = normalizeBaseUrl(cloudBaseUrl);

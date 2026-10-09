@@ -93,6 +93,10 @@ the active model manifest or return partial success.
 
 ## Future network boundary
 
+ADR 0010 admits one optional shell-owned DS-ViRe symbol-draft transport. Its
+per-action consent, HTTPS tenant authentication, bounded cancellation and local
+draft retention do not authorize camera/audio transfer or remote model fallback.
+
 This repository does not define a public HTTP service. Baseline functionality
 must not attempt remote fallback when networking is unavailable. Any future
 network integration or cloud inference mode needs an ADR,

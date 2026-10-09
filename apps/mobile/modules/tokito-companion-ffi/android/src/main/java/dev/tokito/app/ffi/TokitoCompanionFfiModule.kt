@@ -14,6 +14,13 @@ import uniffi.tokito_companion_ffi.SyncListener
 import uniffi.tokito_companion_ffi.SyncSubscription
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import dev.tokito.physical.symbols.BoardSymbolService
+import dev.tokito.physical.symbols.BoardSymbolServices
+import uniffi.tokito_companion_ffi.BoardSymbolRequest
 
 /**
  * Expo module bridging UniFFI [CompanionClient] into JS.
@@ -23,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class TokitoCompanionFfiModule : Module() {
   private val subscriptions = ConcurrentHashMap<String, SyncSubscription>()
+  private val symbolExecutor = Executors.newSingleThreadExecutor()
+  private val symbolRequests = ConcurrentHashMap.newKeySet<BoardSymbolRequest>()
 
   override fun definition() = ModuleDefinition {
     Name("TokitoCompanionFfi")
@@ -31,6 +40,43 @@ class TokitoCompanionFfiModule : Module() {
     OnDestroy {
       subscriptions.values.forEach { it.stop() }
       subscriptions.clear()
+      BoardSymbolServices.active = null
+      symbolRequests.forEach { it.cancel() }
+      symbolExecutor.shutdownNow()
+    }
+
+    AsyncFunction("configureBoardSymbolService") { baseUrl: String?, token: String? ->
+      if (baseUrl == null || token == null) {
+        BoardSymbolServices.active = null
+        symbolRequests.forEach { it.cancel() }
+      } else {
+        val endpoint = java.net.URI(baseUrl)
+        require(endpoint.scheme == "https" && endpoint.host != null && endpoint.rawUserInfo == null &&
+          endpoint.rawQuery == null && endpoint.rawFragment == null && endpoint.path in listOf("", "/")) {
+          "Symbol service requires an HTTPS origin"
+        }
+        require(token.length in 32..512) { "A tenant API key is required" }
+        BoardSymbolServices.active = BoardSymbolService { revision ->
+          suspendCancellableCoroutine { continuation ->
+            val request = BoardSymbolRequest(baseUrl, token, revision)
+            symbolRequests.add(request)
+            continuation.invokeOnCancellation { request.cancel() }
+            symbolExecutor.execute {
+              try {
+                val result = request.execute()
+                if (continuation.isActive) continuation.resume(result)
+              } catch (_: Exception) {
+                if (continuation.isActive) continuation.resumeWithException(
+                  IllegalStateException("Symbol generation is unavailable. Check the service and reviewed board context."),
+                )
+              } finally {
+                symbolRequests.remove(request)
+                request.close()
+              }
+            }
+          }
+        }
+      }
     }
 
     AsyncFunction("baseUrl") { baseUrl: String ->

@@ -30,6 +30,51 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
+/// One cancellable, explicitly requested symbol-service operation.
+#[derive(uniffi::Object)]
+pub struct BoardSymbolRequest {
+    base_url: String,
+    token: String,
+    context_revision: String,
+    cancelled: watch::Sender<bool>,
+    started: std::sync::atomic::AtomicBool,
+}
+
+#[uniffi::export]
+impl BoardSymbolRequest {
+    #[uniffi::constructor]
+    pub fn new(base_url: String, token: String, context_revision: String) -> Arc<Self> {
+        let (cancelled, _) = watch::channel(false);
+        Arc::new(Self {
+            base_url,
+            token,
+            context_revision,
+            cancelled,
+            started: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    pub fn execute(&self) -> Result<String, CompanionError> {
+        if self.started.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return Err(CompanionError::Unavailable);
+        }
+        let mut signal = self.cancelled.subscribe();
+        if *signal.borrow() {
+            return Err(CompanionError::Unavailable);
+        }
+        runtime().block_on(async {
+            tokio::select! {
+                result = tokito_companion_core::board_symbols::generate(&self.base_url, &self.token, &self.context_revision) => result.map_err(Into::into),
+                _ = signal.changed() => Err(CompanionError::Unavailable),
+            }
+        })
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.send_replace(true);
+    }
+}
+
 /// Authenticated Tokito Cloud session (30-day JWT).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Session {

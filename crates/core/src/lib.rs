@@ -7,6 +7,7 @@
 
 pub mod auth;
 pub mod base_url;
+pub mod board_symbols;
 pub mod error;
 pub mod realtime;
 pub mod sync;

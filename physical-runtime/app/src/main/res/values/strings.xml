@@ -26,4 +26,13 @@
     <string name="measurement_between">between %1$s and %2$s</string>
     <string name="measurement_across">across %1$s</string>
     <string name="measurement_at">at %1$s</string>
+    <string name="generate_symbols">Generate missing symbols</string>
+    <string name="generate_symbols_description">Request private symbol drafts for the reviewed board</string>
+    <string name="symbol_generation_consent">Confirm this is %1$s, revision %2$s. Send its reviewed board context to your configured symbol service to generate missing symbol drafts? Camera and audio stay on this device. Drafts require review and are not published.</string>
+    <string name="generating_symbols">Generating symbol drafts</string>
+    <string name="generating_symbols_detail">Checking reviewed component identities and datasheet evidence. You can cancel while the camera continues locally.</string>
+    <string name="symbol_drafts">Symbol drafts</string>
+    <string name="symbols_unavailable">Symbols unavailable</string>
+    <string name="symbol_context_changed">The session and board context differ. Reopen the correct board context.</string>
+    <string name="symbol_generation_failed">No drafts were accepted. Check your service settings and the reviewed part-to-datasheet mappings. Local inspection is still available.</string>
 </resources>

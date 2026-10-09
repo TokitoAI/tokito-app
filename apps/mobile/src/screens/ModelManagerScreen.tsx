@@ -9,6 +9,7 @@ import {
   type ModelCapability,
 } from "../../modules/tokito-physical/src";
 import { tokens } from "../theme";
+import { SymbolServiceCard } from "../symbols/SymbolServiceCard";
 import { Card, ErrorText, GhostButton, Muted, PrimaryButton } from "../ui/primitives";
 
 export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Element {
@@ -80,6 +81,7 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
           Import a Tokito-signed bundle from this device. Verification finishes before the active model changes.
         </Text>
         {error === null ? null : <ErrorText>{error}</ErrorText>}
+        <SymbolServiceCard />
         {(["dialogue", "voice", "vision"] as const).map((capability) => {
           const bundle = bundles.find((candidate) => candidate.capability === capability);
           const installed = bundle?.modelId !== null && bundle?.modelId !== undefined;

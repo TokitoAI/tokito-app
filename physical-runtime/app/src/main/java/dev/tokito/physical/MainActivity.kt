@@ -44,6 +44,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import org.json.JSONObject
+import dev.tokito.physical.symbols.BoardSymbolServices
+import dev.tokito.physical.symbols.BoardSymbolDrafts
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /** Camera-first host for the private, fully local voice conversation loop. */
 class MainActivity : AppCompatActivity() {
@@ -61,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sessionStore: PhysicalSessionStore
     private lateinit var sessionId: String
     private lateinit var resourceGovernor: DeviceResourceGovernor
+    private var arRegistered = false
+    private var symbolJob: Job? = null
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -211,6 +218,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        symbolJob?.cancel()
         if (::call.isInitialized) lifecycleScope.launch { call.stop() }
         if (::ar.isInitialized) ar.stop()
         super.onStop()
@@ -235,6 +243,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindActions() {
+        binding.generateSymbolsButton.setOnClickListener { requestBoardSymbolDrafts() }
         binding.callButton.setOnClickListener {
             if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
                 requestMicrophonePermission()
@@ -324,6 +333,7 @@ class MainActivity : AppCompatActivity() {
         boardReference = withContext(Dispatchers.IO) {
             BoardReferenceContext.loadIfPresent(filesDir)
         }
+        updateSymbolAction()
         activateProjectTwinIfPresent()
         if (voice.state.value !is VoiceRuntimeState.Ready &&
             voice.state.value != VoiceRuntimeState.Listening &&
@@ -508,6 +518,74 @@ class MainActivity : AppCompatActivity() {
         binding.callButton.backgroundTintList = ContextCompat.getColorStateList(this, color)
     }
 
+    private fun updateSymbolAction() {
+        if (!::binding.isInitialized) return
+        val identity = boardReference?.identity
+        binding.generateSymbolsButton.visibility = if (BoardSymbolServices.active != null) View.VISIBLE else View.GONE
+        binding.generateSymbolsButton.isEnabled = arRegistered && identity?.placementBound == true &&
+            identity?.revision != null && symbolJob?.isActive != true
+    }
+
+    private fun requestBoardSymbolDrafts() {
+        val reference = boardReference ?: return
+        val service = BoardSymbolServices.active ?: return
+        if (!arRegistered || !reference.identity.placementBound || reference.identity.revision == null || symbolJob?.isActive == true) return
+        val contextRevision = reference.identity.contextRevision
+        val expectedContext = sessionStore.session(sessionId)?.context?.contextRevision
+        if (expectedContext != null && expectedContext != contextRevision) {
+            MaterialAlertDialogBuilder(this).setTitle(R.string.symbols_unavailable)
+                .setMessage(R.string.symbol_context_changed).setPositiveButton(android.R.string.ok, null).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.generate_symbols)
+            .setMessage(getString(R.string.symbol_generation_consent, reference.identity.model, reference.identity.revision))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.generate_symbols) { _, _ ->
+                if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision) return@setPositiveButton
+                val progress = MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.generating_symbols)
+                    .setMessage(R.string.generating_symbols_detail)
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> symbolJob?.cancel() }
+                    .setCancelable(false).create()
+                progress.show()
+                symbolJob = lifecycleScope.launch {
+                    try {
+                        val raw = service.generate(contextRevision)
+                        if (!arRegistered || boardReference?.identity?.contextRevision != contextRevision) return@launch
+                        val result = withContext(Dispatchers.IO) {
+                            BoardSymbolDrafts.validate(raw, contextRevision).also {
+                                BoardSymbolDrafts.save(filesDir, raw, contextRevision)
+                            }
+                        }
+                        if (!arRegistered) return@launch
+                        val text = android.widget.TextView(this@MainActivity).apply {
+                            text = BoardSymbolDrafts.summary(result)
+                            setPadding(24, 16, 24, 16)
+                            textSize = 16f
+                            setTextIsSelectable(true)
+                        }
+                        val scroll = android.widget.ScrollView(this@MainActivity).apply { addView(text) }
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(R.string.symbol_drafts).setView(scroll)
+                            .setPositiveButton(android.R.string.ok, null).show()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        MaterialAlertDialogBuilder(this@MainActivity)
+                            .setTitle(R.string.symbols_unavailable).setMessage(R.string.symbol_generation_failed)
+                            .setPositiveButton(android.R.string.ok, null).show()
+                    } finally {
+                        progress.dismiss()
+                        // A new coroutine has not been installed while the action is busy.
+                        symbolJob = null
+                        updateSymbolAction()
+                    }
+                }
+                updateSymbolAction()
+            }.show()
+    }
+
     private suspend fun beginMeasurementCapture() {
         measurement.begin()
         binding.measurementPanel.visibility = View.VISIBLE
@@ -612,6 +690,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderArState(state: ArSessionController.State) {
+        arRegistered = state.registered
+        if (!arRegistered) symbolJob?.cancel()
+        updateSymbolAction()
         binding.trackingChip.text = state.label
         binding.trackingChip.contentDescription = state.detail
         binding.trackingChip.setTextColor(

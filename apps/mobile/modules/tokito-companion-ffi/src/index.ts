@@ -27,6 +27,7 @@ export type NativeAccount = {
 };
 
 type TokitoCompanionFfiNative = {
+  configureBoardSymbolService(baseUrl: string | null, token: string | null): Promise<void>;
   baseUrl(baseUrl: string): Promise<string>;
   otpRequest(baseUrl: string, email: string): Promise<void>;
   otpVerify(baseUrl: string, email: string, code: string): Promise<NativeSession>;

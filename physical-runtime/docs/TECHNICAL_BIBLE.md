@@ -55,6 +55,11 @@ Natural-language confidence is never a substitute for a typed result.
 
 ## 3. Runtime boundary
 
+The optional, per-action authorized board-symbol draft service is specified by
+ADR 0010. Its shell-owned transport sends only reviewed context identity; it
+does not move camera/audio or run remote physical inference. Drafts are private
+review artifacts and cannot replace authored placement or accepted evidence.
+
 The standalone application owns a local dialogue and planning loop, AR
 presentation, session context, and physical tool calls. It emits structured
 observations, progress, and guidance events. The local text LLM may select and
