@@ -50,15 +50,15 @@ pub struct Account {
     pub plan: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct BomLine {
     pub r#ref: String,
     pub value: String,
     pub footprint: String,
-    pub qty: i64,
+    pub qty: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct DesignSummary {
     pub id: String,
     pub name: String,
@@ -82,7 +82,7 @@ pub struct ProjectListItem {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct ProjectDetail {
     pub id: String,
     pub name: String,

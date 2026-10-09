@@ -8,13 +8,13 @@ use crate::base_url::resolve_base_url;
 use crate::error::CloudError;
 
 /// BOM line in a published project snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BomLine {
     pub r#ref: String,
     pub value: String,
     #[serde(default)]
     pub footprint: String,
-    pub qty: i64,
+    pub qty: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -322,6 +322,21 @@ mod tests {
             .await;
         let err = list_projects(&server.uri(), "jwt").await.unwrap_err();
         assert_eq!(err, CloudError::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn project_detail_preserves_fractional_canonical_quantities() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/companion/projects/p1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"p1","name":"Current","slug":"p1","updated_at":"",
+                "designs":[{"id":"d1","name":"Main","sheet_count":1,"bom_lines":[{"ref":"R1, R2","value":"REAL-MPN","footprint":"0603","qty":2.5}]}],
+                "artifact_manifest":[]
+            })))
+            .mount(&server).await;
+        let detail = get_project(&server.uri(), "jwt", "p1").await.unwrap();
+        assert_eq!(detail.snapshot.designs[0].bom_lines[0].qty, 2.5);
     }
 
     #[tokio::test]

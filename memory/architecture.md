@@ -57,6 +57,12 @@ resurrected by a late index response. Missing update dates stay unknown, never
 "just now". A durable local enqueue is not a server commit: only confirmed
 journal events replace visible synchronized resources.
 
+Project detail reads the canonical server journal even when no legacy published
+snapshot exists. Canonical BOM `lines` reference `parts` by `part_id`; join those
+records and matching schematic references before rendering, never cast them to
+legacy `ref`/`value` rows. Quantities are floating-point through Rust, UniFFI and
+TypeScript so fractional material quantities are not truncated or invented.
+
 HTTP acknowledgements retain a durable snapshot lower bound separately from
 the SSE replay cursor. A bootstrap older than that bound is rejected even if
 it omits the acknowledged resource. Never advance the replay cursor from an

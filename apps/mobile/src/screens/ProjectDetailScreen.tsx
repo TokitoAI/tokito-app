@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
-import type { BomLine, ProjectDetail } from "../api/cloudHttp";
+import type { ProjectDetail } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
 import { projectFailure } from "../sync/projectFailure";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
@@ -12,6 +12,7 @@ import { ProjectChat } from "../chat/ProjectChat";
 import { schematicSnapshots } from "../viewer/snapshotRuntime";
 import { ProjectReview } from "../review/ProjectReview";
 import { chatSheets } from "../chat/sheetContext";
+import { canonicalBom } from "../sync/canonicalBom";
 
 type Section = "design" | "chat" | "review";
 
@@ -50,8 +51,10 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const designs = designResources.length > 0 ? liveDesigns : snapshotDesigns;
   const activeDesignId = designs.some(design => design.id === selectedDesignId) ? selectedDesignId : designs[0]?.id ?? null;
   const activeDesignName = designs.find((item) => item.id === activeDesignId)?.name ?? "Design";
-  const bomPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom")?.payload as { lines?: BomLine[] } | undefined;
-  const displayedBom = bomPayload?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
+  const bomResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom");
+  const schematicResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "schematic");
+  const projectedBom = bomResource === undefined ? null : canonicalBom(bomResource.payload, schematicResource?.payload);
+  const displayedBom = projectedBom?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
   const hasSnapshot = detail !== null && activeDesignId !== null && schematicSnapshots(detail, activeDesignId).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
@@ -109,8 +112,8 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
             <View style={styles.bomPane}>
               <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel><Text style={styles.count}>{displayedBom.length}</Text></View>
               <Text style={styles.help}>This Cloud bill of materials is read-only here.</Text>
-              {displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
-              {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty ?? line.quantity ?? 1}</Text></View>)}
+              {projectedBom?.error ? <ErrorText>{projectedBom.error}</ErrorText> : displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
+              {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty}</Text></View>)}
             </View>
           </View>
         </View> : null}
