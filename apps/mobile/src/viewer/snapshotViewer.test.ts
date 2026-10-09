@@ -74,3 +74,18 @@ test("zoom limits prevent losing the page or unbounded scale", () => {
   assert.equal(h.messages.at(-1)?.percent, 100);
   assert.ok(!h.drawing.style.transform.includes("NaN"));
 });
+
+test("a fresh revision preserves zoom and viewing center without reloading the viewer", () => {
+  const h = harness(400, 800);
+  h.event("message", { data: '{"action":"in"}' });
+  h.event("message", { data: '{"action":"in"}' });
+  const ratio = h.read("scale/fitScale");
+  const center = h.read("(200-x)/(drawing.naturalWidth*scale)");
+  h.event("message", { data: JSON.stringify({ action: "replace", source: "data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E" }) });
+  h.drawing.naturalWidth = 1800;
+  h.drawing.onload();
+  assert.equal(h.read("scale/fitScale"), ratio);
+  assert.ok(Math.abs(h.read("(200-x)/(drawing.naturalWidth*scale)") - center) < 0.00001);
+  h.event("message", { data: JSON.stringify({ action: "replace", source: "https://evil.invalid" }) });
+  assert.equal(h.read("ready"), true);
+});

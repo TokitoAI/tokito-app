@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
+#[path = "preview_cache.rs"]
+pub mod cache;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SchematicPreview {
     pub project_id: String,
@@ -67,6 +70,17 @@ pub async fn get_preview(
     }
     let preview: SchematicPreview =
         serde_json::from_slice(&body).map_err(|_| CloudError::Unexpected)?;
+    validate(&preview, project, design, version, sheet)?;
+    Ok(preview)
+}
+
+pub(crate) fn validate(
+    preview: &SchematicPreview,
+    project: &str,
+    design: &str,
+    version: u64,
+    sheet: &str,
+) -> Result<(), CloudError> {
     if preview.project_id != project
         || preview.design_id != design
         || preview.schematic_version != version
@@ -79,7 +93,7 @@ pub async fn get_preview(
     {
         return Err(CloudError::Unexpected);
     }
-    Ok(preview)
+    Ok(())
 }
 #[cfg(test)]
 mod tests {

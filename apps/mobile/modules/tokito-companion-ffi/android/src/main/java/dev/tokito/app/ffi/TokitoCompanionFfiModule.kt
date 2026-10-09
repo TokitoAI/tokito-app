@@ -51,7 +51,10 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("getSchematicPreview") { base: String, token: String, project: String, design: String, version: String, sheet: String ->
-      runFfi { uniffi.tokito_companion_ffi.getSchematicPreview(base, token, project, design, version.toULong(), sheet) }
+      runFfi { uniffi.tokito_companion_ffi.getSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
+    }
+    AsyncFunction("cachedSchematicPreview") { base: String, token: String, project: String, design: String, version: String, sheet: String ->
+      runFfi { uniffi.tokito_companion_ffi.cachedSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
     }
 
     AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String ->

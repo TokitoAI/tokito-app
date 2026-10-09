@@ -54,6 +54,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const schematicResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "schematic");
   const projectedBom = bomResource === undefined ? null : canonicalBom(bomResource.payload, schematicResource?.payload);
   const displayedBom = projectedBom?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
+  const bomKnown = bomResource !== undefined || detail?.designs.some(item => item.id === activeDesignId) === true;
   const hasSnapshot = chatSheets(schematicResource?.payload).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
@@ -109,9 +110,9 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
               {svgArtifacts.map((artifact) => <Card key={artifact.name} onPress={() => onOpenSvg(artifact.name)} style={styles.previewCard}><Text style={styles.previewName} numberOfLines={1}>{artifact.name}</Text><Text style={styles.open}>View</Text></Card>)}
             </View>
             <View style={styles.bomPane}>
-              <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel><Text style={styles.count}>{displayedBom.length}</Text></View>
+              <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel>{bomKnown ? <Text style={styles.count}>{displayedBom.length}</Text> : null}</View>
               <Text style={styles.help}>This Cloud bill of materials is read-only here.</Text>
-              {projectedBom?.error ? <ErrorText>{projectedBom.error}</ErrorText> : displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
+              {!bomKnown ? <Empty title={loading ? "Loading parts list…" : "Parts list unavailable"} body={loading ? "Waiting for the project's parts data." : "Refresh the project when your connection returns."} /> : projectedBom?.error ? <ErrorText>{projectedBom.error}</ErrorText> : displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
               {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty}</Text></View>)}
             </View>
           </View>

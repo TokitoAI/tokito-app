@@ -86,6 +86,15 @@ design, sheet, revision and SHA-256 before passing SVG to the inert image viewer
 The UI chooses actual synchronized sheets, rejects late responses after navigation,
 and labels a retained older drawing stale while requesting the new revision.
 
+Verified previews persist in a bounded SQLite cache (16 drawings, 32 MiB),
+scoped to the server-verified account and API origin, project, design, sheet and
+exact revision. Reopening requires an unexpired verified identity binding and
+revalidates the SVG digest; an authorization rejection revokes that binding.
+Cached content is labelled saved, never presented as proof of a live connection.
+Revision updates replace the inert image while preserving normalized pan/zoom;
+changing design or sheet resets the viewport. An unavailable BOM is not an empty
+BOM: show unknown state until canonical or successful published data is present.
+
 **Why:** routing every utterance through the board-reference index disabled general
 conversation even when the local LLM was installed and healthy.
 

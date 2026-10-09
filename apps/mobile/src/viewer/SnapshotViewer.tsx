@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { ArrowsOut, Minus, Plus } from "phosphor-react-native";
 import { WebView } from "react-native-webview";
@@ -11,7 +11,15 @@ export function SnapshotViewer({ svg }: { svg: string }): JSX.Element {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [percent, setPercent] = useState(100);
-  const html = useMemo(() => { try { return snapshotHtml(svg); } catch { return null; } }, [svg]);
+  const initial = useRef(svg);
+  const [html] = useState(() => { try { return snapshotHtml(initial.current); } catch { return null; } });
+  const sent = useRef(initial.current);
+  useEffect(() => {
+    if (!ready || sent.current === svg) return;
+    view.current?.postMessage(JSON.stringify({ action: "replace", source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` }));
+    sent.current = svg;
+    setReady(false);
+  }, [ready, svg]);
   function command(action: string): void { view.current?.postMessage(JSON.stringify({ action })); }
   return <View style={styles.root}>
     {html !== null && !failed ? <WebView ref={view} source={{ html }} style={styles.canvas}

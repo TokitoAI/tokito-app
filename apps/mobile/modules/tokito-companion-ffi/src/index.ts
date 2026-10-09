@@ -29,6 +29,7 @@ export type NativeAccount = {
 
 export type TokitoCompanionFfiNative = {
   getSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string>;
+  cachedSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string | null>;
   openReviews(baseUrl: string, token: string, sessionId: string): Promise<string>;
   closeReviews(sessionId: string): Promise<void>;
   loadReviews(sessionId: string, project: string, design: string): Promise<string>;

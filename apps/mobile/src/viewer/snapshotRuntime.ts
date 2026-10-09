@@ -19,7 +19,7 @@ export function snapshotHtml(svg: string): string {
 export const SNAPSHOT_RUNTIME = `
 'use strict';
 const surface=document.getElementById('surface'),drawing=document.getElementById('drawing');
-let scale=1,fitScale=1,x=0,y=0,ready=false,gesture=null;
+let scale=1,fitScale=1,x=0,y=0,ready=false,gesture=null,replacement=null;
 const pointers=new Map();
 function notify(type){window.ReactNativeWebView?.postMessage(JSON.stringify({type,percent:Math.round(scale/fitScale*100)}))}
 function size(){return {w:surface.clientWidth,h:surface.clientHeight}}
@@ -35,9 +35,9 @@ function release(e){pointers.delete(e.pointerId);baseline()}
 surface.addEventListener('pointerup',release);surface.addEventListener('pointercancel',release);surface.addEventListener('lostpointercapture',release);
 surface.addEventListener('wheel',e=>{e.preventDefault();const p=point(e);zoom(e.deltaY>0?0.8:1.25,p.x,p.y)},{passive:false});
 surface.addEventListener('dblclick',e=>{const p=point(e);if(scale>fitScale*1.1)fit();else zoom(2,p.x,p.y)});
-function command(e){try{const m=JSON.parse(e.data),v=size();if(m.action==='fit')fit();else if(m.action==='in'||m.action==='out')zoom(m.action==='in'?1.5:1/1.5,v.w/2,v.h/2)}catch{}}
+function command(e){try{const m=JSON.parse(e.data),v=size();if(m.action==='fit')fit();else if(m.action==='in'||m.action==='out')zoom(m.action==='in'?1.5:1/1.5,v.w/2,v.h/2);else if(m.action==='replace'&&typeof m.source==='string'&&m.source.startsWith('data:image/svg+xml;charset=utf-8,')&&m.source.length<=32*1024*1024){if(ready)replacement={ratio:scale/fitScale,cx:(v.w/2-x)/(drawing.naturalWidth*scale),cy:(v.h/2-y)/(drawing.naturalHeight*scale)};ready=false;drawing.src=m.source}}catch{}}
 window.addEventListener('message',command);document.addEventListener('message',command);
 new ResizeObserver(()=>fit()).observe(surface);
-drawing.onload=()=>{ready=drawing.naturalWidth>0&&drawing.naturalHeight>0;if(ready){fit();notify('ready')}else notify('error')};
+drawing.onload=()=>{ready=drawing.naturalWidth>0&&drawing.naturalHeight>0;if(ready){if(replacement){const v=size();fitScale=Math.min(Math.max(1,v.w-24)/drawing.naturalWidth,Math.max(1,v.h-24)/drawing.naturalHeight);scale=fitScale*Math.max(1,Math.min(16,replacement.ratio));x=v.w/2-replacement.cx*drawing.naturalWidth*scale;y=v.h/2-replacement.cy*drawing.naturalHeight*scale;replacement=null;paint();baseline()}else fit();notify('ready')}else notify('error')};
 drawing.onerror=()=>notify('error');
 `;
