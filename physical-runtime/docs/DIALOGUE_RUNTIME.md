@@ -11,7 +11,7 @@ The working iQOO profile uses:
 - GenieX Android `0.3.1`;
 - Qualcomm's Qwen3 1.7B QAIRT w4a16 bundle for Snapdragon 8 Elite Gen 5;
 - the bundle's declared SM8850 / HTP v81 / QNN 2.45 runtime contract;
-- a complete nine-file artifact inventory checked for relative path, byte
+- a complete eleven-file artifact inventory checked for relative path, byte
   length, and SHA-256 before model creation; and
 - `npu` as the build-validated compute unit.
 
@@ -39,7 +39,9 @@ QAIRT generation with a JSON grammar also failed inside the native runtime.
 Consequently, the camera-call application uses QAIRT only for bounded plain-text
 conversation with no declared tool capabilities. Tool proposals remain a
 separate strict JSON protocol and are authorized only when the host declares a
-real capability; a proposal is never execution.
+real capability and the runtime supports constrained generation; a proposal is
+never execution. QAIRT rejects tool mode before invoking the backend, rather
+than asking unconstrained generation to imitate the tool schema.
 
 ## Input and output boundary
 
@@ -75,6 +77,12 @@ unbound and never become authored board-plane coordinates. Requested reference
 designators must occur in the retrieved records or dialogue returns a
 clarification without invoking the model.
 
+A project-bound physical session must explicitly match that manifest's immutable
+context revision before using its facts or digital twin. A missing or different
+revision leaves the board reference unavailable; it never adopts the globally
+active board as evidence for another project. Projectless local bench sessions
+can use the locally admitted reference without requiring Cloud.
+
 The same manifest may carry an optional entity/fact knowledge graph compiled
 offline from reviewed official data sheets, manuals, schematics, and SDK
 documentation.
@@ -83,13 +91,31 @@ never sent to Qwen; retrieval emits only the bounded matching records. Qwen is
 therefore a natural-language renderer over admitted evidence, not the knowledge
 store and not an authority for unsupported board facts.
 
-The camera-call host is stricter than the general dialogue API: board questions
-must retrieve an admitted record, and the spoken answer is constructed directly
-from that record. It does not send unmatched speech or prior answers to the LLM.
+The camera-call host is stricter than the general dialogue API: grounded board
+answers are returned directly from admitted records, with no model rephrase.
+An identifier/number-preserving rewrite is not proof of factual equivalence:
+it can invert a voltage limit or invent qualitative claims. Bypassing generation
+also avoids NPU prefill/decode work for these exact factual answers. No latency
+or token-rate improvement is claimed without an exact-device report.
+
+An explicit unknown reference or unresolved board-specific question returns a
+clarification, not a general-knowledge answer about the user's board. General
+electronics questions remain available through the local LLM without a board
+reference. The guard validates input bounds before either route.
 A bounded, ambiguity-gated edit-distance recovery may match an ASR-corrupted
 phrase against aliases carried by the signed board reference; otherwise the
 host asks the user to repeat the component name. No transcript replacement or
 board-specific vocabulary is compiled into the runtime.
+
+Exact reference-key matches are selected before unrelated alias/placement
+matches. Having a highlight coordinate cannot redirect a question about one
+component to another. Tool versions/deadlines must be JSON integers (no string
+or fraction coercion); numeric arguments must be finite. Conversational output
+rejects reasoning/control tags and fenced or array-shaped control payloads.
+Context records must retain an explicit authority and nonempty source list;
+source-page locators must refer to those sources. An exact-key-only object is
+not accepted as evidence. This structural validation does not replace bundle
+signature/integrity admission or authorize arbitrary synchronized text.
 
 This implementation intentionally does not add an embedding model. A single
 board's structured graph and placement records are small, exact keys
@@ -104,6 +130,16 @@ APK. They become eligible for local activation only after the generic importer,
 authenticated-integrity, coordinate-frame, and source-license policies pass.
 
 ## Verification
+
+Qualcomm's [GenieX runtime guide](https://github.com/qualcomm/GenieX/blob/main/notes/run.md)
+distinguishes QAIRT bundles from GGUF/llama.cpp models. Its hybrid/thread/layer
+advice for llama.cpp is not an optimization recipe for this QAIRT NPU bundle.
+Upstream power-profile controls also require verifying that the pinned Android
+SDK exposes them and recording exact-device latency, RSS, thermal, cancellation,
+and factual-quality evidence before enabling them. The
+[QAIRT plugin](https://github.com/qualcomm/geniex-qairt-plugin) publishes its
+runtime dependency separately. Do not upgrade the SDK or model/runtime pairing
+just to copy a benchmark from a different device.
 
 ```powershell
 .\gradlew.bat :dialogue-runtime:testDebugUnitTest :dialogue-runtime:assembleDebug

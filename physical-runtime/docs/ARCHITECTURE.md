@@ -98,8 +98,11 @@ and `android/ar-runtime` in-process so AR, speech, dialogue, and typed tools
 share one lifecycle and one interaction surface. `android/ar-demo` is only the
 manual-registration conformance host and is not a second product. Their package coordinates remain
 development coordinates until the runtime-foundation epic accepts the public
-ABI. The dialogue candidate uses a pinned llama.cpp submodule, verified
-app-private Qwen GGUF provisioning, and a strict proposal-policy boundary.
+ABI. The active iQOO dialogue candidate uses GenieX 0.3.1 with the verified,
+app-private Qwen3 1.7B QAIRT w4a16 NPU bundle. GGUF/llama.cpp candidates are
+not selected automatically. Reviewed board answers bypass generation; ordinary
+electronics conversation uses bounded plain text. QAIRT tool proposals are
+rejected because constrained generation has not passed its device gate.
 Automatic vision and remaining physical-tool artifacts remain gated work
 rather than stubbed capabilities.
 

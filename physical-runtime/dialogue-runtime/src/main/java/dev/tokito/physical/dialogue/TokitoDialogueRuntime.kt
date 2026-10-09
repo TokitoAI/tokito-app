@@ -113,6 +113,7 @@ class TokitoDialogueRuntime(
         protocol.ungroundedIdentityClarification(request)?.let { return@withLock it }
         val prompt = protocol.requestPrompt(request)
         val toolMode = request.capabilities.isNotEmpty()
+        requireDialogueMode(activeRuntime, toolMode)
         val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
         val activeEngine = engine
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
@@ -292,3 +293,12 @@ class TokitoDialogueRuntime(
 
 internal fun supportsDialogueRuntime(abis: Array<String>): Boolean =
     abis.any { it == "arm64-v8a" }
+
+internal fun requireDialogueMode(runtime: DialogueRuntime?, toolMode: Boolean) {
+    if (toolMode && runtime != DialogueRuntime.LLAMA_CPP) {
+        throw DialogueFailure(
+            DialogueFailureCode.POLICY_REJECTED,
+            "The active local runtime has not been validated for constrained tool proposals",
+        )
+    }
+}

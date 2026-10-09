@@ -24,6 +24,7 @@ import dev.tokito.physical.dialogue.BoardReferenceContext
 import dev.tokito.physical.dialogue.DialogueLimits
 import dev.tokito.physical.dialogue.DialogueOutcome
 import dev.tokito.physical.dialogue.DialogueRequest
+import dev.tokito.physical.dialogue.LocalBenchDialoguePolicy
 import dev.tokito.physical.dialogue.DialogueRuntimeState
 import dev.tokito.physical.dialogue.TokitoDialogueRuntime
 import dev.tokito.physical.model.DeviceResourceGovernor
@@ -322,7 +323,12 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun prepareLocalAi() {
         boardReference = withContext(Dispatchers.IO) {
-            BoardReferenceContext.loadIfPresent(filesDir)
+            val session = requireNotNull(sessionStore.session(sessionId)) { "Physical session is no longer available" }
+            BoardReferenceContext.loadIfPresent(filesDir)?.takeIf { reference ->
+                session.context.admitsBoardReference(reference.identity.contextRevision).also { admitted ->
+                    if (!admitted) android.util.Log.w("TokitoDialogue", "Board reference does not match the bound session revision")
+                }
+            }
         }
         activateProjectTwinIfPresent()
         if (voice.state.value !is VoiceRuntimeState.Ready &&
@@ -333,12 +339,9 @@ class MainActivity : AppCompatActivity() {
             voice.initialize()
         }
         if (dialogue.state.value !is DialogueRuntimeState.Ready) {
-            // The local LLM refines grounded answers into conversational
-            // phrasing; the answers themselves come from the verified board
-            // reference (respondLocally already falls back to the grounded
-            // text when dialogue is unavailable or unfaithful). A missing
-            // dialogue bundle therefore degrades phrasing, not capability,
-            // and must not take down the whole voice loop with it.
+            // General electronics conversation uses the local LLM. Reviewed
+            // board answers are deterministic and need no generation, so an
+            // unavailable dialogue bundle must not disable those or speech.
             runCatching {
                 val model = withContext(Dispatchers.IO) {
                     DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
@@ -392,7 +395,7 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun respondLocally(utterance: String): String {
         val reference = boardReference
-        val grounded = reference?.index?.groundedAnswer(utterance)
+        val grounded = LocalBenchDialoguePolicy().answer(utterance, reference?.index)
         if (grounded == null) {
             // The dialogue policy asks for evidence when a question refers to
             // an unidentified component. General electronics questions do not
@@ -413,27 +416,9 @@ class MainActivity : AppCompatActivity() {
                 "grounded board target ${target.label} highlight accepted=$accepted",
             )
         }
-        val generated = runCatching {
-            dialogue.respond(
-                DialogueRequest(
-                    utterance = utterance,
-                    history = emptyList(),
-                    designContext = grounded.designContext,
-                    deadlineMs = BuildConfig.DIALOGUE_TURN_DEADLINE_MS,
-                ),
-            )
-        }.getOrNull()
-        val text = (generated as? DialogueOutcome.Response)?.text
-        return text?.takeIf {
-            isFaithfulRephrase(
-                it,
-                utterance,
-                grounded.requiredAnchors,
-                grounded.requiredResponseAnchors,
-                grounded.allowedNumbers,
-            )
-        }
-            ?: grounded.fallbackText
+        // Identity-sensitive answers are reviewed source text, not a model
+        // rephrase that merely happens to retain some identifiers and numbers.
+        return grounded.text
     }
 
     private fun activateProjectTwinIfPresent() {
@@ -446,37 +431,6 @@ class MainActivity : AppCompatActivity() {
             glbFile = File(contextDir, "active.digital-twin.glb"),
             expectedAssemblyContextRevision = reference.identity.contextRevision,
         )
-    }
-
-    private fun isFaithfulRephrase(
-        candidate: String,
-        utterance: String,
-        requiredAnchors: Set<String>,
-        requiredResponseAnchors: Set<String>,
-        allowedNumbers: Set<String>,
-    ): Boolean {
-        val hasAnchor = requiredAnchors.any { anchor ->
-            candidate.contains(anchor, ignoreCase = true)
-        }
-        if (!hasAnchor) return false
-        if (requiredResponseAnchors.any { !candidate.contains(it, ignoreCase = true) }) return false
-        val hasNewEvidenceAnchor = requiredAnchors.any { anchor ->
-            candidate.contains(anchor, ignoreCase = true) && !utterance.contains(anchor, ignoreCase = true)
-        }
-        val answerTokens = QUALITY_TOKEN.findAll(candidate).map { it.value.lowercase() }.toSet()
-        val questionTokens = QUALITY_TOKEN.findAll(utterance).map { it.value.lowercase() }.toSet()
-        val questionEcho = answerTokens.isNotEmpty() &&
-            answerTokens.intersect(questionTokens).size.toDouble() / answerTokens.size >= MAX_QUESTION_ECHO_RATIO
-        if (!hasNewEvidenceAnchor || questionEcho) return false
-        val numbers = Regex("(?<![A-Za-z])(?:[0-9]+(?:\\.[0-9]+)?)(?![A-Za-z])")
-            .findAll(candidate)
-            .map(MatchResult::value)
-            .toSet()
-        if (!allowedNumbers.containsAll(numbers)) return false
-        val references = Regex(
-            "(?i)(?<![A-Z0-9])(?:R|C|U|D|Q|L|J|SW|TP|F|FB|Y|X|CN|RN|RV|BT|BH|SJ)[0-9]{1,5}(?![A-Z0-9])",
-        ).findAll(candidate).map { it.value.uppercase() }.toSet()
-        return requiredAnchors.map(String::uppercase).containsAll(references)
     }
 
     private fun renderCallState(state: CallState) {
@@ -627,8 +581,6 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_PROJECT_ID = "dev.tokito.physical.extra.PROJECT_ID"
         const val EXTRA_DESIGN_ID = "dev.tokito.physical.extra.DESIGN_ID"
         const val EXTRA_CONTEXT_REVISION = "dev.tokito.physical.extra.CONTEXT_REVISION"
-        val QUALITY_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{1,63}")
-        const val MAX_QUESTION_ECHO_RATIO = 0.80
         const val MEASUREMENT_SUCCESS_VISIBILITY_MS = 1_200L
     }
 }
