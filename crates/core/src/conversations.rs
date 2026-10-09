@@ -180,7 +180,8 @@ async fn bounded_body(response: reqwest::Response) -> Result<(u16, Vec<u8>), Clo
 fn status_error(status: u16, body: &[u8]) -> CloudError {
     match status {
         401 | 403 => CloudError::Unauthorized,
-        404 | 503 => CloudError::Unavailable,
+        404 => CloudError::Unavailable,
+        500..=599 => CloudError::Network("Chat service is temporarily unavailable".into()),
         429 => CloudError::RateLimited,
         409 => {
             let value: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
@@ -525,6 +526,19 @@ mod tests {
                 .unwrap_err(),
             CloudError::Unauthorized
         );
+    }
+
+    #[test]
+    fn temporary_service_errors_remain_retryable_without_hiding_missing_resources() {
+        for status in [500, 502, 503, 504] {
+            assert!(matches!(
+                status_error(status, b"<html>outage</html>"),
+                CloudError::Network(_)
+            ));
+        }
+        assert_eq!(status_error(404, b""), CloudError::Unavailable);
+        assert_eq!(status_error(401, b""), CloudError::Unauthorized);
+        assert_eq!(status_error(403, b"not JSON"), CloudError::Unauthorized);
     }
 
     #[test]

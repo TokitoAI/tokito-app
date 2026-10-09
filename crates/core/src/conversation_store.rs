@@ -72,6 +72,7 @@ impl ConversationStore {
             CREATE INDEX IF NOT EXISTS chat_runs_thread ON chat_runs(thread_id);
             CREATE TABLE IF NOT EXISTS chat_events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,seq));
             CREATE TABLE IF NOT EXISTS chat_threads (thread_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_thread_outbox(thread_id TEXT PRIMARY KEY,body TEXT NOT NULL,error TEXT);
             CREATE TABLE IF NOT EXISTS chat_thread_indexes (project_id TEXT NOT NULL, design_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,design_id));
             CREATE TABLE IF NOT EXISTS chat_recovered_drafts (thread_id TEXT PRIMARY KEY, content TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_messages (thread_id TEXT NOT NULL, seq INTEGER NOT NULL, message_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(thread_id,seq), UNIQUE(thread_id,message_id));")
@@ -131,6 +132,79 @@ impl ConversationStore {
         tx.execute(
             "DELETE FROM chat_recovered_drafts WHERE thread_id=?1",
             [&message.thread_id],
+        )
+        .map_err(db_error)?;
+        tx.commit().map_err(db_error)
+    }
+    pub fn enqueue_thread(&self, thread: &Thread) -> Result<(), CloudError> {
+        let body = encode(thread)?;
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let count: i64 = tx
+            .query_row("SELECT COUNT(*) FROM chat_thread_outbox", [], |r| r.get(0))
+            .map_err(db_error)?;
+        if count >= 100 {
+            return Err(CloudError::Unavailable);
+        }
+        tx.execute(
+            "INSERT INTO chat_thread_outbox VALUES(?1,?2,NULL)",
+            params![thread.id, body],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "INSERT INTO chat_threads VALUES(?1,?2)",
+            params![thread.id, body],
+        )
+        .map_err(db_error)?;
+        tx.commit().map_err(db_error)
+    }
+    pub fn pending_threads(&self) -> Result<Vec<Thread>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let mut stmt = conn
+            .prepare("SELECT body FROM chat_thread_outbox WHERE error IS NULL ORDER BY rowid")
+            .map_err(db_error)?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(db_error)?
+            .map(|r| {
+                serde_json::from_str(&r.map_err(db_error)?).map_err(|_| CloudError::Unexpected)
+            })
+            .collect();
+        rows
+    }
+    pub fn thread_pending(&self, id: &str) -> Result<bool, CloudError> {
+        self.conn
+            .lock()
+            .map_err(|_| CloudError::Unexpected)?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM chat_thread_outbox WHERE thread_id=?1)",
+                [id],
+                |r| r.get(0),
+            )
+            .map_err(db_error)
+    }
+    pub fn finish_thread(&self, thread: &Thread) -> Result<(), CloudError> {
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let body: String = tx
+            .query_row(
+                "SELECT body FROM chat_thread_outbox WHERE thread_id=?1",
+                [&thread.id],
+                |r| r.get(0),
+            )
+            .map_err(db_error)?;
+        let expected: Thread = serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?;
+        if expected.project_id != thread.project_id || expected.design_id != thread.design_id {
+            return Err(CloudError::Unexpected);
+        }
+        tx.execute(
+            "UPDATE chat_threads SET body=?2 WHERE thread_id=?1",
+            params![thread.id, encode(thread)?],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "DELETE FROM chat_thread_outbox WHERE thread_id=?1",
+            [&thread.id],
         )
         .map_err(db_error)?;
         tx.commit().map_err(db_error)

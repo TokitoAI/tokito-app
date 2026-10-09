@@ -30,12 +30,56 @@ class TokitoCompanionFfiModule : Module() {
   private val conversations = ConcurrentHashMap<String, ConversationSession>()
   private val reviews = ConcurrentHashMap<String, ReviewSession>()
   private val runs = ConcurrentHashMap<String, Pair<String, RunSubscription>>()
+  private val queueLock = Any()
+  private var queueScope: Pair<String, String>? = null
+  private var queueOwner: String? = null
+  private var queueChat: ConversationSession? = null
+  private var queueReviews: ReviewSession? = null
+  private var queueTimer: java.util.concurrent.ScheduledExecutorService? = null
+
+  private fun stopQueues() = synchronized(queueLock) {
+    queueTimer?.shutdownNow(); queueTimer = null
+    queueChat?.shutdown(); queueChat = null
+    queueReviews?.shutdown(); queueReviews = null
+    conversations.clear(); reviews.clear()
+    runs.values.forEach { it.second.stop() }; runs.clear()
+    queueScope = null; queueOwner = null
+  }
+  private fun revoked() {
+    stopQueues()
+    subscriptions.values.forEach { it.stop() }; subscriptions.clear()
+    sendEvent("onAuthorizationRevoked", emptyMap<String, String>())
+  }
+  private fun ensureQueues(base: String, token: String) = synchronized(queueLock) {
+    if (queueScope == (base to token)) return@synchronized
+    stopQueues()
+    val context = requireNotNull(appContext.reactContext)
+    val preferences = context.getSharedPreferences("tokito-installation", 0)
+    val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also { check(preferences.edit().putString("id", it).commit()) }
+    val listener = object : ConversationListener {
+      override fun onChange(payloadJson: String) {
+        if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(); return }
+        conversations.keys.forEach { id -> sendEvent("onConversationChange", mapOf("sessionId" to id, "watchId" to "", "payloadJson" to payloadJson)) }
+      }
+    }
+    val chat = CompanionClient(base).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
+    val review = try { CompanionClient(base).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath) } catch (error: Exception) { chat.shutdown(); throw error }
+    queueChat = chat; queueReviews = review; queueScope = base to token
+    queueTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor().also { executor ->
+      executor.scheduleWithFixedDelay({
+        try { review.replayPending() }
+        catch (error: CompanionException) { if (error is CompanionException.Unauthorized) revoked() }
+        catch (_: Exception) { /* Durable commands remain pending; next tick retries. */ }
+      }, 0, 3, java.util.concurrent.TimeUnit.SECONDS)
+    }
+  }
 
   override fun definition() = ModuleDefinition {
     Name("TokitoCompanionFfi")
-    Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError", "onConversationChange")
+    Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError", "onConversationChange", "onAuthorizationRevoked")
 
     OnDestroy {
+      stopQueues()
       subscriptions.values.forEach { it.stop() }
       subscriptions.clear()
       runs.values.forEach { it.second.stop() }
@@ -45,6 +89,9 @@ class TokitoCompanionFfiModule : Module() {
       reviews.values.forEach { it.shutdown() }
       reviews.clear()
     }
+
+    AsyncFunction("startQueues") { base: String, token: String, owner: String -> runFfi { synchronized(queueLock) { ensureQueues(base, token); queueOwner = owner } } }
+    AsyncFunction("stopQueues") { owner: String -> synchronized(queueLock) { if (queueOwner == owner) stopQueues() } }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
       CompanionClient(baseUrl).baseUrl()
@@ -65,12 +112,12 @@ class TokitoCompanionFfiModule : Module() {
         val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
           check(preferences.edit().putString("id", it).commit())
         }
-        reviews.remove(sessionId)?.shutdown()
-        reviews[sessionId] = CompanionClient(baseUrl).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath)
+        ensureQueues(baseUrl, token)
+        reviews[sessionId] = requireNotNull(queueReviews)
         sessionId
       }
     }
-    AsyncFunction("closeReviews") { sessionId: String -> reviews.remove(sessionId)?.shutdown() }
+    AsyncFunction("closeReviews") { sessionId: String -> reviews.remove(sessionId); Unit }
     AsyncFunction("loadReviews") { sessionId: String, project: String, design: String -> runFfi { review(sessionId).load(project, design) } }
     AsyncFunction("localReviewCommands") { sessionId: String, project: String, design: String -> runFfi { review(sessionId).localCommands(project, design) } }
     AsyncFunction("decideReview") { sessionId: String, project: String, design: String, run: String, seq: String, action: String, selection: String ->
@@ -85,13 +132,8 @@ class TokitoCompanionFfiModule : Module() {
         val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
           check(preferences.edit().putString("id", it).commit())
         }
-        conversations.remove(sessionId)?.shutdown()
-        val listener = object : ConversationListener {
-          override fun onChange(payloadJson: String) {
-            sendEvent("onConversationChange", mapOf("sessionId" to sessionId, "watchId" to "", "payloadJson" to payloadJson))
-          }
-        }
-        conversations[sessionId] = CompanionClient(baseUrl).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
+        ensureQueues(baseUrl, token)
+        conversations[sessionId] = requireNotNull(queueChat)
         sessionId
       }
     }
@@ -100,7 +142,8 @@ class TokitoCompanionFfiModule : Module() {
       runs.entries.filter { it.value.first == sessionId }.forEach { (id, pair) ->
         if (runs.remove(id, pair)) pair.second.stop()
       }
-      conversations.remove(sessionId)?.shutdown()
+      conversations.remove(sessionId)
+      Unit
     }
     AsyncFunction("conversationThreads") { sessionId: String, project: String, design: String ->
       runFfi { conversation(sessionId).listThreads(project, design) }
@@ -144,6 +187,7 @@ class TokitoCompanionFfiModule : Module() {
         runs.remove(watchId)?.second?.stop()
         val listener = object : ConversationListener {
           override fun onChange(payloadJson: String) {
+            if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(); return }
             sendEvent("onConversationChange", mapOf("sessionId" to sessionId, "watchId" to watchId, "payloadJson" to payloadJson))
           }
         }
@@ -353,6 +397,7 @@ class TokitoCompanionFfiModule : Module() {
           }
 
           override fun onError(message: String) {
+            if (message.contains("unauthorized", ignoreCase = true) || message.contains("session expired", ignoreCase = true)) { revoked(); return }
             sendEvent("onSyncError", mapOf("subscriptionId" to subscriptionId, "message" to message))
           }
         }
@@ -407,6 +452,7 @@ class TokitoCompanionFfiModule : Module() {
     } catch (err: CompanionException) {
       // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
       val code = err::class.java.simpleName
+      if (err is CompanionException.Unauthorized) revoked()
       Log.w(TAG, "UniFFI call failed: $code (${err.message})")
       throw CodedException(code, err.message ?: code, err)
     } catch (err: Exception) {

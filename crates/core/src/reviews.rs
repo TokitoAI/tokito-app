@@ -59,6 +59,7 @@ impl ReviewStore {
             _ => {}
         }
         tx.commit().map_err(db)?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS proposal_cache(project TEXT NOT NULL,design TEXT NOT NULL,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(project,design));").map_err(db)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -142,6 +143,49 @@ impl ReviewStore {
         tx.commit().map_err(db)?;
         Ok(command)
     }
+    pub fn pending_scopes(&self) -> Result<Vec<(String, String)>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let mut stmt = conn.prepare("SELECT DISTINCT project,design FROM review_commands WHERE state='pending' ORDER BY rowid").map_err(db)?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db);
+        rows
+    }
+    pub fn cache_proposals(
+        &self,
+        project: &str,
+        design: &str,
+        value: &Value,
+    ) -> Result<(), CloudError> {
+        validate_proposals(project, design, value)?;
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        conn.execute("INSERT INTO proposal_cache VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(project,design) DO UPDATE SET body=excluded.body,updated=excluded.updated",params![project,design,value.to_string()]).map_err(db)?;
+        conn.execute("DELETE FROM proposal_cache WHERE rowid NOT IN (SELECT rowid FROM proposal_cache ORDER BY updated DESC,rowid DESC LIMIT 16)",[]).map_err(db)?;
+        Ok(())
+    }
+    pub fn cached_proposals(
+        &self,
+        project: &str,
+        design: &str,
+    ) -> Result<Option<Value>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let body: Option<String> = conn
+            .query_row(
+                "SELECT body FROM proposal_cache WHERE project=?1 AND design=?2",
+                params![project, design],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db)?;
+        body.map(|body| {
+            let value = serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?;
+            validate_proposals(project, design, &value)?;
+            Ok(value)
+        })
+        .transpose()
+    }
     pub fn list(&self, project: &str, design: &str) -> Result<Vec<ReviewCommand>, CloudError> {
         let conn = self.conn.lock().map_err(|_| CloudError::Unavailable)?;
         let mut statement=conn.prepare("SELECT body,state,result FROM review_commands WHERE project=?1 AND design=?2 ORDER BY (state='pending') DESC,rowid DESC LIMIT 200").map_err(db)?;
@@ -186,6 +230,33 @@ impl ReviewStore {
         tx.commit().map_err(db)?;
         Ok(())
     }
+}
+fn validate_proposals(project: &str, design: &str, value: &Value) -> Result<(), CloudError> {
+    let rows = value["proposals"]
+        .as_array()
+        .ok_or(CloudError::Unexpected)?;
+    if rows.len() > 200
+        || value.to_string().len() > 2 * 1024 * 1024
+        || rows.iter().any(|p| {
+            p["project_id"] != project
+                || p["design_id"] != design
+                || p["run_id"].as_str().is_none()
+                || p["event_seq"].as_u64().is_none()
+                || p["base_schematic_version"].as_u64().is_none()
+                || p["base_bom_version"].as_u64().is_none()
+                || !matches!(
+                    p["status"].as_str(),
+                    Some("pending" | "applied" | "rejected")
+                )
+                || !matches!(p["payload"]["kind"].as_str(), Some("schematic" | "bom"))
+                || p["payload"]["ops"]
+                    .as_array()
+                    .is_none_or(|ops| ops.len() > 5000 || ops.iter().any(|op| !op.is_object()))
+        })
+    {
+        return Err(CloudError::Unexpected);
+    }
+    Ok(())
 }
 fn segment(value: &str) -> Result<&str, CloudError> {
     if value.is_empty()
@@ -242,15 +313,17 @@ async fn http(
         }
         body.extend_from_slice(&chunk);
     }
-    let value = serde_json::from_slice(&body).map_err(|_| CloudError::Unexpected)?;
     match status {
         401 | 403 => Err(CloudError::Unauthorized),
-        404 | 503 => Err(CloudError::Unavailable),
+        404 => Err(CloudError::Unavailable),
         429 => Err(CloudError::RateLimited),
         500..=599 => Err(CloudError::Network(
             "Server could not confirm the review".into(),
         )),
-        _ => Ok((status, value)),
+        _ => Ok((
+            status,
+            serde_json::from_slice(&body).map_err(|_| CloudError::Unexpected)?,
+        )),
     }
 }
 pub async fn list(
@@ -408,6 +481,33 @@ mod tests {
             "blocked"
         );
     }
+    #[tokio::test]
+    async fn error_status_is_classified_before_decoding_response_body() {
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        for (status, body) in [
+            (401, ""),
+            (403, "denied"),
+            (503, "<html>unavailable</html>"),
+            (404, "missing"),
+            (200, "invalid JSON"),
+        ] {
+            server.reset().await;
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(status).set_body_string(body))
+                .mount(&server)
+                .await;
+            let error = list(&server.uri(), "token", "p", "d").await.unwrap_err();
+            match status {
+                401 | 403 => assert_eq!(error, CloudError::Unauthorized),
+                503 => assert!(matches!(error, CloudError::Network(_))),
+                404 => assert_eq!(error, CloudError::Unavailable),
+                200 => assert_eq!(error, CloudError::Unexpected),
+                _ => unreachable!(),
+            }
+        }
+    }
+
     #[tokio::test]
     async fn mismatched_or_partial_receipt_never_acknowledges_command() {
         use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};

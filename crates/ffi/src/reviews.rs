@@ -175,6 +175,13 @@ impl ReviewSession {
 }
 #[uniffi::export]
 impl ReviewSession {
+    pub fn replay_pending(&self) -> Result<(), CompanionError> {
+        self.ensure_open()?;
+        for (project, design) in self.store.pending_scopes()? {
+            self.replay(&project, &design)?;
+        }
+        Ok(())
+    }
     pub fn shutdown(&self) {
         self.closed.store(true, Ordering::Release);
     }
@@ -189,11 +196,21 @@ impl ReviewSession {
     }
     pub fn load(&self, project: String, design: String) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        self.replay(&project, &design)?;
-        let proposals = runtime()
-            .block_on(api::list(&self.base, &self.token, &project, &design))
-            .map_err(|error| self.failure(error))?;
-        Ok(serde_json::json!({"proposals":proposals["proposals"],"commands":self.store.list(&project,&design)?}).to_string())
+        let (proposals, cached) =
+            match runtime().block_on(api::list(&self.base, &self.token, &project, &design)) {
+                Ok(value) => {
+                    self.store.cache_proposals(&project, &design, &value)?;
+                    (value, false)
+                }
+                Err(tokito_companion_core::CloudError::Network(_)) => (
+                    self.store
+                        .cached_proposals(&project, &design)?
+                        .ok_or(CompanionError::Unavailable)?,
+                    true,
+                ),
+                Err(error) => return Err(self.failure(error)),
+            };
+        Ok(serde_json::json!({"proposals":proposals["proposals"],"cached":cached,"commands":self.store.list(&project,&design)?}).to_string())
     }
     pub fn decide(
         &self,

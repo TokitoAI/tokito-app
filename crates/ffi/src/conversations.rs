@@ -104,15 +104,16 @@ impl ConversationSession {
             &project,
             &design,
         ));
-        let threads = match result {
+        let mut threads = match result {
             Ok(threads) => {
                 self.store.cache_threads(&project, &design, &threads)?;
                 threads
             }
-            Err(error @ CloudError::Network(_)) => {
-                let Some(threads) = self.store.cached_threads(&project, &design)? else {
-                    return Err(error.into());
-                };
+            Err(CloudError::Network(_)) => {
+                let threads = self
+                    .store
+                    .cached_threads(&project, &design)?
+                    .unwrap_or_default();
                 emit(
                     self.listener.as_ref(),
                     serde_json::json!({"type":"offline"}),
@@ -121,6 +122,14 @@ impl ConversationSession {
             }
             Err(error) => return Err(self.failure(error)),
         };
+        for local in self.store.pending_threads()? {
+            if local.project_id == project
+                && local.design_id == design
+                && !threads.iter().any(|t| t.id == local.id)
+            {
+                threads.push(local);
+            }
+        }
         serde_json::to_string(&threads).map_err(|_| CompanionError::Unexpected)
     }
 
@@ -132,16 +141,23 @@ impl ConversationSession {
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
         let id = uuid::Uuid::new_v4().to_string();
-        let thread = runtime()
-            .block_on(api::create_thread(
-                &self.base,
-                &self.token,
-                &project,
-                &design,
-                &id,
-                &title,
-            ))
-            .map_err(|error| self.failure(error))?;
+        if title.len() > 512 || project.is_empty() || design.is_empty() {
+            return Err(CompanionError::Unexpected);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let thread = api::Thread {
+            id,
+            project_id: project,
+            design_id: design,
+            title,
+            created_at: now,
+            updated_at: now,
+        };
+        self.store.enqueue_thread(&thread)?;
+        let _ = self.wake.try_send(());
         serde_json::to_string(&thread).map_err(|_| CompanionError::Unexpected)
     }
 
@@ -153,6 +169,15 @@ impl ConversationSession {
         before: Option<u64>,
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
+        if self.store.thread_pending(&thread)? {
+            return serde_json::to_string(
+                &self
+                    .store
+                    .cached_tail(&project, &design, &thread, before)?
+                    .ok_or(CompanionError::Unexpected)?,
+            )
+            .map_err(|_| CompanionError::Unexpected);
+        }
         let result = runtime().block_on(api::get_thread_tail(
             &self.base,
             &self.token,
@@ -388,7 +413,43 @@ async fn outbox(
                 return;
             }
         };
+        let threads = match store.pending_threads() {
+            Ok(value) => value,
+            Err(_) => {
+                emit(
+                    listener.as_ref(),
+                    serde_json::json!({"type":"storage_error"}),
+                );
+                return;
+            }
+        };
+        for thread in threads {
+            let result = tokio::select! { _=stop.changed()=>return, result=api::create_thread(&base,&token,&thread.project_id,&thread.design_id,&thread.id,&thread.title)=>result };
+            match result {
+                Ok(confirmed) => {
+                    if store.finish_thread(&confirmed).is_err() {
+                        return;
+                    }
+                }
+                Err(CloudError::Unauthorized) => {
+                    session_stop.send_replace(true);
+                    revoke_identity(&identity_path, &base, &token);
+                    emit(
+                        listener.as_ref(),
+                        serde_json::json!({"type":"unauthorized"}),
+                    );
+                    return;
+                }
+                Err(_) => {
+                    emit(listener.as_ref(), serde_json::json!({"type":"offline"}));
+                    break;
+                }
+            }
+        }
         for message in pending {
+            if store.thread_pending(&message.thread_id).unwrap_or(true) {
+                continue;
+            }
             let result = tokio::select! {
                 _ = stop.changed() => return,
                 result = api::send_message(&base, &token, &message.project_id, &message.design_id, &message.thread_id, &message.request) => result,

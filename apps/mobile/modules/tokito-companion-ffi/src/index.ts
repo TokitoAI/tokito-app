@@ -3,6 +3,7 @@ import { requireNativeModule } from "expo-modules-core";
 export type NativeEventSubscription = { remove(): void };
 
 export type SyncNativeEventMap = {
+  onAuthorizationRevoked: Record<string, never>;
   onConversationChange: { sessionId: string; watchId: string; payloadJson: string };
   onSyncStatus: { subscriptionId: string; status: string };
   onSyncBootstrap: { subscriptionId: string; cursor: string; resourcesJson: string };
@@ -28,6 +29,8 @@ export type NativeAccount = {
 };
 
 export type TokitoCompanionFfiNative = {
+  startQueues(base: string, token: string, owner: string): Promise<void>;
+  stopQueues(owner: string): Promise<void>;
   getSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string>;
   cachedSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string | null>;
   openReviews(baseUrl: string, token: string, sessionId: string): Promise<string>;

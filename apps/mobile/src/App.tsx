@@ -33,6 +33,7 @@ import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { retryableStartup } from "./sync/startupRetry";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile } from "./ui/primitives";
+import { getTokitoCompanionFfi } from "../modules/tokito-companion-ffi/src";
 
 type Route =
   | { name: "projects" }
@@ -103,6 +104,14 @@ function AppContent({
   const [restoreBlocked, setRestoreBlocked] = useState(false);
   const [retryRestore, setRetryRestore] = useState(false);
   const restoreInFlight = useRef(false);
+  useEffect(() => {
+    const listener = getTokitoCompanionFfi().addListener("onAuthorizationRevoked", () => {
+      setState({ status: "signed_out" }); setSignedOutView("sign_in");
+      setRetryRestore(false); setBootError("Your session expired. Sign in again to continue.");
+      void auth.signOut();
+    });
+    return () => listener.remove();
+  }, [auth]);
 
   const refresh = useCallback(async () => {
     if (restoreInFlight.current) return;

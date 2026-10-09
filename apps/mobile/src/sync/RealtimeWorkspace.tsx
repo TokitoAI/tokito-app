@@ -5,6 +5,7 @@ import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
 import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
 import { retryableStartup, startupRetryDelay } from "./startupRetry";
+import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 
 export type SyncResource = {
   project_id: string;
@@ -70,6 +71,26 @@ export function RealtimeWorkspaceProvider({
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const physicalDrain = useRef<Promise<void> | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
+
+  useEffect(() => {
+    const native = getTokitoCompanionFfi();
+    const owner = `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const open = async (): Promise<void> => {
+      try { await native.startQueues(client.baseUrl(), token, owner); if (disposed) await native.stopQueues(owner); }
+      catch (cause) {
+        if (!disposed) {
+          setError(retryableStartup(cause)
+            ? "Saved messages and decisions are waiting for a connection."
+            : "Saved messages and decisions could not reconnect. Sign in again to resume.");
+          if (retryableStartup(cause)) timer = setTimeout(() => void open(), 5000);
+        }
+      }
+    };
+    void open();
+    return () => { disposed = true; clearTimeout(timer); void native.stopQueues(owner); };
+  }, [client, token]);
 
   useEffect(() => {
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
