@@ -62,10 +62,14 @@ impl PreviewCache {
         let body = serde_json::to_string(preview).map_err(|_| CloudError::Unexpected)?;
         let tx = self.conn.transaction().map_err(db)?;
         let previous:Option<String>=tx.query_row("SELECT body FROM previews WHERE scope=?1 AND project=?2 AND design=?3 AND sheet=?4 AND version=?5",params![self.scope,preview.project_id,preview.design_id,preview.sheet_id,preview.schematic_version],|r|r.get(0)).optional().map_err(db)?;
-        if previous.is_some_and(|previous| previous != body) {
-            return Err(CloudError::Unexpected);
+        if let Some(previous) = previous {
+            let previous: SchematicPreview =
+                serde_json::from_str(&previous).map_err(|_| CloudError::Unexpected)?;
+            if previous.source_sha256 != preview.source_sha256 {
+                return Err(CloudError::Unexpected);
+            }
         }
-        tx.execute("INSERT INTO previews VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(scope,project,design,sheet,version) DO UPDATE SET used=excluded.used",params![self.scope,preview.project_id,preview.design_id,preview.sheet_id,preview.schematic_version,body,now()]).map_err(db)?;
+        tx.execute("INSERT INTO previews VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(scope,project,design,sheet,version) DO UPDATE SET body=excluded.body,used=excluded.used",params![self.scope,preview.project_id,preview.design_id,preview.sheet_id,preview.schematic_version,body,now()]).map_err(db)?;
         tx.execute("DELETE FROM previews WHERE rowid NOT IN (SELECT rowid FROM previews ORDER BY used DESC,rowid DESC LIMIT 16)",[]).map_err(db)?;
         loop {
             let bytes: i64 = tx
@@ -138,11 +142,17 @@ mod tests {
         let mut changed = preview(20);
         changed.svg = "<svg>changed</svg>".into();
         changed.sha256 = format!("{:x}", Sha256::digest(changed.svg.as_bytes()));
+        cache.put(&changed).unwrap();
+        assert_eq!(
+            cache.get("p", "d", "root", 20).unwrap().unwrap().svg,
+            changed.svg
+        );
+        changed.source_sha256 = "b".repeat(64);
         assert!(cache.put(&changed).is_err());
         cache
             .conn
             .execute(
-                "UPDATE previews SET body=replace(body,'<svg/>','<svg>bad</svg>') WHERE version=20",
+                "UPDATE previews SET body=replace(body,'<svg>changed</svg>','<svg>bad</svg>') WHERE version=20",
                 [],
             )
             .unwrap();

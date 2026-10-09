@@ -90,6 +90,9 @@ Verified previews persist in a bounded SQLite cache (16 drawings, 32 MiB),
 scoped to the server-verified account and API origin, project, design, sheet and
 exact revision. Reopening requires an unexpired verified identity binding and
 revalidates the SVG digest; an authorization rejection revokes that binding.
+The canonical source digest is immutable for a cached revision. Authenticated
+responses may replace derived SVG bytes with a validated renderer update only
+when that source digest is unchanged; renderer upgrades are not document edits.
 Cached content is labelled saved, never presented as proof of a live connection.
 Revision updates replace the inert image while preserving normalized pan/zoom;
 changing design or sheet resets the viewport. An unavailable BOM is not an empty
