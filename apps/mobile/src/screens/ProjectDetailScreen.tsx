@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDi
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
 import type { BomLine, ProjectDetail } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
-import { CompanionError } from "../native/types";
+import { projectFailure } from "../sync/projectFailure";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
@@ -62,7 +62,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
     const [project] = await Promise.allSettled([client.getProject(token, projectId)]);
     if (generation !== request.current) return;
     if (project.status === "fulfilled") setDetail(project.value);
-    else setError(message(project.reason, "Published snapshot could not be loaded"));
+    else setError(projectFailure(project.reason));
     setLoading(false);
   }, [client, token, projectId]);
 
@@ -88,7 +88,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
       </View>
       {section === "chat" && activeDesignId !== null ? <ProjectChat key={`${projectId}:${activeDesignId}`} baseUrl={client.baseUrl()} token={token} project={projectId} design={activeDesignId} version={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} sheets={chatSheets(realtime.getResource(projectId, activeDesignId, "schematic")?.payload)} /> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
         {loading ? <ActivityIndicator color={tokens.accent} /> : null}
-        {error !== null ? <ErrorText>{error}</ErrorText> : null}
+        {error !== null ? <View style={{ gap: 8 }}><ErrorText>{error}</ErrorText><PrimaryButton label="Retry previews" onPress={() => { void reload(); }} disabled={loading} style={{ alignSelf: "flex-start" }} /></View> : null}
         {realtime.error !== null ? <ErrorText>{realtime.error}</ErrorText> : null}
         {section === "design" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
           <View style={[styles.designColumns, tablet && styles.designColumnsTablet]}>
@@ -125,7 +125,6 @@ function Tab({ label, icon, selected, onPress }: { label: string; icon: JSX.Elem
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.navItem, selected && styles.navItemActive]}>{icon}<Text style={[styles.navText, selected && styles.navTextActive]}>{label}</Text></Pressable>;
 }
 function Empty({ title, body }: { title: string; body: string }): JSX.Element { return <View style={styles.empty}><Text style={styles.emptyTitle}>{title}</Text><Muted>{body}</Muted></View>; }
-function message(cause: unknown, fallback: string): string { return cause instanceof CompanionError ? cause.message : cause instanceof Error ? cause.message : fallback; }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: tokens.bg },
