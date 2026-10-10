@@ -103,7 +103,9 @@ internal data class QwenTokenBudget(val promptTokens: Int, val reservedOutputTok
     fun validateReceipt(promptTokens: Long, generatedTokens: Long, stopReason: String) {
         if (promptTokens != this.promptTokens.toLong() || generatedTokens <= 0 || generatedTokens > reservedOutputTokens ||
             promptTokens + generatedTokens > capacity) {
-            throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Native Qwen token receipt disagrees with admitted budget")
+            throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT,
+                "Native Qwen token receipt disagrees with admitted budget: expectedPrompt=${this.promptTokens}, " +
+                    "nativePrompt=$promptTokens, nativeGenerated=$generatedTokens, reserved=$reservedOutputTokens, capacity=$capacity")
         }
         if (stopReason.lowercase() in setOf("context_length", "prompt_too_long", "context_limit", "context_length_exceeded")) {
             throw DialogueFailure(DialogueFailureCode.OUTPUT_LIMIT, "Qwen exhausted its compiled context")
