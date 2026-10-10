@@ -543,7 +543,10 @@ class MainActivity : AppCompatActivity() {
     private fun requireHeavyWork(capability: String, requiredBytes: Long) {
         val admission = resourceGovernor.admit(requiredBytes)
         check(admission.allowed) {
-            "$capability unavailable: ${admission.reason ?: "resource_limited"}"
+            when (admission.reason) {
+                "thermal_limited" -> "Phone too hot. Let it cool, then tap the microphone to retry."
+                else -> "$capability paused: ${admission.reason ?: "resource_limited"}. Tap the microphone to retry."
+            }
         }
         if (admission.maxConcurrency == 1) {
             android.util.Log.w("TokitoResources", "$capability admitted with constrained concurrency")

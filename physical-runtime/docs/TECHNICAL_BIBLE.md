@@ -3,7 +3,10 @@
 ## Generator token-budget invariant
 
 Local Qwen prompt admission uses its signed generator tokenizer over the entire
-vendor-formatted prompt and reserves the configured output token allowance.
+vendor-formatted prompt and requires the configured minimum output allowance.
+QAIRT uses remaining compiled context minus one termination slot, not a fixed
+512-token ceiling. Deadlines and size bounds remain. Bench reference queries
+are independent: prior questions and answers do not enter retrieval or prompts.
 Characters, UTF-8 bytes, embedding tokens, and streamed text chunks are not
 generator token measurements. Context capacity comes from compatible signed
 compiled-export metadata and must be qualified against actual binary graph

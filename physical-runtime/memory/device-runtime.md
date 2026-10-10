@@ -229,7 +229,8 @@ Run the host exact-ID reference check and real Android JNI conformance tests;
 host reference parity alone is not a device or generation-cap pass.
 
 Conversation admission uses the actual 4,096-token signed graph capacity and
-reserves 512 output tokens. The evidence character preflight permits up to
+requires at least 512 output tokens. Generation uses remaining compiled context
+minus one termination slot, not a fixed 512-token ceiling. The evidence character preflight permits up to
 12,000 characters; it is not a tokenizer estimate or an authorization to exceed
 the compiled context. If the complete formatted prompt overflows, oldest quoted
 history is evicted and the candidate is re-tokenized. Current question, verified
@@ -248,12 +249,11 @@ its manifest. Bench reference questions use that admitted corpus and the same
 384-dimensional encoder; they do not require a GLB or camera registration.
 Every microphone and typed question searches the full admitted corpus through
 the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
-Quoted previous questions add separately retrieved follow-up context; they
-cannot displace the current question's ranked results. Source descriptions and
+Bench queries start fresh: no previous question or generated answer enters
+retrieval or the next prompt. Source descriptions and
 other records share the bounded fact budget, retaining their original citations.
-The selector receives at most 24 round-robin source facts and only the latest
-user question (256 characters) as quoted follow-up context. Prior generated
-answers are not copied into its prompt. **Why:** repeated installed-device
+The selector receives at most 24 round-robin source facts and no conversation
+history. **Why:** repeated installed-device
 turns otherwise exceeded compiled context and mixed unrelated prior references.
 **Why:** ASR spelling and unknown reference names must not bypass RAG and enter
 the older no-source path. Semantic reference retrieval is not physical board
@@ -275,7 +275,8 @@ validation remains mandatory regardless of decoding. One malformed or
 token-limited selection may be repaired with the exact same admitted evidence
 inside the existing overall deadline; partial output is never accepted.
 **Why:** deterministic decoding is not a factual guardrail and can create
-repetition loops. Do not raise the context/output cap to hide that failure.
+repetition loops. More available output space is not proof of a repetition or
+factual-quality fix; qualify complete answers independently.
 
 Streaming speech recognition uses bounded `modified_beam_search` with four
 active paths, not greedy token pruning. **Why:** technical names need competing
