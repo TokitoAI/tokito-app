@@ -51,6 +51,8 @@ pub struct ProjectListItem {
     pub name: String,
     pub slug: String,
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -306,12 +308,15 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/v1/companion/projects"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "projects": [{"id":"p1","name":"N","slug":"n","updated_at":"t"}]
+                "projects": [{"id":"p1","name":"N","slug":"n","updated_at":"t","last_activity_at":123},
+                  {"id":"legacy","name":"Old","slug":"old","updated_at":""}]
             })))
             .mount(&server)
             .await;
         let items = list_projects(&server.uri(), "jwt").await.unwrap();
         assert_eq!(items[0].id, "p1");
+        assert_eq!(items[0].last_activity_at, Some(123));
+        assert_eq!(items[1].last_activity_at, None);
     }
 
     #[tokio::test]

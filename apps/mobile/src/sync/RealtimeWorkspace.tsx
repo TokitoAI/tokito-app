@@ -14,6 +14,7 @@ export type SyncResource = {
   resource: SyncResourceName;
   version: number;
   payload: unknown;
+  last_activity_at?: number | null;
 };
 
 export type SyncEvent = SyncResource & {
@@ -158,7 +159,7 @@ export function RealtimeWorkspaceProvider({
           const current = previous.get(keyOf(item.project_id, item.design_id, item.resource));
           if (current && current.version >= item.version) return previous;
           const next = new Map(previous);
-          next.set(keyOf(item.project_id, item.design_id, item.resource), item);
+          next.set(keyOf(item.project_id, item.design_id, item.resource), { ...item, last_activity_at: item.created_at });
           return next;
         });
         });

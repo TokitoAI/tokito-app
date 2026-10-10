@@ -38,7 +38,7 @@ impl SyncStateStore {
         Self::init(Connection::open_in_memory().map_err(db_error)?)
     }
 
-    fn init(conn: Connection) -> Result<Self, CloudError> {
+    fn init(mut conn: Connection) -> Result<Self, CloudError> {
         conn.pragma_update(None, "synchronous", "FULL")
             .map_err(db_error)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
@@ -58,6 +58,21 @@ impl SyncStateStore {
              );",
         )
         .map_err(db_error)?;
+        let migration = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let has_activity: bool = migration
+            .query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('resources') WHERE name='last_activity_at')", [], |row| row.get(0))
+            .map_err(db_error)?;
+        if !has_activity {
+            migration
+                .execute(
+                    "ALTER TABLE resources ADD COLUMN last_activity_at INTEGER",
+                    [],
+                )
+                .map_err(db_error)?;
+        }
+        migration.commit().map_err(db_error)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -87,6 +102,7 @@ impl SyncStateStore {
             ));
         }
         let mut seen = std::collections::HashSet::new();
+        let mut admitted_resources = Vec::with_capacity(bootstrap.resources.len());
         for resource in &bootstrap.resources {
             if project_id.is_some_and(|project| project != resource.project_id)
                 || !seen.insert((
@@ -110,6 +126,14 @@ impl SyncStateStore {
                     "bootstrap predates acknowledged resource; retry required".into(),
                 ));
             }
+            let previous_activity: Option<i64> = tx.query_row(
+                "SELECT last_activity_at FROM resources WHERE project_id=?1 AND design_id=?2 AND resource=?3",
+                params![resource.project_id, resource.design_id.as_deref().unwrap_or(""), resource.resource],
+                |row| row.get(0),
+            ).optional().map_err(db_error)?.flatten();
+            let mut admitted = resource.clone();
+            admitted.last_activity_at = admitted.last_activity_at.max(previous_activity);
+            admitted_resources.push(admitted);
         }
         if let Some(project_id) = project_id {
             tx.execute(
@@ -120,7 +144,7 @@ impl SyncStateStore {
         } else {
             tx.execute("DELETE FROM resources", []).map_err(db_error)?;
         }
-        for resource in &bootstrap.resources {
+        for resource in &admitted_resources {
             upsert_resource(&tx, resource)?;
         }
         set_cursor(&tx, bootstrap.cursor)?;
@@ -142,6 +166,7 @@ impl SyncStateStore {
                 resource: event.resource.clone(),
                 version: event.version,
                 payload: event.payload.clone(),
+                last_activity_at: Some(event.created_at),
             },
         )?;
         set_cursor(&tx, event.seq)?;
@@ -167,6 +192,7 @@ impl SyncStateStore {
                 resource: event.resource.clone(),
                 version: event.version,
                 payload: event.payload.clone(),
+                last_activity_at: Some(event.created_at),
             },
         )?;
         // This is a snapshot lower bound, not an SSE replay cursor. Advancing
@@ -193,7 +219,7 @@ impl SyncStateStore {
         let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let design_id = design_id.unwrap_or("");
         conn.query_row(
-            "SELECT version, payload_json FROM resources
+            "SELECT version, payload_json, last_activity_at FROM resources
              WHERE project_id = ?1 AND design_id = ?2 AND resource = ?3",
             params![project_id, design_id, resource],
             |row| {
@@ -204,6 +230,7 @@ impl SyncStateStore {
                     resource: resource.into(),
                     version: row.get::<_, i64>(0)? as u64,
                     payload: decode_cached_payload(&payload, 1)?,
+                    last_activity_at: row.get(2)?,
                 })
             },
         )
@@ -464,10 +491,10 @@ impl SyncStateStore {
     pub fn resources(&self, project_id: Option<&str>) -> Result<Vec<SyncResource>, CloudError> {
         let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let sql = if project_id.is_some() {
-            "SELECT project_id, design_id, resource, version, payload_json
+            "SELECT project_id, design_id, resource, version, payload_json, last_activity_at
              FROM resources WHERE project_id = ?1 ORDER BY project_id, design_id, resource"
         } else {
-            "SELECT project_id, design_id, resource, version, payload_json
+            "SELECT project_id, design_id, resource, version, payload_json, last_activity_at
              FROM resources ORDER BY project_id, design_id, resource"
         };
         let mut stmt = conn.prepare(sql).map_err(db_error)?;
@@ -480,6 +507,7 @@ impl SyncStateStore {
                 resource: row.get(2)?,
                 version: row.get::<_, i64>(3)? as u64,
                 payload: decode_cached_payload(&payload, 4)?,
+                last_activity_at: row.get(5)?,
             })
         };
         let mut resources = Vec::new();
@@ -566,17 +594,21 @@ fn upsert_resource(conn: &Connection, resource: &SyncResource) -> Result<(), Clo
     validate_resource_revision(conn, resource)?;
     let payload = serde_json::to_string(&resource.payload).map_err(|_| CloudError::Unexpected)?;
     conn.execute(
-        "INSERT INTO resources(project_id, design_id, resource, version, payload_json)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO resources(project_id, design_id, resource, version, payload_json, last_activity_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(project_id, design_id, resource) DO UPDATE SET
-           version=excluded.version, payload_json=excluded.payload_json
+           version=excluded.version, payload_json=excluded.payload_json,
+           last_activity_at=CASE WHEN resources.last_activity_at IS NULL THEN excluded.last_activity_at
+             WHEN excluded.last_activity_at IS NULL THEN resources.last_activity_at
+             ELSE MAX(resources.last_activity_at,excluded.last_activity_at) END
          WHERE excluded.version >= resources.version",
         params![
             resource.project_id,
             resource.design_id.as_deref().unwrap_or(""),
             resource.resource,
             resource.version as i64,
-            payload
+            payload,
+            resource.last_activity_at
         ],
     )
     .map_err(db_error)?;
@@ -587,7 +619,9 @@ fn validate_resource_revision(
     conn: &Connection,
     resource: &SyncResource,
 ) -> Result<(), CloudError> {
-    if resource.version > i64::MAX as u64 {
+    if resource.version > i64::MAX as u64
+        || resource.last_activity_at.is_some_and(|value| value < 0)
+    {
         return Err(CloudError::Unexpected);
     }
     let existing: Option<(u64, String)> = conn.query_row(
@@ -638,6 +672,87 @@ fn db_error(error: rusqlite::Error) -> CloudError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn committed_activity_survives_restart_bootstrap_and_exact_replay() {
+        let directory =
+            std::env::temp_dir().join(format!("tokito-activity-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("sync.sqlite3");
+        let event = SyncEvent {
+            seq: 1,
+            project_id: "p".into(),
+            design_id: Some("d".into()),
+            resource: "bom".into(),
+            version: 1,
+            command_id: "approved".into(),
+            actor_device_id: "phone".into(),
+            payload: serde_json::json!({"lines": []}),
+            created_at: 100,
+        };
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            store.apply_event(&event).unwrap();
+            store.apply_event(&event).unwrap();
+            let mut cached = store.resource("p", Some("d"), "bom").unwrap().unwrap();
+            assert_eq!(cached.last_activity_at, Some(100));
+            cached.last_activity_at = None;
+            store
+                .apply_bootstrap(
+                    &SyncBootstrap {
+                        cursor: 1,
+                        resources: vec![cached],
+                    },
+                    None,
+                )
+                .unwrap();
+        }
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            assert_eq!(
+                store.resources(None).unwrap()[0].last_activity_at,
+                Some(100)
+            );
+            assert!(store.resources(Some("other")).unwrap().is_empty());
+            let mut earlier = event.clone();
+            earlier.seq = 2;
+            earlier.created_at = 90;
+            store.apply_event(&earlier).unwrap();
+            assert_eq!(
+                store.resources(None).unwrap()[0].last_activity_at,
+                Some(100)
+            );
+            let command = SyncCommand {
+                device_id: "phone".into(),
+                command_id: "pending".into(),
+                project_id: "p".into(),
+                design_id: Some("d".into()),
+                resource: "bom".into(),
+                base_version: 1,
+                payload: serde_json::json!({"lines":[1]}),
+            };
+            store.enqueue(&command).unwrap();
+            assert_eq!(
+                store.resources(None).unwrap()[0].last_activity_at,
+                Some(100)
+            );
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn existing_resource_cache_migrates_without_inventing_activity() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE resources(project_id TEXT NOT NULL,design_id TEXT NOT NULL,resource TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,design_id,resource)); INSERT INTO resources VALUES('p','','project',1,'{}');").unwrap();
+        let store = SyncStateStore::init(conn).unwrap();
+        assert_eq!(
+            store
+                .resource("p", None, "project")
+                .unwrap()
+                .unwrap()
+                .last_activity_at,
+            None
+        );
+    }
+
     #[test]
     fn malformed_cache_is_not_reinterpreted_as_null_content() {
         let store = super::SyncStateStore::open(std::path::Path::new(":memory:")).unwrap();
@@ -715,6 +830,7 @@ mod tests {
             resource: "project".into(),
             version: 1,
             payload: serde_json::json!({"name":"original"}),
+            last_activity_at: None,
         };
         store
             .apply_bootstrap(
@@ -766,6 +882,7 @@ mod tests {
             resource: "project".into(),
             version: 1,
             payload: serde_json::json!({"name":"acknowledged"}),
+            last_activity_at: Some(1),
         };
         {
             let store = SyncStateStore::open(&path).unwrap();

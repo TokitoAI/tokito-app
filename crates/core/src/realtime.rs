@@ -24,6 +24,9 @@ pub struct SyncResource {
     pub resource: String,
     pub version: u64,
     pub payload: serde_json::Value,
+    /// Server-committed project activity, never a local queue/read timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

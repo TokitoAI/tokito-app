@@ -20,7 +20,7 @@ import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
-import { mergeProjectList } from "../sync/projectList";
+import { formatProjectUpdatedAt, mergeProjectList } from "../sync/projectList";
 import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
@@ -163,27 +163,13 @@ export function ProjectListScreen({
             >
               <Text style={styles.cardTitle}>{item.name}</Text>
               <Text style={styles.cardSlug} numberOfLines={1}>{item.slug}</Text>
-              <Text style={styles.cardMeta}>{formatUpdatedAt(item.updated_at)}</Text>
+              <Text style={styles.cardMeta}>{formatProjectUpdatedAt(item)}</Text>
             </Card>
           );
         }}
       />
     </View>
   );
-}
-
-function formatUpdatedAt(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "Update time unavailable";
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return "Updated just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `Updated ${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Updated ${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `Updated ${days}d ago`;
-  return `Updated ${new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
 const styles = StyleSheet.create({

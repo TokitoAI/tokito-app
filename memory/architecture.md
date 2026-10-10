@@ -140,6 +140,14 @@ resources are reconciled deterministically; journal tombstones must not be
 resurrected by a late index response. Missing update dates stay unknown, never
 "just now". A durable local enqueue is not a server commit: only confirmed
 journal events replace visible synchronized resources.
+Project list recency uses optional server `last_activity_at` Unix seconds,
+separate from project metadata/publication `updated_at`. Bootstrap/index supply
+committed activity and SSE contributes its original `created_at`; SQLite caches
+that metadata across restarts. Only confirmed resource activity affects sorting:
+reads, local enqueue and exact retries must not manufacture a new update time.
+Missing activity retains a known metadata-date fallback or remains unknown.
+**Why:** schematic/BOM approval and chat change their own resources without
+renaming/publishing a project; metadata-only sorting left active projects old.
 
 Project detail reads the canonical server journal even when no legacy published
 snapshot exists. Canonical BOM `lines` reference `parts` by `part_id`; join those

@@ -89,6 +89,7 @@ pub struct ProjectListItem {
     pub name: String,
     pub slug: String,
     pub updated_at: String,
+    pub last_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -286,6 +287,7 @@ fn map_project_list(p: tokito_companion_core::ProjectListItem) -> ProjectListIte
         name: p.name,
         slug: p.slug,
         updated_at: p.updated_at,
+        last_activity_at: p.last_activity_at,
     }
 }
 

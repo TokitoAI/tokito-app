@@ -299,6 +299,7 @@ class TokitoCompanionFfiModule : Module() {
             "name" to p.name,
             "slug" to p.slug,
             "updated_at" to p.updatedAt,
+            "last_activity_at" to p.lastActivityAt,
           )
         }
       }

@@ -66,7 +66,7 @@ export type TokitoCompanionFfiNative = {
   resolveIdentity(baseUrl: string, token: string): Promise<string>;
   forgetIdentity(baseUrl: string, token: string): Promise<void>;
   listProjects(baseUrl: string, token: string): Promise<
-    Array<{ id: string; name: string; slug: string; updated_at: string }>
+    Array<{ id: string; name: string; slug: string; updated_at: string; last_activity_at?: number | null }>
   >;
   getProject(baseUrl: string, token: string, projectId: string): Promise<string>;
   listProposals(

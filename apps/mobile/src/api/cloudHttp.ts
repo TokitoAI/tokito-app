@@ -52,6 +52,7 @@ export interface ProjectListItem {
   name: string;
   slug: string;
   updated_at: string;
+  last_activity_at?: number | null;
 }
 
 export interface ProjectDetail {
