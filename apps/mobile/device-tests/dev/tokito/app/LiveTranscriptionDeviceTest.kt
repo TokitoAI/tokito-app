@@ -38,6 +38,9 @@ class LiveTranscriptionDeviceTest {
                 assertTrue(text.isNotBlank() && text.length <= 512)
                 assertEquals(View.VISIBLE, view("transcriptPanel").visibility)
                 assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, view("transcriptText").accessibilityLiveRegion)
+                val controls = IntArray(2).also { view("voiceControls").getLocationOnScreen(it) }
+                val caption = IntArray(2).also { view("transcriptPanel").getLocationOnScreen(it) }
+                assertTrue("Caption overlaps the voice controls", caption[0] >= controls[0] + view("voiceControls").width)
             }
             instrumentation.sendStatus(2, Bundle().apply { putString("caption_qa", "final_caption_visible") })
         } finally {

@@ -115,12 +115,20 @@
     </LinearLayout>
 
     <LinearLayout
-        android:id="@+id/voiceControls"
-        android:layout_width="wrap_content"
+        android:id="@+id/voiceDock"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
         android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
         android:layout_marginBottom="24dp"
+        android:gravity="bottom"
+        android:orientation="horizontal">
+
+    <LinearLayout
+        android:id="@+id/voiceControls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:gravity="center_horizontal"
         android:orientation="vertical">
 
@@ -186,6 +194,7 @@
     </LinearLayout>
 
     <include android:id="@+id/transcriptPanel" layout="@layout/view_live_transcript" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/measurementPanel"

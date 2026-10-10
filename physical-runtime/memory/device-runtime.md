@@ -281,6 +281,9 @@ is polite accessible feedback. Only a resumed listening session can update it.
 Pause, call retirement and measurement capture clear it; it is never saved as
 view state or telemetry. **Why:** users need to distinguish ASR mistakes from
 retrieval failures without retaining microphone transcripts or stale turn text.
+The caption and voice controls share one horizontal layout dock and one inset
+owner. Never restore absolute caption offsets beside independently inset-adjusted
+controls; those overlap on landscape phones with navigation bars or larger fonts.
 
 Camera zoom uses CameraX-reported bounds and actual observed ratio. The surface
 intercepts only multi-touch zoom so the guidance overlay retains single-tap
