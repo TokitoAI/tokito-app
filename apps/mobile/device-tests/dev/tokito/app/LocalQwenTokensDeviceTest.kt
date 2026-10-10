@@ -62,7 +62,7 @@ class LocalQwenTokensDeviceTest {
             val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = cap))
             try {
                 withTimeout(120_000) { runtime.initialize(model) }
-                for (prompt in listOf("In general, what does a resistor do?", "In general, what is circuit ground?")) {
+                for (prompt in listOf("In one short sentence, explain what a resistor does.", "In one short sentence, explain circuit ground in general.")) {
                     ForegroundDeviceQa.requireResumed(foreground)
                     val response = withTimeout(65_000) { runtime.respond(DialogueRequest(prompt, deadlineMs = 60_000)) }
                     assertTrue("Cap $cap failed actual native receipt validation: $response", response is DialogueOutcome.Response)
@@ -73,6 +73,25 @@ class LocalQwenTokensDeviceTest {
                 }
             } finally { runtime.close() }
         }
+    }
+
+    @Test fun actualTruncatedOutputIsRejectedAfterExactReceiptValidation() = runBlocking {
+        val foreground = ForegroundDeviceQa.launch()
+        val directory = requireNotNull(ModelBundleRepository(context).activeDirectory(ModelCapability.DIALOGUE))
+        val model = DialogueModelProvisioner.fromAdmittedBundle(directory).requireInstalled()
+        val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = 8))
+        try {
+            withTimeout(120_000) { runtime.initialize(model) }
+            try {
+                withTimeout(65_000) { runtime.respond(DialogueRequest(
+                    "Explain in detail the differences between a resistor, capacitor and inductor.", deadlineMs = 60_000)) }
+                fail("A deliberately truncated answer must not be presented as complete")
+            } catch (failure: DialogueFailure) {
+                // Exact budget validation runs before output-limit rejection;
+                // mismatched or missing native receipts cannot pass this gate.
+                assertEquals(DialogueFailureCode.OUTPUT_LIMIT, failure.code)
+            }
+        } finally { runtime.close() }
     }
 
     private companion object {

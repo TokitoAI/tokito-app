@@ -266,9 +266,9 @@ class TokitoDialogueRuntime(
                             is LlmStreamResult.Completed -> {
                                 if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Duplicate completion")
                                 completed = true
-                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
                                 tokenBudget?.validateReceipt(result.profile.promptTokens, result.profile.generatedTokens,
                                     result.profile.stopReason)
+                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
                                 // Counts are vendor tokenizer measurements, never stream chunk counts.
                                 // Keep all prompt/output content and arbitrary vendor strings out of logs.
                                 Log.i(TAG, "Generation profile source=vendor " +

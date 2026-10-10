@@ -8,6 +8,10 @@ checksums against the pinned host tokenizer reference. Its second test exercises
 the production native token-receipt boundary at output caps 64, 128 and 192 with
 two independent prompts each. Success requires available exact prompt counts
 and bounded generated-token counts; stream callback counts are not receipts.
+Complete-response probes explicitly request short answers. A separate eight-token
+probe requires typed output-limit rejection after exact receipt validation; a
+truncated answer is never counted as a complete-response pass. Preserve failed
+earlier runs instead of replacing their evidence with a later concise-prompt run.
 The paired DEX audit explicitly checks its five named reflective methods, with
 narrow release keeps rather than a new package-wide testing whitelist.
 Its separate test program also consumes the named Kotlin array/file multifile
