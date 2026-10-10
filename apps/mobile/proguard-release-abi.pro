@@ -40,10 +40,18 @@
 # delegate family; preserving only the facade leaves inherited methods unsafe.
 -keep,includedescriptorclasses class kotlin.LazyKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.collections.CollectionsKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.collections.ArraysKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.collections.SetsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.text.StringsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.coroutines.intrinsics.IntrinsicsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.jdk7.AutoCloseableKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.io.FilesKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.coroutines.jvm.internal.Boxing { public *; }
+# The target includes this JSON dependency as program classes. Preserve the
+# exact two classes consumed by the independently optimized tokenizer tests;
+# do not assume their renamed target copies are Android framework exports.
+-keep,includedescriptorclasses class org.json.JSONObject { public *; protected *; }
+-keep,includedescriptorclasses class org.json.JSONArray { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.Lazy { public *; }
 -keep,includedescriptorclasses class kotlin.Result$Companion { public *; }
 -keep,includedescriptorclasses class kotlin.Result { public *; }
@@ -97,3 +105,23 @@
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeConfig { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeState$Listening { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeState$Ready { public *; }
+
+# Exact Qwen device acceptance reflects only these named entrypoints. No new
+# package whitelist or differently optimized QA build is permitted.
+-keep class dev.tokito.physical.dialogue.NativeQwenTokenizer {
+    public static final dev.tokito.physical.dialogue.NativeQwenTokenizer$Companion Companion;
+    public int[] encode(java.lang.String);
+    public void close();
+    private native <methods>;
+}
+-keep class dev.tokito.physical.dialogue.NativeQwenTokenizer$Companion {
+    public dev.tokito.physical.dialogue.NativeQwenTokenizer open(android.content.Context, java.io.File);
+}
+-keep class dev.tokito.physical.dialogue.QairtContextMetadata {
+    public static final dev.tokito.physical.dialogue.QairtContextMetadata$Companion Companion;
+    public int getCapacity();
+}
+-keep class dev.tokito.physical.dialogue.QairtContextMetadata$Companion {
+    public dev.tokito.physical.dialogue.QairtContextMetadata admit(android.content.Context, dev.tokito.physical.dialogue.DialogueModel);
+}
+-keep class dev.tokito.physical.dialogue.NativeQnnInventory { private native <methods>; }

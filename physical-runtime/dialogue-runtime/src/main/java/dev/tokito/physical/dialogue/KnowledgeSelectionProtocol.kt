@@ -98,7 +98,7 @@ class KnowledgeSelectionRequest(
             be its supplied component_id only if every selected fact belongs to it.
             A target is not proof of physical location. If the evidence cannot answer the
             question, return {"facts":[],"target":null,"abstain":true}.
-            No prose, markdown, reasoning, or other keys.
+            No prose, markdown, reasoning, or other keys. /no_think
         """.trimIndent()
     }
 }

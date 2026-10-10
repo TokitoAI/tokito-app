@@ -103,10 +103,11 @@ data class DialogueLimits(
     val maxTurnChars: Int = 1_000,
     val maxObservationCount: Int = 12,
     val maxObservationChars: Int = 500,
-    val maxDesignContextChars: Int = 4_000,
+    val maxDesignContextChars: Int = 12_000,
     val maxCapabilities: Int = 24,
-    val maxPromptChars: Int = 16_000,
+    val maxPromptChars: Int = 32_000,
     val maxOutputChars: Int = 4_096,
+    val maxSpokenWords: Int = 160,
     val maxPredictTokens: Int = 512,
     val maxDeadlineMs: Long = 60_000,
 )

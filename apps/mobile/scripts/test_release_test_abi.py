@@ -55,6 +55,14 @@ class ReleaseAbiTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             abi.uleb(b"\x80" * 6, 0)
 
+    def test_exact_qwen_reflection_methods_are_audited_when_suite_present(self):
+        self.assertEqual(set(), abi.reflection_methods(set()))
+        methods = abi.reflection_methods({abi.descriptor("dev.tokito.app.LocalQwenTokensDeviceTest")})
+        self.assertEqual(5, len(methods))
+        for method in methods:
+            self.assertFalse(abi.method_exists(method, set(), {}))
+            self.assertTrue(abi.method_exists(method, {method}, {}))
+
 
 if __name__ == "__main__":
     unittest.main()

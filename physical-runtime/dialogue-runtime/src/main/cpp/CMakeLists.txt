@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(tokito_qwen_tokens LANGUAGES CXX)
+add_library(tokito_qwen_tokens SHARED qwen_tokens.cpp qnn_inventory.cpp)
+target_compile_features(tokito_qwen_tokens PRIVATE cxx_std_17)
+target_compile_options(tokito_qwen_tokens PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(tokito_qwen_tokens PRIVATE dl)
+target_link_options(tokito_qwen_tokens PRIVATE "-Wl,-z,max-page-size=16384")

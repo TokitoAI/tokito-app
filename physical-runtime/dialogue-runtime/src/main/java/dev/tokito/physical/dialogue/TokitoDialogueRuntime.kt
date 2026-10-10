@@ -29,6 +29,7 @@ import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.MessageDigest
+import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -44,12 +45,19 @@ class TokitoDialogueRuntime(
     private val responses = ResponseWorker(retireEmpty = initialization::closeIfEmpty) {
         // Runs under native admission only after vendor work and cleanup unwind.
         runCatching { initialization.takeCurrent()?.close() }
+        runCatching { qwenTokenizer?.close() }
+        qwenTokenizer = null
+        qairtContext = null
+        activeModel = null
         initialization.close()
         activeRuntime = null
         clearSession()
     }
     private val lifecycle = DialogueLifecycle { responses.close() }
     private var activeRuntime: DialogueRuntime? = null
+    private var activeModel: DialogueModel? = null
+    private var qairtContext: QairtContextMetadata? = null
+    private var qwenTokenizer: NativeQwenTokenizer? = null
     private val sessionMessages = ArrayList<ChatMessage>()
     private var sessionChars = 0
     private var sessionTurns = 0
@@ -80,6 +88,7 @@ class TokitoDialogueRuntime(
         if (!lifecycle.publish { _state.value = DialogueRuntimeState.Loading }) ensureOpen()
         val started = android.os.SystemClock.elapsedRealtime()
         fun phase(name: String) { Log.i(TAG, "Initialization phase=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}") }
+        var admittedContext: QairtContextMetadata? = null
         try {
             initialization.load(INITIALIZATION_DEADLINE_MS) {
                 phase("inventory")
@@ -92,6 +101,7 @@ class TokitoDialogueRuntime(
                 if (!inventoryMatches) {
                     throw DialogueFailure(DialogueFailureCode.MODEL_INTEGRITY, "Model bundle does not match its pinned inventory")
                 }
+                admittedContext = if (model.runtime == DialogueRuntime.QAIRT) QairtContextMetadata.admit(applicationContext, model) else null
                 phase("jni_abi")
                 requireGenieXJniAbi()
                 phase("sdk_init")
@@ -126,6 +136,8 @@ class TokitoDialogueRuntime(
             coroutineContext.ensureActive()
             if (!lifecycle.publish {
                 activeRuntime = model.runtime
+                activeModel = model
+                qairtContext = admittedContext
                 clearSession()
                 _state.value = DialogueRuntimeState.Ready(model.id)
             }) ensureOpen()
@@ -189,7 +201,6 @@ class TokitoDialogueRuntime(
 
     private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
         if (request.knowledgeSelection == null) protocol.ungroundedIdentityClarification(request)?.let { return it }
-        val prompt = request.knowledgeSelection?.prompt(request.utterance) ?: protocol.requestPrompt(request)
         val toolMode = request.capabilities.isNotEmpty()
         requireDialogueMode(activeRuntime, toolMode)
         val systemPrompt = if (request.knowledgeSelection != null) KnowledgeSelectionRequest.SYSTEM
@@ -201,20 +212,35 @@ class TokitoDialogueRuntime(
         return try {
             val raw = run {
                 phase("prepare")
-                prepareSession(activeEngine, systemPrompt, prompt)
                 phase("template")
-                val templated = activeEngine.applyChatTemplate(
-                    sessionMessages.toTypedArray(),
-                    null,
-                    false,
-                ).getOrThrow()
-                if (templated.formattedText.length > limits.maxPromptChars) {
-                    throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Formatted request exceeds prompt limit")
+                val tokenizer = if (activeRuntime == DialogueRuntime.QAIRT) {
+                    val model = requireNotNull(activeModel)
+                    val tokenizerFile = File(model.path.canonicalFile.parentFile, "tokenizer.json")
+                    require(model.artifacts.any { it.file.canonicalFile == tokenizerFile.canonicalFile }) {
+                        "Generator tokenizer is absent from the signed inventory"
+                    }
+                    qwenTokenizer ?: NativeQwenTokenizer.open(applicationContext, tokenizerFile).also {
+                        qwenTokenizer = it
+                    }
+                } else null
+                val (prompt, formattedText, tokenBudget) = admitConversationWindow(request) { candidate ->
+                    val prompt = candidate.knowledgeSelection?.prompt(candidate.utterance) ?: protocol.requestPrompt(candidate)
+                    val text = activeEngine.applyChatTemplate(arrayOf(ChatMessage("system", systemPrompt),
+                        ChatMessage("user", prompt)), null, false).getOrThrow().formattedText
+                    if (text.length > limits.maxPromptChars) {
+                        throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Formatted request exceeds prompt limit")
+                    }
+                    val budget = tokenizer?.let {
+                        val context = requireNotNull(qairtContext)
+                        QwenTokenBudget(context.freshPromptTokenCount(it.encode(text)), limits.maxPredictTokens, context.capacity)
+                    }
+                    Triple(prompt, text, budget)
                 }
-                Log.i(TAG, "Local template: chatmlSystem=${templated.formattedText.contains("<|im_start|>system")}, " +
-                    "chatmlUser=${templated.formattedText.contains("<|im_start|>user")}, " +
-                    "chatmlAssistant=${templated.formattedText.contains("<|im_start|>assistant")}, " +
-                    "nonThinkingPrefix=${templated.formattedText.endsWith("<think>\n\n</think>\n\n")}")
+                prepareSession(activeEngine, systemPrompt, prompt)
+                Log.i(TAG, "Local template: chatmlSystem=${formattedText.contains("<|im_start|>system")}, " +
+                    "chatmlUser=${formattedText.contains("<|im_start|>user")}, " +
+                    "chatmlAssistant=${formattedText.contains("<|im_start|>assistant")}, " +
+                    "nonThinkingPrefix=${formattedText.endsWith("<think>\n\n</think>\n\n")}")
                 val generation = GenerationConfig(
                     maxTokens = limits.maxPredictTokens,
                     samplerConfig = if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
@@ -227,7 +253,7 @@ class TokitoDialogueRuntime(
                 var completed = false
                 var firstOutput = false
                 buildString {
-                    activeEngine.generateStreamFlow(templated.formattedText, generation).collect { result ->
+                    activeEngine.generateStreamFlow(formattedText, generation).collect { result ->
                         when (result) {
                             is LlmStreamResult.Token -> {
                                 if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Output after completion")
@@ -243,7 +269,8 @@ class TokitoDialogueRuntime(
                             is LlmStreamResult.Completed -> {
                                 if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Duplicate completion")
                                 completed = true
-                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
+                                tokenBudget?.validateReceipt(result.profile.promptTokens, result.profile.generatedTokens,
+                                    result.profile.stopReason)
                                 // Counts are vendor tokenizer measurements, never stream chunk counts.
                                 // Keep all prompt/output content and arbitrary vendor strings out of logs.
                                 Log.i(TAG, "Generation profile source=vendor " +
@@ -251,6 +278,7 @@ class TokitoDialogueRuntime(
                                     "promptTokens=${result.profile.promptTokens} " +
                                     "generatedTokens=${result.profile.generatedTokens} ttftMs=${result.profile.ttftMs} " +
                                     "promptTimeMs=${result.profile.promptTimeMs} decodeTimeMs=${result.profile.decodeTimeMs}")
+                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
                             }
                             is LlmStreamResult.Error -> throw result.throwable
                         }
@@ -259,11 +287,8 @@ class TokitoDialogueRuntime(
                 }
             }
             phase("native_returned")
-            sessionMessages.add(ChatMessage("assistant", raw))
-            sessionChars += raw.length
-            sessionTurns += 1
             val outcome = try {
-                request.knowledgeSelection?.parse(raw)
+                request.knowledgeSelection?.parse(protocol.spokenFinalAnswer(raw))
                     ?: if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
             } catch (failure: DialogueFailure) {
                 if (failure.code == DialogueFailureCode.INVALID_MODEL_OUTPUT) {
@@ -279,6 +304,14 @@ class TokitoDialogueRuntime(
                 }
                 throw failure
             }
+            val retained = when (outcome) {
+                is DialogueOutcome.Response -> outcome.text
+                is DialogueOutcome.Clarification -> outcome.question
+                is DialogueOutcome.ToolProposal -> raw
+            }
+            sessionMessages.add(ChatMessage("assistant", retained))
+            sessionChars += retained.length
+            sessionTurns += 1
             outcome.also {
                 if (outcome is DialogueOutcome.ToolProposal) {
                     if (outcome.id in recentProposalIds) {
