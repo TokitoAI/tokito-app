@@ -97,3 +97,23 @@
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeConfig { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeState$Listening { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.VoiceRuntimeState$Ready { public *; }
+
+# Exact Qwen device acceptance reflects only these named entrypoints. No new
+# package whitelist or differently optimized QA build is permitted.
+-keep class dev.tokito.physical.dialogue.NativeQwenTokenizer {
+    public static final dev.tokito.physical.dialogue.NativeQwenTokenizer$Companion Companion;
+    public int[] encode(java.lang.String);
+    public void close();
+    private native <methods>;
+}
+-keep class dev.tokito.physical.dialogue.NativeQwenTokenizer$Companion {
+    public dev.tokito.physical.dialogue.NativeQwenTokenizer open(android.content.Context, java.io.File);
+}
+-keep class dev.tokito.physical.dialogue.QairtContextMetadata {
+    public static final dev.tokito.physical.dialogue.QairtContextMetadata$Companion Companion;
+    public int getCapacity();
+}
+-keep class dev.tokito.physical.dialogue.QairtContextMetadata$Companion {
+    public dev.tokito.physical.dialogue.QairtContextMetadata admit(android.content.Context, dev.tokito.physical.dialogue.DialogueModel);
+}
+-keep class dev.tokito.physical.dialogue.NativeQnnInventory { private native <methods>; }
