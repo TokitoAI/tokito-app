@@ -9,6 +9,8 @@ Play-quality release builds use an **upload keystore** (not Android Debug).
 - `ANDROID_UPLOAD_STORE_PASSWORD`
 - `ANDROID_UPLOAD_KEY_ALIAS`
 - `ANDROID_UPLOAD_KEY_PASSWORD`
+- `ANDROID_UPLOAD_CERT_SHA256` (expected upload certificate, 64 hex characters)
+- `GH_TOKEN` (GitHub release publication, only in the release container)
 
 **Operator backup** (this machine only, never commit): `~/.tokito-secrets/`.
 
@@ -19,7 +21,12 @@ Tokito App owns a fresh key for package `dev.tokito.app`.
 Once Tokito App is released, this key becomes permanent release infrastructure.
 
 **How to apply:** `configure-android-release.mjs` after `expo prebuild`;
-`.buildkite/in-image/release-android.sh` verifies the APK is not debug-signed.
+`.buildkite/in-image/release-android.sh` verifies APK/AAB against the expected
+upload certificate and checks APK alignment. Publication depends on manual
+approval and the complete unified CI chain, not pipeline upload ordering.
+Signing configuration writes its keystore only inside the temporary release
+container directory; Gradle reads passwords from environment, never persisted
+checkout properties. The release script owns cleanup on every exit.
 
 Final application release builds use the current Expo properties
 `android.enableMinifyInReleaseBuilds=true` and
