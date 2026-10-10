@@ -13,6 +13,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("database", type=Path)
 parser.add_argument("encoder", type=Path)
 args = parser.parse_args()
+for filename, key in (("model.onnx", "onnx/model.onnx"), ("vocab.txt", "vocab.txt")):
+    assert embedding.digest(args.encoder / filename) == embedding.ARTIFACTS[key], "Encoder integrity mismatch"
+assert embedding.digest(args.encoder.parent / "reference/tokenizer.json") == embedding.ARTIFACTS["tokenizer.json"]
 tokenizer = tokenizers.Tokenizer.from_file(str(args.encoder.parent / "reference/tokenizer.json"))
 embedding.configure_tokenizer(tokenizer)
 options = ort.SessionOptions()
