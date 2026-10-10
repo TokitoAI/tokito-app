@@ -13,19 +13,18 @@ import com.geniex.sdk.bean.ModelConfig
 import com.geniex.sdk.bean.SamplerConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -36,9 +35,12 @@ class TokitoDialogueRuntime(
     private val applicationContext = context.applicationContext
     private val protocol = DialogueProtocol(limits)
     private val operation = Mutex()
-    private val closed = AtomicBoolean(false)
-    private val lifecycleLock = Any()
     private val initialization = InitializationWorker<LlmWrapper>()
+    private val lifecycle = DialogueLifecycle {
+        initialization.close()
+        activeRuntime = null
+        clearSession()
+    }
     private var activeRuntime: DialogueRuntime? = null
     private val sessionMessages = ArrayList<ChatMessage>()
     private var sessionChars = 0
@@ -58,10 +60,7 @@ class TokitoDialogueRuntime(
         ensureSupportedDevice()
         require(model.artifacts.isNotEmpty()) { "Expected a non-empty model inventory" }
         if (!model.path.exists()) throw DialogueFailure(DialogueFailureCode.MODEL_MISSING, "Model bundle is absent")
-        synchronized(lifecycleLock) {
-            ensureOpen()
-            _state.value = DialogueRuntimeState.Loading
-        }
+        if (!lifecycle.publish { _state.value = DialogueRuntimeState.Loading }) ensureOpen()
         val started = android.os.SystemClock.elapsedRealtime()
         fun phase(name: String) { Log.i(TAG, "Initialization phase=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}") }
         try {
@@ -108,12 +107,11 @@ class TokitoDialogueRuntime(
                     .getOrThrow()
             }
             coroutineContext.ensureActive()
-            synchronized(lifecycleLock) {
-                ensureOpen()
+            if (!lifecycle.publish {
                 activeRuntime = model.runtime
                 clearSession()
                 _state.value = DialogueRuntimeState.Ready(model.id)
-            }
+            }) ensureOpen()
             phase("ready")
         } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
             initialization.discardCurrent()
@@ -138,18 +136,22 @@ class TokitoDialogueRuntime(
 
     suspend fun respond(request: DialogueRequest): DialogueOutcome = operation.withLock {
         ensureOpen()
+        lifecycle.responding { respondOwned(request) }
+    }
+
+    private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
         val ready = _state.value as? DialogueRuntimeState.Ready
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
-        protocol.ungroundedIdentityClarification(request)?.let { return@withLock it }
+        protocol.ungroundedIdentityClarification(request)?.let { return it }
         val prompt = protocol.requestPrompt(request)
         val toolMode = request.capabilities.isNotEmpty()
         requireDialogueMode(activeRuntime, toolMode)
         val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
         val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
-        _state.value = DialogueRuntimeState.Generating
-        try {
-            val raw = withTimeout(request.deadlineMs) {
+        if (!lifecycle.publish { _state.value = DialogueRuntimeState.Generating }) ensureOpen()
+        return try {
+            val raw = generationDeadline(request.deadlineMs) {
                 prepareSession(activeEngine, systemPrompt, prompt)
                 val templated = activeEngine.applyChatTemplate(
                     sessionMessages.toTypedArray(),
@@ -210,46 +212,47 @@ class TokitoDialogueRuntime(
                     recentProposalIds.addLast(outcome.id)
                     if (recentProposalIds.size > 64) recentProposalIds.removeFirst()
                 }
-                _state.value = ready
+                lifecycle.publish { _state.value = ready }
             }
-        } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
-            runCatching { activeEngine.stopStream() }
-            sessionNeedsReset = true
-            _state.value = ready
-            throw DialogueFailure(DialogueFailureCode.GENERATION_TIMEOUT, "Local generation exceeded its deadline", failure)
         } catch (failure: CancellationException) {
-            runCatching { activeEngine.stopStream() }
+            stopInterruptedStream(activeEngine)
             sessionNeedsReset = true
-            _state.value = ready
-            throw DialogueFailure(DialogueFailureCode.GENERATION_CANCELLED, "Local generation was cancelled", failure)
+            lifecycle.publish { _state.value = ready }
+            throw failure
         } catch (failure: DialogueFailure) {
+            if (failure.code == DialogueFailureCode.GENERATION_TIMEOUT ||
+                failure.code == DialogueFailureCode.OUTPUT_LIMIT) {
+                stopInterruptedStream(activeEngine)
+            }
             sessionNeedsReset = true
-            _state.value = ready
+            lifecycle.publish { _state.value = ready }
             throw failure
         } catch (failure: Throwable) {
             sessionNeedsReset = true
             val wrapped = DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Local generation failed", failure)
-            _state.value = DialogueRuntimeState.Failed(wrapped)
+            lifecycle.publish { _state.value = DialogueRuntimeState.Failed(wrapped) }
             throw wrapped
         }
     }
 
-    override fun close() {
-        synchronized(lifecycleLock) {
-            if (!closed.compareAndSet(false, true)) return
-            initialization.close()
-            activeRuntime = null
-            clearSession()
-            _state.update { DialogueRuntimeState.Closed }
+    private suspend fun stopInterruptedStream(engine: LlmWrapper) =
+        withContext(NonCancellable + Dispatchers.IO) {
+            // A cancelled caller must still stop the native producer before its
+            // lease releases the engine. Never run cleanup JNI on the UI thread.
+            runCatching { engine.stopStream() }
+            Unit
         }
+
+    override fun close() {
+        lifecycle.close { _state.value = DialogueRuntimeState.Closed }
     }
 
-    private fun initializationFailure(failure: DialogueFailure) = synchronized(lifecycleLock) {
-        if (!closed.get()) _state.value = DialogueRuntimeState.Failed(failure)
+    private fun initializationFailure(failure: DialogueFailure) {
+        lifecycle.publish { _state.value = DialogueRuntimeState.Failed(failure) }
     }
 
     private fun ensureOpen() {
-        if (closed.get()) throw DialogueFailure(DialogueFailureCode.CLOSED, "Dialogue runtime is closed")
+        if (lifecycle.isClosed()) throw DialogueFailure(DialogueFailureCode.CLOSED, "Dialogue runtime is closed")
     }
 
     private fun ensureSupportedDevice() {

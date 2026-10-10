@@ -88,6 +88,16 @@ contain only fixed phase names and elapsed milliseconds, not prompt/model text.
 Lock-screen conditions must be recorded separately; a timeout is not proof that
 the operating system suspended the NPU.
 
+Response close revokes state publication immediately: `Closed` is terminal and
+an interrupted response cannot restore `Ready` or `Failed`. It cancels its own
+structured response scope without joining vendor work on the closing thread;
+engine disposal waits until that scope has unwound, so destruction cannot race
+an active JNI call. Caller cancellation (including an enclosing deadline)
+remains coroutine cancellation, while only the response's own deadline becomes
+`GENERATION_TIMEOUT`. The SDK invokes template/reset/generation through JNI;
+cooperative cancellation and the configured deadline do not establish a hard
+wall-clock bound for unresponsive vendor code or a suspended process.
+
 ## Local design retrieval
 
 `LocalDesignContextIndex` accepts records only after an assembly-context bundle

@@ -155,3 +155,13 @@ close revokes engine installation; a late result is disposed off the UI thread.
 without producing a model answer. Screen lock was observed, but its causal role
 was not established. Report fixed phases/timing and timeout state, never infer
 that NPU execution succeeded or was physically interrupted.
+
+Response ownership also guards terminal state and engine disposal. Closing a
+runtime marks it `Closed` before cancellation and does not wait for an active
+response; its engine is disposed only after that response unwinds. Late state
+publication is rejected. Caller cancellation remains coroutine cancellation,
+including a caller's shorter timeout; only the owned response deadline maps to
+`GENERATION_TIMEOUT`. **Why:** the old response catches restored `Ready` after
+close and converted cancellation into a domain failure. A JNI call which does
+not cooperate may still delay unwind; these ownership guarantees do not claim
+physical interruption or establish that a lock screen caused a device timeout.

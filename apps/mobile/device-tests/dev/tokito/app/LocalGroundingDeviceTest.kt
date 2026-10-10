@@ -32,10 +32,12 @@ class LocalGroundingDeviceTest {
         }
         assertTrue(policy.answer("Where is U8?", index)!!.text.contains("don't have verified data"))
         assertTrue(policy.answer("Does my board have Bluetooth?", null)!!.text.contains("verified board context"))
-        assertNull(policy.answer("Explain capacitance", null))
+        assertEquals(LocalBenchDialoguePolicy.Authority.ABSTENTION,
+            policy.answer("Explain capacitance", null).authority)
         assertTrue(policy.answer("What voltage can the power connector accept?", null)!!.text.contains("verified board context"))
         assertTrue(policy.answer("What is the control input for?", index)!!.text.contains("verified board context"))
-        assertNull(policy.answer("In general, how do voltage dividers work?", index))
+        assertEquals(LocalBenchDialoguePolicy.Authority.ABSTENTION,
+            policy.answer("In general, how do voltage dividers work?", index).authority)
         assertFalse(PhysicalSessionContext("project-b", "design-b", "revision-b").admitsBoardReference("revision-a"))
         assertFalse(PhysicalSessionContext("project-b", "design-b").admitsBoardReference("revision-a"))
         assertTrue(PhysicalSessionContext("project-a", "design-a", "revision-a").admitsBoardReference("revision-a"))
