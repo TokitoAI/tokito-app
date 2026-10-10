@@ -39,16 +39,23 @@ class DatasetBenchDeviceTest {
                 "What is FRDM MCXN236?" to "NXP",
                 "What is Ultimainboard?" to "Ultimaker",
             )
+            val failures = mutableListOf<String>()
             repeat(2) { round ->
                 for ((question, expected) in questions) {
                     ForegroundDeviceQa.requireResumed(bench)
-                    val answer = withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(question) } }
+                    val answer = try {
+                        withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(question) } }
+                    } catch (failure: dev.tokito.physical.dialogue.DialogueFailure) {
+                        failures.add("round=$round question=$question code=${failure.code}")
+                        "Rejected: ${failure.code}"
+                    }
                     instrumentation.sendStatus(2, Bundle().apply {
                         putInt("round", round); putString("question", question); putString("source_answer", answer)
                     })
-                    assertTrue("Missing source definition for $question: $answer", answer.contains(expected, ignoreCase = true))
+                    if (!answer.contains(expected, ignoreCase = true)) failures.add("Missing source definition for $question: $answer")
                 }
             }
+            assertTrue(failures.joinToString("\n"), failures.isEmpty())
         } finally { instrumentation.runOnMainSync { bench.finish() } }
     }
     /** Requires real speech at the phone microphone; no transcript injection. */
