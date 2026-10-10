@@ -16,7 +16,6 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
 import android.os.Handler
-import android.os.HandlerThread
 import android.os.Looper
 import android.view.Gravity
 import android.view.Surface
@@ -37,14 +36,18 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
     private lateinit var preview: TextureView
     private lateinit var overlay: DetectionOverlay
     private lateinit var status: TextView
-    private val workerThread = HandlerThread("tokito-camera").apply { start() }
-    private val cameraHandler = Handler(workerThread.looper)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val inference = Executors.newSingleThreadExecutor()
     private val analyzing = AtomicBoolean(false)
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
-    private var runtime: LocalComponentVisionRuntime? = null
+    @Volatile private var runtime: LocalComponentVisionRuntime? = null
+    private val modelLock = Any()
+    @Volatile private var active = false
+    @Volatile private var destroyed = false
+    private var opening = false
+    @Volatile private var epoch = 0L
+    private var previewSurface: Surface? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -67,9 +70,10 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
                 }
                 LocalComponentVisionRuntime.load(bundle)
             }.onSuccess {
-                runtime = it
-                mainHandler.post { status.text = "Camera ready — point at a circuit board"; startIfReady() }
-            }.onFailure { error -> mainHandler.post { status.text = "Model error: ${error.message}" } }
+                val accepted = synchronized(modelLock) { if (destroyed) false else { runtime = it; true } }
+                if (!accepted) it.close()
+                else mainHandler.post { if (!destroyed) { status.text = "Camera ready — point at a circuit board"; startIfReady() } }
+            }.onFailure { error -> mainHandler.post { if (!destroyed) status.text = "Model error: ${error.message}" } }
         }
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), 7)
@@ -84,11 +88,25 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) = startIfReady()
     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
     override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
-    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
+    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean { closeCamera(); return true }
+
+    override fun onStart() { super.onStart(); active = true; startIfReady() }
+    override fun onStop() { active = false; closeCamera(); super.onStop() }
+
+    private fun closeCamera() {
+        epoch += 1
+        opening = false
+        mainHandler.removeCallbacksAndMessages(null)
+        session?.close(); session = null
+        camera?.close(); camera = null
+        previewSurface?.release(); previewSurface = null
+        overlay.result = null
+    }
 
     @SuppressLint("MissingPermission")
     private fun startIfReady() {
-        if (!preview.isAvailable || runtime == null || camera != null || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+        if (!active || destroyed || opening || !preview.isAvailable || runtime == null || camera != null || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+        val owner = epoch
         val manager = getSystemService(CameraManager::class.java)
         val id = manager.cameraIdList.firstOrNull {
             manager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
@@ -97,45 +115,63 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
             ?.getOutputSizes(SurfaceTexture::class.java).orEmpty()
         val selected = sizes.minByOrNull { abs(it.width - 1280) + abs(it.height - 720) }
         selected?.let { preview.surfaceTexture?.setDefaultBufferSize(it.width, it.height) }
-        manager.openCamera(id, object : CameraDevice.StateCallback() {
-            override fun onOpened(device: CameraDevice) { camera = device; beginPreview(device) }
-            override fun onDisconnected(device: CameraDevice) { device.close(); camera = null }
-            override fun onError(device: CameraDevice, error: Int) { device.close(); camera = null; mainHandler.post { status.text = "Camera error $error" } }
-        }, cameraHandler)
+        opening = true
+        try {
+            manager.openCamera(id, object : CameraDevice.StateCallback() {
+                override fun onOpened(device: CameraDevice) {
+                    if (!active || destroyed || owner != epoch) { device.close(); return }
+                    opening = false; camera = device; beginPreview(device, owner)
+                }
+                override fun onDisconnected(device: CameraDevice) {
+                    device.close(); if (owner == epoch) closeCamera()
+                }
+                override fun onError(device: CameraDevice, error: Int) {
+                    device.close(); if (owner == epoch) { closeCamera(); status.text = "Camera error $error" }
+                }
+            }, mainHandler)
+        } catch (error: Exception) { closeCamera(); status.text = "Camera unavailable: ${error.message}" }
     }
 
-    private fun beginPreview(device: CameraDevice) {
+    private fun beginPreview(device: CameraDevice, owner: Long) {
         val surface = Surface(preview.surfaceTexture)
+        previewSurface = surface
         device.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(value: CameraCaptureSession) {
+                if (!active || destroyed || owner != epoch || camera !== device) { value.close(); return }
                 session = value
                 val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                     addTarget(surface); set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 }.build()
-                value.setRepeatingRequest(request, null, cameraHandler)
-                scheduleAnalysis()
+                value.setRepeatingRequest(request, null, mainHandler)
+                scheduleAnalysis(owner)
             }
-            override fun onConfigureFailed(value: CameraCaptureSession) { mainHandler.post { status.text = "Camera configuration failed" } }
-        }, cameraHandler)
+            override fun onConfigureFailed(value: CameraCaptureSession) {
+                value.close(); if (owner == epoch) { closeCamera(); status.text = "Camera configuration failed" }
+            }
+        }, mainHandler)
     }
 
-    private fun scheduleAnalysis() {
+    private fun scheduleAnalysis(owner: Long) {
         mainHandler.postDelayed({
-            val bitmap = preview.bitmap
+            if (!active || destroyed || owner != epoch) return@postDelayed
             val detector = runtime
-            if (bitmap != null && detector != null && analyzing.compareAndSet(false, true)) {
+            val claimed = detector != null && analyzing.compareAndSet(false, true)
+            val bitmap = if (claimed) preview.bitmap else null
+            if (bitmap != null && detector != null) {
                 inference.execute {
-                    runCatching { detector.analyze(bitmap) }.onSuccess { result ->
-                        writeReport(result)
+                    try { runCatching { detector.analyze(bitmap) }.onSuccess { result ->
+                        if (active && !destroyed && owner == epoch) writeReport(result)
                         mainHandler.post {
+                            if (!active || destroyed || owner != epoch) return@post
                             overlay.result = result
                             status.text = "${result.detections.size} detections • ${"%.0f".format(result.inferenceNanos / 1e6)} ms • local test model"
                         }
-                    }.onFailure { error -> mainHandler.post { status.text = "Inference error: ${error.message}" } }
-                    analyzing.set(false); bitmap.recycle()
+                    }.onFailure { error -> mainHandler.post {
+                        if (active && !destroyed && owner == epoch) status.text = "Inference error: ${error.message}"
+                    } } } finally { analyzing.set(false); bitmap.recycle() }
                 }
-            }
-            if (!isFinishing) scheduleAnalysis()
+            } else if (claimed) analyzing.set(false)
+            if (active && owner == epoch) scheduleAnalysis(owner)
         }, 900)
     }
 
@@ -149,7 +185,10 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
     }
 
     override fun onDestroy() {
-        session?.close(); camera?.close(); runtime?.close(); inference.shutdownNow(); workerThread.quitSafely()
+        val retired = synchronized(modelLock) { destroyed = true; runtime.also { runtime = null } }
+        active = false; closeCamera()
+        // Serialize destruction behind any inference that already owns the model.
+        inference.execute { retired?.close(); inference.shutdown() }
         super.onDestroy()
     }
 }
