@@ -244,9 +244,10 @@ class TokitoDialogueRuntime(
                 val generation = GenerationConfig(
                     maxTokens = limits.maxPredictTokens,
                     samplerConfig = if (request.knowledgeSelection != null) {
-                        // Evidence-ID classification is not creative conversation.
-                        // Do not randomly drop verified evidence at temperature 0.7.
-                        SamplerConfig(temperature = 0f, topP = 1f, topK = 1, minP = 0f)
+                        // Qwen's non-thinking decoder must not be forced into
+                        // greedy top-1 loops. Source validation, not greedy
+                        // sampling, is the authority boundary.
+                        evidenceSelectionSampler(activeRuntime)
                     } else if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
                         SamplerConfig(grammarString = TOKITO_DIALOGUE_GRAMMAR)
                     } else {
@@ -465,6 +466,8 @@ internal fun supportsDialogueRuntime(abis: Array<String>): Boolean =
     abis.any { it == "arm64-v8a" }
 
 /** The admitted QAIRT profile is Qwen3 non-thinking; greedy decoding is not its recommended profile. */
+internal fun evidenceSelectionSampler(runtime: DialogueRuntime?): SamplerConfig = conversationalSampler(runtime)
+
 internal fun conversationalSampler(runtime: DialogueRuntime?): SamplerConfig =
     if (runtime == DialogueRuntime.QAIRT) {
         SamplerConfig(temperature = 0.7f, topP = 0.8f, topK = 20, minP = 0f)
