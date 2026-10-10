@@ -35,6 +35,8 @@ export type InstalledModelBundle = {
 
 export type ModelBundleStatus = {
   capability: ModelCapability;
+  state: "missing" | "ready" | "rejected";
+  rejection: "license" | "verification" | null;
   modelId: string | null;
   modelRevision: string | null;
 };

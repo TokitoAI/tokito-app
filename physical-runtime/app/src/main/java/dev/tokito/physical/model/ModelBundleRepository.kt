@@ -32,6 +32,12 @@ data class InstalledModelBundle(
     val modelRevision: String,
 )
 
+data class ModelBundleAvailability(
+    val state: String,
+    val bundle: InstalledModelBundle? = null,
+    val rejection: String? = null,
+)
+
 /** Owns the only admitted model directories used by the shipping runtime. */
 class ModelBundleRepository(private val context: Context) {
     fun install(capability: ModelCapability, source: InputStream): InstalledModelBundle {
@@ -51,6 +57,9 @@ class ModelBundleRepository(private val context: Context) {
         val bundle = installer(capability).verifiedActiveBundle() ?: return null
         bundle.manifest.toInstalledBundle(capability)
     }.getOrNull()
+
+    fun availability(capability: ModelCapability): ModelBundleAvailability =
+        classifyModelAvailability(capability) { installer(capability).verifiedActiveBundle() }
 
     private fun installer(capability: ModelCapability): ModelBundleInstaller = ModelBundleInstaller(
         root = context.filesDir.resolve("models/${capability.wireValue}"),
@@ -120,6 +129,25 @@ class ModelBundleRepository(private val context: Context) {
         const val PUBLIC_KEY_DER_BASE64 =
             "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIRdvxwpCvFNM87H6jhjUBNttN/geS5sN1Mh7V2dvwrCQvWE26xyGmc7Wdtdrkd+btA28HE08XI+w35KHu84VCg=="
     }
+}
+
+/** Classifies a verified read without exposing paths, native errors or a trust bypass. */
+internal fun classifyModelAvailability(
+    capability: ModelCapability,
+    readVerified: () -> ModelBundleInstaller.VerifiedBundle?,
+): ModelBundleAvailability = try {
+    val active = readVerified()
+    if (active == null) ModelBundleAvailability("missing")
+    else {
+        check(active.manifest.getString("capability") == capability.wireValue)
+        ModelBundleAvailability("ready", InstalledModelBundle(
+            capability, active.manifest.getString("model_id"), active.manifest.getString("model_revision"),
+        ))
+    }
+} catch (_: ModelLicenseRejectedException) {
+    ModelBundleAvailability("rejected", rejection = "license")
+} catch (_: Exception) {
+    ModelBundleAvailability("rejected", rejection = "verification")
 }
 
 class EcdsaModelSignatureVerifier(publicKeyDerBase64: String) : ModelSignatureVerifier {

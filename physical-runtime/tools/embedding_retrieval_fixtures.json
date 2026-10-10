@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "revision": "held-out-electronics-v1-2026-10-10",
+  "scope": "Synthetic authored project fixtures. Component role summaries reviewed against cited official data sheets; values, references and connector wiring are synthetic test authoring, not physical observations. Queries frozen before inference; no training or threshold tuning.",
+  "sources": {
+    "fixture": {"url": null, "basis": "Synthetic test authoring, not a physical board or admitted production knowledge corpus"},
+    "charger": {"url": "https://ww1.microchip.com/downloads/en/DeviceDoc/20001984g.pdf", "page": 1},
+    "ldo": {"url": "https://www.ti.com/lit/ds/symlink/tlv755p.pdf", "page": 1},
+    "monitor": {"url": "https://www.ti.com/lit/ds/symlink/ina219.pdf", "page": 1},
+    "driver": {"url": "https://www.ti.com/lit/ds/symlink/drv8833.pdf", "page": 1},
+    "can": {"url": "https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf", "page": 1},
+    "amplifier": {"url": "https://www.ti.com/lit/ds/symlink/lm358.pdf", "page": 1},
+    "adc": {"url": "https://www.ti.com/lit/ds/symlink/ads1115.pdf", "page": 1},
+    "timer": {"url": "https://www.ti.com/lit/ds/symlink/ne555.pdf", "page": 1},
+    "nand": {"url": "https://www.ti.com/lit/ds/symlink/sn74hc00.pdf", "page": 1}
+  },
+  "corpora": [
+    {
+      "id": "portable-power", "context_revision": "portable-power@fixture-v1",
+      "records": [
+        {"id": "battery-charger", "keys": ["U1"], "source": "charger", "text": "U1 MCP73831 controls charging of a single lithium-ion or lithium-polymer cell with constant-current and constant-voltage regulation."},
+        {"id": "rail-regulator", "keys": ["U2"], "source": "ldo", "text": "U2 TLV755P is a low-dropout linear regulator supplying the portable sensor electronics."},
+        {"id": "power-monitor", "keys": ["U3"], "source": "monitor", "text": "U3 INA219 senses shunt voltage and bus voltage and reports electrical current and power through its I2C interface."},
+        {"id": "power-inlet", "keys": ["J1"], "pins": ["1", "2"], "source": "fixture", "text": "J1 is the external supply inlet. Pin 1 carries input power and pin 2 is the return."},
+        {"id": "battery-plug", "keys": ["J2"], "pins": ["1", "2"], "source": "fixture", "text": "J2 is the rechargeable-cell connector. Pin 1 is battery positive and pin 2 is battery negative."},
+        {"id": "status-light", "keys": ["D1"], "source": "fixture", "text": "D1 is the green charge-state indicator. It lights while the synthetic design reports charging."}
+      ],
+      "queries": [
+        {"id": "p1", "category": "paraphrase", "text": "Which chip replenishes the rechargeable cell?", "expected": "battery-charger"},
+        {"id": "p2", "category": "paraphrase", "text": "What manages lithium battery charging?", "expected": "battery-charger"},
+        {"id": "p3", "category": "paraphrase", "text": "Which device stabilizes the sensor supply with a linear regulator?", "expected": "rail-regulator"},
+        {"id": "p4", "category": "paraphrase", "text": "How does this circuit determine its electrical power consumption?", "expected": "power-monitor"},
+        {"id": "p5", "category": "paraphrase", "text": "Which chip measures current through the shunt?", "expected": "power-monitor"},
+        {"id": "p6", "category": "paraphrase", "text": "Where is the green lamp showing charge activity?", "expected": "status-light"},
+        {"id": "p7", "category": "unrelated", "text": "What is the weather forecast for tomorrow?", "expected": null},
+        {"id": "p8", "category": "unrelated", "text": "Which antenna matches an 868 MHz radio?", "expected": null},
+        {"id": "p9", "category": "unrelated", "text": "Tell me the processor bootloader password.", "expected": null},
+        {"id": "p10", "category": "ambiguous", "text": "Which power connection should I use?", "expected": null},
+        {"id": "p11", "category": "ambiguous", "text": "Which part manages electrical power?", "expected": null},
+        {"id": "p12", "category": "guard_unknown_reference", "text": "Does U99 charge the lithium battery?", "expected": null},
+        {"id": "p13", "category": "guard_named_reference", "text": "Does U2 measure current and power?", "expected": "rail-regulator"},
+        {"id": "p14", "category": "guard_ambiguous_pin", "text": "What is pin 1 connected to?", "expected": null},
+        {"id": "p15", "category": "guard_named_pin", "text": "What is J1 pin 1 connected to?", "expected": "power-inlet"},
+        {"id": "p16", "category": "guard_missing_pin", "text": "What is J1 pin 9 connected to?", "expected": null}
+      ]
+    },
+    {
+      "id": "motor-network", "context_revision": "motor-network@fixture-v1",
+      "records": [
+        {"id": "motor-driver", "keys": ["U1"], "source": "driver", "text": "U1 DRV8833 contains two H-bridges for driving brushed DC motors, a bipolar stepper, or other inductive loads."},
+        {"id": "can-transceiver", "keys": ["U2"], "source": "can", "text": "U2 SN65HVD230 provides the physical transmit and receive interface between a CAN controller and the differential CAN bus."},
+        {"id": "current-sense", "keys": ["U3"], "source": "monitor", "text": "U3 INA219 measures the shunt voltage and bus voltage to report motor-supply current and power over I2C."},
+        {"id": "motor-terminal", "keys": ["J1"], "pins": ["1", "2"], "source": "fixture", "text": "J1 is the two-terminal connection to the brushed motor. The output bridge drives its two wires."},
+        {"id": "can-terminal", "keys": ["J2"], "pins": ["1", "2"], "source": "fixture", "text": "J2 exposes the CAN network. Pin 1 is CAN high and pin 2 is CAN low."},
+        {"id": "fault-light", "keys": ["D1"], "source": "fixture", "text": "D1 is the red fault indicator used to display a motor-driver error in this synthetic design."}
+      ],
+      "queries": [
+        {"id": "m1", "category": "paraphrase", "text": "What switches the current direction through the DC motor?", "expected": "motor-driver"},
+        {"id": "m2", "category": "paraphrase", "text": "Which device drives a bipolar stepper with dual bridges?", "expected": "motor-driver"},
+        {"id": "m3", "category": "paraphrase", "text": "Which chip translates controller signaling onto the differential CAN network?", "expected": "can-transceiver"},
+        {"id": "m4", "category": "paraphrase", "text": "What measures the motor supply current?", "expected": "current-sense"},
+        {"id": "m5", "category": "paraphrase", "text": "Where do the two motor wires attach?", "expected": "motor-terminal"},
+        {"id": "m6", "category": "paraphrase", "text": "Which red indicator warns about driver failure?", "expected": "fault-light"},
+        {"id": "m7", "category": "unrelated", "text": "Where is the WiFi antenna?", "expected": null},
+        {"id": "m8", "category": "unrelated", "text": "What charges the lithium cell?", "expected": null},
+        {"id": "m9", "category": "unrelated", "text": "How many megapixels does the camera have?", "expected": null},
+        {"id": "m10", "category": "ambiguous", "text": "Which connector carries two wires?", "expected": null},
+        {"id": "m11", "category": "ambiguous", "text": "Which interface handles motor information?", "expected": null},
+        {"id": "m12", "category": "guard_unknown_reference", "text": "Show U77, the dual motor bridge.", "expected": null},
+        {"id": "m13", "category": "guard_named_reference", "text": "Does U2 drive a bipolar stepper?", "expected": "can-transceiver"},
+        {"id": "m14", "category": "guard_ambiguous_pin", "text": "What voltage is on pin 2?", "expected": null},
+        {"id": "m15", "category": "guard_named_pin", "text": "What signal is J2 pin 2?", "expected": "can-terminal"},
+        {"id": "m16", "category": "guard_missing_pin", "text": "What signal is J2 pad 20?", "expected": null}
+      ]
+    },
+    {
+      "id": "analog-acquisition", "context_revision": "analog-acquisition@fixture-v1",
+      "records": [
+        {"id": "sensor-amplifier-a", "keys": ["U1"], "source": "amplifier", "text": "U1 LM358 is a dual operational amplifier. In this synthetic design it amplifies the first analog sensor signal."},
+        {"id": "sensor-amplifier-b", "keys": ["U2"], "source": "amplifier", "text": "U2 LM358 is a dual operational amplifier. In this synthetic design it amplifies the second analog sensor signal."},
+        {"id": "analog-converter", "keys": ["U3"], "source": "adc", "text": "U3 ADS1115 is a 16-bit analog-to-digital converter with an I2C interface and a programmable gain amplifier."},
+        {"id": "interval-timer", "keys": ["U4"], "source": "timer", "text": "U4 NE555 is a precision timer configured to generate repeating sampling pulses in this synthetic design."},
+        {"id": "sensor-inlet", "keys": ["J1"], "pins": ["1", "2", "3"], "source": "fixture", "text": "J1 is the external sensor inlet. Pin 1 is the analog signal, pin 2 is return, and pin 3 is the sensor supply."},
+        {"id": "calibration-inlet", "keys": ["J2"], "pins": ["1", "2"], "source": "fixture", "text": "J2 accepts an external calibration signal. Pin 1 is the reference input and pin 2 is return."}
+      ],
+      "queries": [
+        {"id": "a1", "category": "paraphrase", "text": "Which converter digitizes the analog voltage with sixteen-bit resolution?", "expected": "analog-converter"},
+        {"id": "a2", "category": "paraphrase", "text": "What produces repetitive timing pulses for sampling?", "expected": "interval-timer"},
+        {"id": "a3", "category": "paraphrase", "text": "Which amplifier boosts the first sensor channel?", "expected": "sensor-amplifier-a"},
+        {"id": "a4", "category": "paraphrase", "text": "Which amplifier boosts the second sensor channel?", "expected": "sensor-amplifier-b"},
+        {"id": "a5", "category": "paraphrase", "text": "Where can I connect an external calibration reference?", "expected": "calibration-inlet"},
+        {"id": "a6", "category": "paraphrase", "text": "Where does the external sensor signal enter?", "expected": "sensor-inlet"},
+        {"id": "a7", "category": "unrelated", "text": "Which part demodulates a LoRa radio signal?", "expected": null},
+        {"id": "a8", "category": "unrelated", "text": "What controls brushless motor phase commutation?", "expected": null},
+        {"id": "a9", "category": "unrelated", "text": "What is the author's favorite music?", "expected": null},
+        {"id": "a10", "category": "ambiguous", "text": "Which chip amplifies an analog sensor?", "expected": null},
+        {"id": "a11", "category": "ambiguous", "text": "Which inlet takes a signal?", "expected": null},
+        {"id": "a12", "category": "guard_unknown_reference", "text": "What resolution does U88 provide for digitizing voltage?", "expected": null},
+        {"id": "a13", "category": "guard_named_reference", "text": "Does U1 convert analog voltage into digital data?", "expected": "sensor-amplifier-a"},
+        {"id": "a14", "category": "guard_ambiguous_pin", "text": "What signal is on pin 1?", "expected": null},
+        {"id": "a15", "category": "guard_named_pin", "text": "What signal is on J1 pin 3?", "expected": "sensor-inlet"},
+        {"id": "a16", "category": "guard_missing_pin", "text": "What signal is on J1 pin VDD?", "expected": null}
+      ]
+    },
+    {
+      "id": "logic-timing", "context_revision": "logic-timing@fixture-v1",
+      "records": [
+        {"id": "logic-bank-a", "keys": ["U1"], "source": "nand", "text": "U1 SN74HC00 contains four two-input NAND gates. This synthetic design uses it for the first digital logic bank."},
+        {"id": "logic-bank-b", "keys": ["U2"], "source": "nand", "text": "U2 SN74HC00 contains four two-input NAND gates. This synthetic design uses it for the second digital logic bank."},
+        {"id": "pulse-timer", "keys": ["U3"], "source": "timer", "text": "U3 NE555 provides accurate timing and is configured as a one-shot pulse generator in this synthetic design."},
+        {"id": "logic-supply", "keys": ["U4"], "source": "ldo", "text": "U4 TLV755P is a low-dropout linear voltage regulator that powers the digital logic supply."},
+        {"id": "trigger-input", "keys": ["J1"], "pins": ["1", "2"], "source": "fixture", "text": "J1 is the trigger input connector. Pin 1 starts a timed pulse and pin 2 is the common return."},
+        {"id": "pulse-output", "keys": ["J2"], "pins": ["1", "2"], "source": "fixture", "text": "J2 carries the timed pulse output. Pin 1 is the output pulse and pin 2 is the common return."}
+      ],
+      "queries": [
+        {"id": "l1", "category": "paraphrase", "text": "What generates a single timed pulse?", "expected": "pulse-timer"},
+        {"id": "l2", "category": "paraphrase", "text": "Which regulator powers the digital gates?", "expected": "logic-supply"},
+        {"id": "l3", "category": "paraphrase", "text": "Which NAND chip serves the first logic bank?", "expected": "logic-bank-a"},
+        {"id": "l4", "category": "paraphrase", "text": "Which NAND chip serves the second logic bank?", "expected": "logic-bank-b"},
+        {"id": "l5", "category": "paraphrase", "text": "Where do I apply the signal that initiates timing?", "expected": "trigger-input"},
+        {"id": "l6", "category": "paraphrase", "text": "Which connector delivers the completed timer pulse?", "expected": "pulse-output"},
+        {"id": "l7", "category": "unrelated", "text": "Which integrated circuit encrypts Bluetooth packets?", "expected": null},
+        {"id": "l8", "category": "unrelated", "text": "Where are humidity and temperature measured?", "expected": null},
+        {"id": "l9", "category": "unrelated", "text": "Which restaurants are open tonight?", "expected": null},
+        {"id": "l10", "category": "ambiguous", "text": "Which chip performs NAND logic?", "expected": null},
+        {"id": "l11", "category": "ambiguous", "text": "Which connector has a pulse signal?", "expected": null},
+        {"id": "l12", "category": "guard_unknown_reference", "text": "Does U999 generate a one-shot pulse?", "expected": null},
+        {"id": "l13", "category": "guard_named_reference", "text": "Does U4 perform two-input NAND logic?", "expected": "logic-supply"},
+        {"id": "l14", "category": "guard_ambiguous_pin", "text": "Where does pad 1 go?", "expected": null},
+        {"id": "l15", "category": "guard_named_pin", "text": "Where does J2 pad 1 go?", "expected": "pulse-output"},
+        {"id": "l16", "category": "guard_missing_pin", "text": "Where does J2 pad 8 go?", "expected": null}
+      ]
+    }
+  ]
+}
