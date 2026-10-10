@@ -135,13 +135,15 @@ class MainActivity : AppCompatActivity() {
 
         val voiceMargins = binding.voiceDock.layoutParams as android.widget.FrameLayout.LayoutParams
         val voiceBaseStart = voiceMargins.marginStart
+        val voiceBaseEnd = voiceMargins.marginEnd
         val voiceBaseBottom = voiceMargins.bottomMargin
         ViewCompat.setOnApplyWindowInsetsListener(binding.voiceDock) { view, windowInsets ->
             val insets = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
             )
             view.updateLayoutParams<android.widget.FrameLayout.LayoutParams> {
-                marginStart = voiceBaseStart + maxOf(insets.left, insets.right)
+                marginStart = voiceBaseStart + insets.left
+                marginEnd = voiceBaseEnd + insets.right
                 bottomMargin = voiceBaseBottom + insets.bottom
             }
             windowInsets
