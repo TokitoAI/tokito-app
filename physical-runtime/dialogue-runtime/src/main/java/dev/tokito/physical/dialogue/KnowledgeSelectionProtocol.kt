@@ -76,13 +76,17 @@ class KnowledgeSelectionRequest(
             val keys = output.keys().asSequence().toSet()
             require(keys == setOf("facts")) { "Selector schema mismatch" }
             val ids = output.getJSONArray("facts")
-            require(ids.length() in 0..4) { "Selection count outside bound: ${ids.length()}" }
-            val selected = (0 until ids.length()).map { index ->
+            require(ids.length() in 0..facts.size) { "Selection count exceeds supplied facts" }
+            val cited = (0 until ids.length()).map { index ->
                 val id = ids.get(index)
                 require(id is String) { "Selection ID is not a string" }
                 facts.single { it.id == id }
             }
-            require(selected.map { it.id }.distinct().size == selected.size)
+            require(cited.map { it.id }.distinct().size == cited.size)
+            // Validate every ID before imposing the spoken response budget.
+            // An extra valid source selection is not hallucination; unchecked
+            // IDs never escape validation, even beyond the four spoken facts.
+            val selected = cited.take(4)
             if (selected.isEmpty()) {
                 return DialogueOutcome.Response("The retrieved source evidence does not establish that answer.")
             }

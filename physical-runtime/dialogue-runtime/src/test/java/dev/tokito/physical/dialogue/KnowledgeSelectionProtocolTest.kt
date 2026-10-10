@@ -5,11 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class KnowledgeSelectionProtocolTest {
-    private fun request(): KnowledgeSelectionRequest {
+    private fun request(extraFacts: Boolean = false): KnowledgeSelectionRequest {
         val record = JSONObject().put("record_id", "board:U1:source-0").put("board_id", "board")
             .put("component_id", "board:U1").put("authority", "source_design_not_observed_component")
             .put("citation", JSONObject().put("path", "source.json").put("sha256", "a".repeat(64)).put("json_pointer", "/0"))
-            .put("facts", JSONObject().put("description", "Verified source microcontroller"))
+            .put("facts", JSONObject().put("description", "Verified source microcontroller").also {
+                if (extraFacts) for (i in 1..5) it.put("value$i", "Source value $i")
+            })
         return KnowledgeSelectionRequest("board", "b".repeat(64), listOf(
             BoardKnowledgeStore.Evidence("board:U1:source-0", "board", "board:U1", "U1", record.toString(), 0.8)))
     }
@@ -49,6 +51,14 @@ class KnowledgeSelectionProtocolTest {
         for (raw in listOf("Answer: ```json\n$json\n```", "```json\n$json\n``` extra",
             "```json\n{\"facts\":[\"invented\"]}\n```")) {
             assertThrows(DialogueFailure::class.java) { request().parse(raw) }
+        }
+    }
+
+    @Test fun excessValidSelectionsAreBudgetedOnlyAfterAllIdsAreValidated() {
+        val answer = request(true).parse("""{"facts":["f0","f1","f2","f3","f4"]}""")
+        assertEquals(4, answer.sourceFacts.size)
+        assertThrows(DialogueFailure::class.java) {
+            request(true).parse("""{"facts":["f0","f1","f2","f3","invented"]}""")
         }
     }
 

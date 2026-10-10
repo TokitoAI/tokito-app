@@ -45,7 +45,8 @@ selected catalog reference; it does not assert that a physical board has been
 identified. Query and corpus encoders match. Text/audio reference answers do not
 require camera tracking, AR registration, GLBs or component highlighting.
 
-Qwen returns only a `facts` array of zero to four existing source fact IDs.
+Qwen returns only a `facts` array of existing source fact IDs. Every ID is
+validated, including selections beyond the four-fact spoken-answer budget.
 Native validation rejects invented IDs, duplicates, extra keys/prose and
 malformed output. Spoken values/citations are reconstructed from source records.
 The selector has no component-target or rendering authority; physical targeting
