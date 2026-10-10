@@ -401,7 +401,20 @@ class MainActivity : AppCompatActivity() {
             voice.state.value !is VoiceRuntimeState.Speaking &&
             voice.state.value !is VoiceRuntimeState.Synthesizing
         ) {
-            voice.initialize()
+            withContext(Dispatchers.IO) { heavyWork.withLock {
+                checkpoint()
+                val admitted = requireNotNull(ModelBundleRepository(this@MainActivity).activeDirectory(ModelCapability.VOICE)) {
+                    "Signed local voice bundle is unavailable"
+                }
+                // Sherpa's existing internal loader consumes this fixed slot. Its
+                // inner inventory alone is NOT signed/license policy admission.
+                check(admitted.canonicalFile == File(filesDir, "models/voice/active").canonicalFile) {
+                    "Voice admission does not match its native runtime slot"
+                }
+                checkpoint()
+                voice.initialize()
+                checkpoint()
+            } }
         }
         caller.ensureActive()
         requireForeground(epoch)
@@ -412,21 +425,19 @@ class MainActivity : AppCompatActivity() {
     private suspend fun prepareLocalVision() {
         val epoch = foregroundEpoch
         val caller = coroutineContext
-        val modelRoot = File(filesDir, "models/vision/active")
-        val installedBytes = withContext(Dispatchers.IO) {
-            modelRoot.walkTopDown().filter(File::isFile).fold(0L) { total, file ->
-                Math.addExact(total, file.length())
-            }
-        }
-        if (!resourceGovernor.admit(Math.multiplyExact(installedBytes, 2)).allowed) {
-            android.util.Log.w("TokitoPoseVision", "Local vision admission rejected by resource governor")
-            return
-        }
         var created: LocalPoseVisionRuntime? = null
         val runtime = try {
             withContext(Dispatchers.IO) { heavyWork.withLock {
                 caller.ensureActive()
                 requireForeground(epoch)
+                val modelRoot = requireNotNull(ModelBundleRepository(this@MainActivity).activeDirectory(ModelCapability.VISION)) {
+                    "Signed local vision bundle is unavailable"
+                }
+                caller.ensureActive()
+                requireForeground(epoch)
+                val installedBytes = modelRoot.walkTopDown().filter(File::isFile).fold(0L) { total, file ->
+                    Math.addExact(total, file.length())
+                }
                 requireHeavyWork("Local vision", Math.multiplyExact(installedBytes, 2))
                 LocalPoseVisionRuntime.load(modelRoot).also { created = it }
             } }

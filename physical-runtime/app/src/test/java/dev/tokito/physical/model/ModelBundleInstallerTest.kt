@@ -24,6 +24,44 @@ class ModelBundleInstallerTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
+    @Test fun availabilityDistinguishesMissingAndReadyUsingVerifiedFixture() {
+        val installer = installer()
+        assertEquals(ModelBundleAvailability("missing"),
+            classifyModelAvailability(ModelCapability.DIALOGUE, installer::verifiedActiveBundle))
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        assertEquals(ModelBundleAvailability("ready", InstalledModelBundle(ModelCapability.DIALOGUE, "dialogue", "trusted")),
+            classifyModelAvailability(ModelCapability.DIALOGUE, installer::verifiedActiveBundle))
+    }
+
+    @Test fun availabilityReportsSignedButDisallowedLicenseAsRejectedNotMissing() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        val active = temporaryFolder.root.resolve("models/active")
+        val bytes = JSONObject(active.resolve("model.manifest.json").readText())
+            .put("license", "agpl-3.0-only").toString().toByteArray()
+        active.resolve("model.manifest.json").writeBytes(bytes)
+        active.resolve("model.manifest.sig").writeText(sha256(bytes))
+        assertEquals(ModelBundleAvailability("rejected", rejection = "license"),
+            classifyModelAvailability(ModelCapability.DIALOGUE, installer::verifiedActiveBundle))
+    }
+
+    @Test fun availabilityReportsVerificationRejectionWithoutLeakingMetadata() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        temporaryFolder.root.resolve("models/active/weights.bin").writeBytes(byteArrayOf(2))
+        val status = classifyModelAvailability(ModelCapability.DIALOGUE, installer::verifiedActiveBundle)
+        assertEquals(ModelBundleAvailability("rejected", rejection = "verification"), status)
+        assertEquals(null, status.bundle)
+        assertFalse(status.toString().contains(temporaryFolder.root.path))
+    }
+
+    @Test fun availabilityDoesNotMisrepresentUnsignedPresentSlotAsMissing() {
+        val installer = installer()
+        temporaryFolder.root.resolve("models/active").mkdirs()
+        assertEquals(ModelBundleAvailability("rejected", rejection = "verification"),
+            classifyModelAvailability(ModelCapability.DIALOGUE, installer::verifiedActiveBundle))
+    }
+
     @Test
     fun verifiesReleaseSignatureAndRejectsChangedManifest() {
         val keyPair = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()

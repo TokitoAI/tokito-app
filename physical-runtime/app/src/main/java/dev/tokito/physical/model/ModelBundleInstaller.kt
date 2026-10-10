@@ -42,6 +42,8 @@ data class ModelInstallPolicy(
     }
 }
 
+class ModelLicenseRejectedException : IllegalArgumentException("model license is not admitted")
+
 /**
  * Transactional app-private model installation with one verified rollback.
  *
@@ -255,7 +257,7 @@ class ModelBundleInstaller(
         require(manifest.getString("capability") == policy.capability) { "model targets another capability" }
         require(manifest.getString("runtime_revision") == policy.runtimeRevision) { "model targets another runtime" }
         require(manifest.getJSONArray("supported_abis").strings().contains(policy.abi)) { "model does not support this ABI" }
-        require(manifest.getString("license") in policy.allowedLicenses) { "model license is not admitted" }
+        if (manifest.getString("license") !in policy.allowedLicenses) throw ModelLicenseRejectedException()
         require(manifest.getString("model_id").isNotBlank() && manifest.getString("model_revision").isNotBlank())
         require(manifest.getJSONArray("artifacts").length() > 0)
         require(manifest.getJSONArray("artifacts").length() <= policy.maxEntries - 2) { "too many model artifacts" }

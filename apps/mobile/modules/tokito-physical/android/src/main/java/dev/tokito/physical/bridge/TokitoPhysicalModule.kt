@@ -98,9 +98,12 @@ class TokitoPhysicalModule : Module() {
         ?: throw CodedException("NoContext", "Tokito is not ready to read installed models", null)
       val repository = ModelBundleRepository(context)
       ModelCapability.entries.map { capability ->
-        val bundle = repository.activeBundle(capability)
+        val availability = repository.availability(capability)
+        val bundle = availability.bundle
         mapOf(
           "capability" to capability.wireValue,
+          "state" to availability.state,
+          "rejection" to availability.rejection,
           "modelId" to bundle?.modelId,
           "modelRevision" to bundle?.modelRevision,
         )
