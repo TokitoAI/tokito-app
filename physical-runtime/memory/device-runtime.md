@@ -197,3 +197,20 @@ new ownership and still subject to process-wide native admission. Production
 host `onStop` revokes voice/turn ownership synchronously before epoch-guarded
 audio cleanup. Never introduce a hidden keepalive or replace raw factual-quality
 failure with an abstention/scheduling pass.
+
+## Exact Qwen tokenizer admission
+
+The pinned GenieX Android 0.3.1 wrapper has no public encode/count API. Its
+packaged `libgeniex-proc.so` does export the tokenizers-cpp C ABI. The local
+dialogue bridge uses those existing symbols with the signed Qwen tokenizer,
+counts the complete vendor template, and checks vendor completion receipts.
+**Why:** MiniLM WordPiece, character ratios and stream chunks cannot measure
+Qwen BPE tokens or prove output-cap enforcement.
+**How to apply:** keep Qwen and its NPU backend unchanged; treat the tokenizer
+and native ABI hashes as release pins. Use QNN System to enumerate all actual
+signed binary graph variants and verify complete shard coverage; export JSON
+attention/KV shapes describe representatives, not necessarily the maximum.
+Qualify actual QNN graph selection before release. Do not reinterpret a source
+positional maximum as compiled capacity or scan binary strings for admission.
+Run the host exact-ID reference check and real Android JNI conformance tests;
+host reference parity alone is not a device or generation-cap pass.

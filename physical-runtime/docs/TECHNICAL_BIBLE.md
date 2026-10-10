@@ -1,5 +1,16 @@
 # Tokito physical-intelligence runtime technical bible
 
+## Generator token-budget invariant
+
+Local Qwen prompt admission uses its signed generator tokenizer over the entire
+vendor-formatted prompt and reserves the configured output token allowance.
+Characters, UTF-8 bytes, embedding tokens, and streamed text chunks are not
+generator token measurements. Context capacity comes from compatible signed
+compiled-export metadata and must be qualified against actual binary graph
+selection; source positional maxima cannot authorize larger runtime contexts.
+Unavailable/mismatched native token receipts and context exhaustion fail closed.
+See [DIALOGUE_RUNTIME.md](DIALOGUE_RUNTIME.md#exact-qwen-token-admission).
+
 > **Unified-product note (2026-09-29):** This document specifies the native,
 > offline physical workspace embedded in `TokitoAI/tokito-app`. References to a
 > "standalone application" describe offline behavioral independence, not a

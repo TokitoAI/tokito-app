@@ -1,5 +1,57 @@
 # Local dialogue runtime
 
+## Exact Qwen token admission
+
+The QAIRT path counts the complete `applyChatTemplate` result with the exact
+signed generator tokenizer before starting generation. Character and UTF-8
+byte limits remain separate resource bounds; neither is a token estimate.
+The prompt plus reserved `maxPredictTokens` must fit the admitted context.
+Completion requires an available vendor token receipt with the same prompt
+count, positive bounded generated count, and no context-exhaustion stop reason.
+Native KV state is reset between turns; silent sliding-window eviction is not
+an evidence-memory policy.
+
+`NativeQwenTokenizer` loads a small JNI bridge over the existing GenieX
+`libgeniex-proc.so` tokenizer C ABI. It does not replace Qwen, load another
+generator, or transport tokens/tensors through JavaScript. Both the packaged
+native library and the generator tokenizer are digest-pinned. The bridge
+passes UTF-8 bytes with explicit lengths (including embedded NUL) and matches
+vendor tokenization with `add_special_tokens=false`. Ownership is serialized,
+native result buffers are freed, and model/input/result sizes are bounded.
+
+Capacity admission parses every signed context binary through the packaged
+QNN System API. Its graph inventory must contain complete shard sets for every
+declared AR/context variant; the configured capacity must match the largest
+compiled context, as the pinned vendor pipeline selects that maximum. Signed
+`metadata.json` attention/KV shapes describe representative graphs: this bundle's
+3072 attention / 3071 past-KV shape does not rule out its additional 4096 variants.
+Representative shape consistency is checked, but never substituted for actual
+binary inventory. Source `max_position_embeddings` is not compiled capacity.
+Incompatible declarations fail closed without resizing or changing Qwen.
+The System library is digest-pinned; files are mapped read-only, inspected one
+at a time, and unmapped with System contexts freed on every exit. Names are
+copied before vendor-owned metadata is released. No raw binary string scan is
+used for admission. Device qualification must prove actual graph inventory and
+generation receipts; host metadata or C ABI compilation alone is not that proof.
+
+Primary ABI references: [Qualcomm geniex-proc](https://github.com/qualcomm/geniex-proc),
+[tokenizers-cpp C header](https://github.com/mlc-ai/tokenizers-cpp/blob/c586c52f93f7b060753bd2388eb96a105cb7374d/include/tokenizers_c.h),
+and [QAIRT runtime constraints](https://github.com/qualcomm/GenieX/blob/main/docs/en/get-started/platforms.mdx).
+The narrow QNN System C layout is verified against [Qualcomm SDK declarations](https://github.com/qualcomm/geniex-qairt-plugin/tree/e6d55652c174f5669608abaf04d529faa631f834/qnn-api/include/System)
+using `TOKITO_VERIFY_QNN_HEADERS` during standalone ARM64 compilation. The
+packaged `libQnnSystem.so` pin is
+`f08e9ddc18a40719839cce8bbfb3afd3aef06f5ad486b21934a1c4568c9a6a48`.
+The checked native library SHA-256 is
+`4c0d8dfae621c0487f3935556397398f537b16994f485a1f1eb0129afc2d7952`;
+the checked Qwen tokenizer SHA-256 is
+`be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506`.
+An SDK/tokenizer change requires explicit requalification, not relaxing these
+pins. `tools/verify_qwen_tokenizer_reference.py` checks eight exact token-ID
+fixtures with host `tokenizers==0.21.2`; Android instrumentation exercises the
+real JNI path. A missing installed signed model is a failed prerequisite, not
+a skipped device pass. Vendor output-cap enforcement needs real generation
+receipts at several caps, not stream-callback counting or re-tokenizing output.
+
 The `dialogue-runtime` Android library runs bounded text generation entirely
 on-device. It has no downloader, network permission, cloud inference path, or
 silent backend fallback.

@@ -67,9 +67,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("int", "DIALOGUE_CONTEXT_SIZE", dialogueContextSize)
         buildConfigField("String", "DIALOGUE_COMPUTE_UNIT", "\"$dialogueComputeUnit\"")
+        externalNativeBuild { cmake { cppFlags += "-std=c++17" } }
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildFeatures { buildConfig = true }
+    ndkVersion = "27.1.12297006"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -95,6 +99,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
 tasks.named("preBuild") { dependsOn(prepareEmbeddingOrtBindings) }

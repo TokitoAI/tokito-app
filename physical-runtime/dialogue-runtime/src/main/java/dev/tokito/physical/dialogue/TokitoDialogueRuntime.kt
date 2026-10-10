@@ -29,6 +29,7 @@ import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.MessageDigest
+import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -44,12 +45,19 @@ class TokitoDialogueRuntime(
     private val responses = ResponseWorker(retireEmpty = initialization::closeIfEmpty) {
         // Runs under native admission only after vendor work and cleanup unwind.
         runCatching { initialization.takeCurrent()?.close() }
+        runCatching { qwenTokenizer?.close() }
+        qwenTokenizer = null
+        qairtContext = null
+        activeModel = null
         initialization.close()
         activeRuntime = null
         clearSession()
     }
     private val lifecycle = DialogueLifecycle { responses.close() }
     private var activeRuntime: DialogueRuntime? = null
+    private var activeModel: DialogueModel? = null
+    private var qairtContext: QairtContextMetadata? = null
+    private var qwenTokenizer: NativeQwenTokenizer? = null
     private val sessionMessages = ArrayList<ChatMessage>()
     private var sessionChars = 0
     private var sessionTurns = 0
@@ -80,6 +88,7 @@ class TokitoDialogueRuntime(
         if (!lifecycle.publish { _state.value = DialogueRuntimeState.Loading }) ensureOpen()
         val started = android.os.SystemClock.elapsedRealtime()
         fun phase(name: String) { Log.i(TAG, "Initialization phase=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}") }
+        var admittedContext: QairtContextMetadata? = null
         try {
             initialization.load(INITIALIZATION_DEADLINE_MS) {
                 phase("inventory")
@@ -92,6 +101,7 @@ class TokitoDialogueRuntime(
                 if (!inventoryMatches) {
                     throw DialogueFailure(DialogueFailureCode.MODEL_INTEGRITY, "Model bundle does not match its pinned inventory")
                 }
+                admittedContext = if (model.runtime == DialogueRuntime.QAIRT) QairtContextMetadata.admit(applicationContext, model) else null
                 phase("jni_abi")
                 requireGenieXJniAbi()
                 phase("sdk_init")
@@ -126,6 +136,8 @@ class TokitoDialogueRuntime(
             coroutineContext.ensureActive()
             if (!lifecycle.publish {
                 activeRuntime = model.runtime
+                activeModel = model
+                qairtContext = admittedContext
                 clearSession()
                 _state.value = DialogueRuntimeState.Ready(model.id)
             }) ensureOpen()
@@ -210,6 +222,18 @@ class TokitoDialogueRuntime(
                 if (templated.formattedText.length > limits.maxPromptChars) {
                     throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Formatted request exceeds prompt limit")
                 }
+                val tokenBudget = if (activeRuntime == DialogueRuntime.QAIRT) {
+                    val model = requireNotNull(activeModel)
+                    val tokenizerFile = File(model.path.canonicalFile.parentFile, "tokenizer.json")
+                    require(model.artifacts.any { it.file.canonicalFile == tokenizerFile.canonicalFile }) {
+                        "Generator tokenizer is absent from the signed inventory"
+                    }
+                    val tokenizer = qwenTokenizer ?: NativeQwenTokenizer.open(applicationContext, tokenizerFile).also {
+                        qwenTokenizer = it
+                    }
+                    QwenTokenBudget(tokenizer.encode(templated.formattedText).size, limits.maxPredictTokens,
+                        requireNotNull(qairtContext).capacity)
+                } else null
                 Log.i(TAG, "Local template: chatmlSystem=${templated.formattedText.contains("<|im_start|>system")}, " +
                     "chatmlUser=${templated.formattedText.contains("<|im_start|>user")}, " +
                     "chatmlAssistant=${templated.formattedText.contains("<|im_start|>assistant")}, " +
@@ -243,6 +267,8 @@ class TokitoDialogueRuntime(
                                 if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Duplicate completion")
                                 completed = true
                                 validateGenerationReceipt(result.profile, limits.maxPredictTokens)
+                                tokenBudget?.validateReceipt(result.profile.promptTokens, result.profile.generatedTokens,
+                                    result.profile.stopReason)
                                 // Counts are vendor tokenizer measurements, never stream chunk counts.
                                 // Keep all prompt/output content and arbitrary vendor strings out of logs.
                                 Log.i(TAG, "Generation profile source=vendor " +
