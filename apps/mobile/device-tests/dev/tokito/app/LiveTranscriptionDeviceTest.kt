@@ -17,6 +17,7 @@ class LiveTranscriptionDeviceTest {
     @Test fun microphoneUpdatesCaptionAndPauseClearsIt() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        ForegroundDeviceQa.launch()
         val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
         val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity

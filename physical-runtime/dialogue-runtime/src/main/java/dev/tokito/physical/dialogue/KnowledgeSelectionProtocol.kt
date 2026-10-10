@@ -55,20 +55,24 @@ class KnowledgeSelectionRequest(
         }
         facts = (0 until (groups.maxOfOrNull { it.size } ?: 0)).flatMap { index ->
             groups.mapNotNull { it.getOrNull(index) }
-        }.take(40).mapIndexed { index, fact -> fact.copy(id = "f$index") }
+        }.take(24).mapIndexed { index, fact -> fact.copy(id = "f$index") }
     }
 
     internal fun prompt(utterance: String): String = JSONObject()
-        .put("question", utterance).put("board_id", boardId ?: JSONObject.NULL).put("corpus_revision", corpusRevision)
+        .put("question", utterance).put("board_id", boardId ?: JSONObject.NULL)
         .put("reference_intent", "A name-only question asks for its definition. Spoken spacing in names is not a different reference. Never substitute a related model or variant absent from the sources.")
         .put("source_authority", "reference_design_not_verified_physical_identity")
         .put("response_format", "Return only {\"facts\":[\"f0\"]}, using zero to four supplied fact IDs. Empty facts means insufficient evidence. Do not copy fact objects or values.")
         .put("allowed_fact_ids", JSONArray(facts.map { it.id }))
         .put("correction", if (repairAttempt) "The previous selection failed validation. Select only exact IDs from allowed_fact_ids. Read the supplied descriptions; return one JSON object with only facts." else JSONObject.NULL)
-        .put("history_not_evidence", JSONArray(history.map { JSONObject().put("role", it.role.name).put("text", it.text) }))
+        // Prior generated answers can drown out the current query and consume
+        // compiled context. Only the latest user question supplies follow-up
+        // context; engineering claims always come from the retrieved facts.
+        .put("history_not_evidence", JSONArray(history.filter { it.role == DialogueRole.USER }.takeLast(1)
+            .map { JSONObject().put("role", it.role.name).put("text", it.text.take(256)) }))
         .put("facts", JSONArray(facts.map { fact -> JSONObject().put("id", fact.id)
             .put("source_board_id", fact.sourceBoardId).put("reference", fact.reference)
-            .put("component_id", fact.componentId).put("field", fact.pointer).put("value", fact.value) })).toString()
+            .put("field", fact.pointer).put("value", fact.value) })).toString()
 
     internal fun parse(raw: String): DialogueOutcome.Response {
         try {

@@ -304,7 +304,8 @@ class TokitoDialogueRuntime(
                             "endsObject=${raw.trimEnd().endsWith('}')}, " +
                             "containsThinkTag=${raw.contains("<think>") || raw.contains("</think>")}, " +
                             "objectStart=${raw.indexOf('{')}, objectEnd=${raw.lastIndexOf('}')}, " +
-                            "containsFence=${raw.contains("```")}",
+                            "containsFence=${raw.contains("```")}, " +
+                            "validationType=${failure.cause?.javaClass?.simpleName ?: "protocol"}",
                     )
                 }
                 throw failure

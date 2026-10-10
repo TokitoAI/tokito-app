@@ -15,7 +15,7 @@ class KnowledgeSelectionProtocolTest {
             return BoardKnowledgeStore.Evidence("$board:r", board, "$board:c", board, record.toString(), 0.8)
         }
         val request = KnowledgeSelectionRequest(null, "b".repeat(64), listOf(evidence("one", 50), evidence("two", 5)))
-        assertEquals(40, request.facts.size)
+        assertEquals(24, request.facts.size)
         assertEquals(listOf("one:r", "two:r"), request.facts.take(2).map { it.recordId })
         val prompt = JSONObject(request.prompt("a spoken question without an alias"))
         assertTrue(prompt.isNull("board_id"))

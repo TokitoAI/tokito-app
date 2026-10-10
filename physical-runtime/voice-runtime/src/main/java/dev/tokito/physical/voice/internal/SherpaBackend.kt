@@ -169,7 +169,10 @@ private class SherpaStreamingRecognizer(
                     rule3 = EndpointRule(false, 0f, 20f),
                 ),
                 enableEndpoint = true,
-                decodingMethod = "greedy_search",
+                // Preserve competing acoustic hypotheses instead of pruning
+                // technical names at every token. Bound the beam on device.
+                decodingMethod = "modified_beam_search",
+                maxActivePaths = 4,
             ),
         )
     }

@@ -251,6 +251,10 @@ the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
 Quoted previous questions add separately retrieved follow-up context; they
 cannot displace the current question's ranked results. Source descriptions and
 other records share the bounded fact budget, retaining their original citations.
+The selector receives at most 24 round-robin source facts and only the latest
+user question (256 characters) as quoted follow-up context. Prior generated
+answers are not copied into its prompt. **Why:** repeated installed-device
+turns otherwise exceeded compiled context and mixed unrelated prior references.
 **Why:** ASR spelling and unknown reference names must not bypass RAG and enter
 the older no-source path. Semantic reference retrieval is not physical board
 identification; it grants no AR targets or observed identity.
@@ -272,6 +276,12 @@ token-limited selection may be repaired with the exact same admitted evidence
 inside the existing overall deadline; partial output is never accepted.
 **Why:** deterministic decoding is not a factual guardrail and can create
 repetition loops. Do not raise the context/output cap to hide that failure.
+
+Streaming speech recognition uses bounded `modified_beam_search` with four
+active paths, not greedy token pruning. **Why:** technical names need competing
+acoustic hypotheses. This does not guarantee correct acronyms; qualify real
+microphone questions independently from typed RAG tests. Do not substitute
+hardcoded transcript corrections for acoustic recognition.
 
 Local Sherpa playback has a measured-audio-duration deadline separate from the
 synthesis deadline, and drains the hardware playback head before releasing the
