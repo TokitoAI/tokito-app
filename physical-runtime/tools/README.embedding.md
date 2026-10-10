@@ -55,6 +55,15 @@ cache is Gradle user home `caches/tokito-embedding-ort`; its first download is
 approximately 293 MB. All four supported ABIs are built, not just the QA phone.
 The configured Python executable can be set with `-Ptokito.embedding.python=...`.
 
+The pinned source archive SHA-256 is
+`2bc333947de2983a4c2d711af4c56c6286565ce7c1202fdfbda56c3431b5d63d`.
+The script also verifies the complete official 1.27.0 Java AAR and Sherpa
+1.13.6 AAR SHA-256 values before extracting any build inputs. Python 3.11+ must
+be installed in the Android Buildkite image too, not only its contract-test
+image. No pip dependencies are required for JNI preparation. Supported host
+toolchains are Windows x86-64 and Linux x86-64; the Android SDK must contain the
+pinned NDK before invoking Gradle.
+
 The official 1.27.0 AAR's `classes.jar` remains byte-identical. The tool compares
 all source class/member/native descriptors against the 1.27.1 Java source;
 Android-generated `BuildConfig` and non-native compiler-generated `access$NNN`
@@ -69,6 +78,21 @@ digest and all-ABI linkage evidence to
 `dialogue-runtime/build/generated/embedding-ort/embedding-jni.provenance.json`.
 Scratch cores, headers and source stay outside packaged JNI paths. Source ZIPs
 and generated libraries are build artifacts, not committed binaries.
+
+### License and upstream attribution
+
+ONNX Runtime Java, JNI and core are Microsoft ONNX Runtime under the **MIT
+License**, copyright Microsoft Corporation. Rebuilding JNI does not remove
+those license/notice obligations. The verified source archive's `LICENSE` is
+extracted at `source-build/source/LICENSE`; its digest is recorded with the
+other source hashes. Preserve the MIT text and copyright in the distributed
+app's third-party acknowledgments, alongside the existing Sherpa and model
+acknowledgments. The MiniLM model's Apache-2.0 metadata is separate from this
+native-runtime MIT license.
+
+Primary upstream references: [pinned source](https://github.com/microsoft/onnxruntime/tree/df2ba1cf8108aa63627cf4cdf8f807880b938616),
+[MIT license](https://github.com/microsoft/onnxruntime/blob/df2ba1cf8108aa63627cf4cdf8f807880b938616/LICENSE),
+and [official Maven Android version metadata](https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/maven-metadata.xml).
 
 ```powershell
 # After installing the pinned NDK via Android SDK Manager:
