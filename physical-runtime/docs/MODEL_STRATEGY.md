@@ -142,6 +142,30 @@ claiming the CPU/NPU concurrency profile is production-qualified.
 
 ## Detector candidate status
 
+Private evaluation may activate a signed YOLO instance-segmentation bundle in
+the vision slot instead of the pose bundle. `segmentation.json` declares the
+class vocabulary, ONNX CPU backend, tensor contract, checkpoint/export hashes,
+and numerical admission probe. The native decoder performs class-aware NMS,
+prototype/coefficient mask reconstruction and box cropping. Masks are image-frame
+predictions, not verified board identity, designators, pin identities or AR
+registration. The retained signed pose bundle remains available through explicit
+rollback; it is not silently selected. The mask view owns one ephemeral bitmap,
+uses CameraX's image-to-preview transform, expires masks and rejects old camera
+geometry/lifecycle results. A Show/Hide control disables inference as well as
+presentation. Camera acquisition is latest-only and inference is throttled and
+serialized against local knowledge work.
+The overlay shows masks, boxes, raw class names and confidence together. Results
+replace atomically with a 500 ms minimum inference interval. A single empty
+prediction does not erase an existing overlay or extend its lifetime; every
+overlay expires after three seconds of source-frame age. This bounds presentation
+through transient misses without claiming motion tracking or retaining stale
+geometry indefinitely. Zoom, pause and disabling detections clear immediately.
+
+The dataset `partial-component-diagnostic/best.pt` at revision `a7fa0fe` is an
+experimental 21-class YOLO11m-seg candidate, not a released vision backend.
+Its poor audited-region recall and known-specimen-only coverage remain part of
+the bundle report. Loading it cannot qualify accurate component recognition.
+
 The FRDM product slice currently runs a manifest-bound YOLO11n pose export
 through LiteRT 2.2.0 on CPU. Its four ordered keypoints drive the live board
 quad and tracked GLB presentation. The manifest marks its smoke evidence as
