@@ -21,6 +21,8 @@ apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
 aab="$(find android/app/build/outputs/bundle/release -name '*.aab' -print -quit)"
 test -n "$apk" && test -n "$aab"
 mkdir -p ../../ci-out
+test -s android/app/build/outputs/mapping/release/mapping.txt
+cp android/app/build/outputs/mapping/release/mapping.txt "../../ci-out/Tokito-${tag}-r8-mapping.txt"
 apk_out="../../ci-out/Tokito-${tag}.apk"
 aab_out="../../ci-out/Tokito-${tag}.aab"
 cp "$apk" "$apk_out"

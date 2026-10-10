@@ -14,3 +14,4 @@ steps:
     artifact_paths:
       - "ci-out/Tokito-*.apk"
       - "ci-out/Tokito-*.aab"
+      - "ci-out/Tokito-*-r8-mapping.txt"

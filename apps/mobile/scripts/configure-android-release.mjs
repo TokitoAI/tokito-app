@@ -81,12 +81,6 @@ if (gradle.includes(marker)) {
     );
   }
 
-  // Turn on R8/ProGuard for release (Expo flag).
-  gradle = gradle.replace(
-    /enableProguardInReleaseBuilds\s*=\s*false/,
-    "enableProguardInReleaseBuilds = true",
-  );
-
   writeFileSync(gradlePath, gradle);
   console.log("configure-android-release: patched app/build.gradle for upload signing + minify");
 }
@@ -94,6 +88,8 @@ if (gradle.includes(marker)) {
 // Passwords via gradle.properties (generated; gitignored android/ tree).
 let props = existsSync(propsPath) ? readFileSync(propsPath, "utf8") : "";
 const propLines = [
+  "android.enableMinifyInReleaseBuilds=true",
+  "android.enableShrinkResourcesInReleaseBuilds=true",
   `tokitoUploadStorePassword=${storePassword}`,
   `tokitoUploadKeyAlias=${keyAlias}`,
   `tokitoUploadKeyPassword=${keyPassword}`,

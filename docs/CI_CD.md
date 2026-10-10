@@ -27,6 +27,16 @@ not by a mutable tag, and authenticates only long enough to pull it.
 The unified APK gate depends on the first four. Its standalone unsigned release APK is retained as a
 Buildkite artifact for manual QA.
 
+Release APK QA enables final-application code/resource shrinking and Android's
+optimized R8 defaults through the source Expo integration plugin. This is the
+same optimization mode enforced by publication signing configuration. Native
+libraries remain unshrunk independently and supply consumer keep rules.
+Inspect the actual R8 task and mapping artifacts; a release build name alone
+does not demonstrate that optimization ran. On-device bridge and local-model
+checks are still required after an optimized build succeeds.
+Both APK gates fail if the R8 mapping is absent or empty and retain it as a
+Buildkite artifact for deobfuscating that exact build's crash stack traces.
+
 ## Release flow
 
 An immutable `v*` tag uploads the release pipeline only after normal CI. A

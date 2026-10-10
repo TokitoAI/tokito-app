@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { readFile, mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +11,65 @@ const require = createRequire(import.meta.url);
 const withTokitoPhysical = require("../plugins/withTokitoPhysical.js");
 const { optionalCamera, splitSplashStyles } = withTokitoPhysical;
 const { XML } = require("expo/config-plugins");
+
+test("release signing script forces optimization and remains idempotent", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tokito-release-"));
+  try {
+    await mkdir(path.join(root, "android/app"), { recursive: true });
+    await writeFile(path.join(root, "android/app/build.gradle"), `android {
+  signingConfigs {
+    debug {
+      storeFile file('debug.keystore')
+    }
+  }
+  buildTypes {
+    release {
+      signingConfig signingConfigs.debug
+      minifyEnabled enableMinifyInReleaseBuilds
+    }
+  }
+}`);
+    await writeFile(path.join(root, "android/gradle.properties"), "android.enableMinifyInReleaseBuilds=false\n");
+    const env = { ...process.env,
+      ANDROID_UPLOAD_KEYSTORE_BASE64: Buffer.from("test-only-keystore").toString("base64"),
+      ANDROID_UPLOAD_STORE_PASSWORD: "test-only", ANDROID_UPLOAD_KEY_ALIAS: "test-only",
+      ANDROID_UPLOAD_KEY_PASSWORD: "test-only",
+    };
+    const script = fileURLToPath(new URL("./configure-android-release.mjs", import.meta.url));
+    const run = () => spawnSync(process.execPath, [script], { cwd: root, env, encoding: "utf8" });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const gradle = await readFile(path.join(root, "android/app/build.gradle"), "utf8");
+    const properties = await readFile(path.join(root, "android/gradle.properties"), "utf8");
+    assert.match(gradle, /signingConfig signingConfigs\.release/);
+    assert.equal(properties.match(/^android\.enableMinifyInReleaseBuilds=true$/gm)?.length, 1);
+    assert.equal(properties.match(/^android\.enableShrinkResourcesInReleaseBuilds=true$/gm)?.length, 1);
+    assert.equal(run().status, 0);
+    assert.equal(await readFile(path.join(root, "android/app/build.gradle"), "utf8"), gradle);
+    assert.equal(await readFile(path.join(root, "android/gradle.properties"), "utf8"), properties);
+    assert.equal(spawnSync(process.execPath, [script], {
+      cwd: root, env: { ...env, ANDROID_UPLOAD_KEY_PASSWORD: "" }, encoding: "utf8",
+    }).status, 1, "missing signing credentials must fail instead of selecting the debug key");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("final APK release optimization is generated without independently shrinking libraries", async () => {
+  const config = withTokitoPhysical({ name: "Tokito", slug: "tokito" });
+  const result = await config.mods.android.gradleProperties({ ...config, modRequest: {}, modResults: [
+    { type: "property", key: "android.enableMinifyInReleaseBuilds", value: "false" },
+  ] });
+  for (const key of ["android.enableMinifyInReleaseBuilds", "android.enableShrinkResourcesInReleaseBuilds"]) {
+    assert.equal(result.modResults.filter(item => item.key === key).length, 1);
+    assert.equal(result.modResults.find(item => item.key === key).value, "true");
+  }
+  const gradle = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: {
+    language: "groovy", contents: `dependencies {}\nproguardFiles getDefaultProguardFile('proguard-android.txt'), "proguard-rules.pro"`,
+  } });
+  assert.match(gradle.modResults.contents, /proguard-android-optimize\.txt/);
+  assert.doesNotMatch(gradle.modResults.contents, /proguard-android\.txt/);
+  const repeated = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: gradle.modResults });
+  assert.equal(repeated.modResults.contents, gradle.modResults.contents);
+});
 
 test("final generation mod writes the API-qualified splash after Expo's styles", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tokito-resources-"));

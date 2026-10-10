@@ -102,6 +102,12 @@ function withPhysicalDependency(config) {
     if (result.modResults.language !== "groovy") {
       throw new Error("Tokito Physical currently requires a Groovy Android app build.gradle");
     }
+    // The non-optimizing Android default includes -dontoptimize. Final APK
+    // release optimization must use the optimized default, not library R8.
+    result.modResults.contents = result.modResults.contents.replace(
+      /getDefaultProguardFile\((["'])proguard-android\.txt\1\)/g,
+      'getDefaultProguardFile("proguard-android-optimize.txt")',
+    );
     if (!result.modResults.contents.includes(DEPENDENCY_MARKER)) {
       result.modResults.contents = result.modResults.contents.replace(
         /dependencies\s*\{/,
@@ -158,6 +164,11 @@ allprojects {
 
 function withPhysicalMinSdk(config) {
   return withGradleProperties(config, (result) => {
+    for (const key of ["android.enableMinifyInReleaseBuilds", "android.enableShrinkResourcesInReleaseBuilds"]) {
+      const property = result.modResults.find((item) => item.key === key);
+      if (property) property.value = "true";
+      else result.modResults.push({ type: "property", key, value: "true" });
+    }
     // GenieX loads plugins by filesystem path from nativeLibraryDir.
     const packaging = result.modResults.find((item) => item.key === "expo.useLegacyPackaging");
     if (packaging) packaging.value = "true";
