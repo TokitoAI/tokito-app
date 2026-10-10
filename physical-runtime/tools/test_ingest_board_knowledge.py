@@ -64,6 +64,18 @@ class CompilerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compile_corpus(self.root, scope)
 
+    def test_reviewed_board_explanations_are_imported_not_runtime_answers(self):
+        self.put("knowledge/reference-facts.json", json.dumps({"board-a": {
+            "aliases": ["Alpha MCU"], "facts": [{"text": "A reviewed development board.", "source_url": "https://manufacturer.example/board"}]
+        }}))
+        self.commit()
+        corpus = compile_corpus(self.root, ["board-a"])
+        self.assertEqual(["Alpha MCU"], corpus["boards"][0]["aliases"])
+        record = next(r for r in corpus["records"] if ":overview:" in r["record_id"])
+        self.assertEqual("A reviewed development board.", record["facts"]["description"])
+        self.assertEqual("knowledge/reference-facts.json", record["citation"]["path"])
+        self.assertFalse(record["physical_identity_proven"])
+
     def test_dirty_source_rejected(self):
         self.put("a/community-clone/structured/bom-components.csv", "reference,value,footprint\nU1,CHANGED,QFN\n")
         with self.assertRaisesRegex(ValueError, "differs"):

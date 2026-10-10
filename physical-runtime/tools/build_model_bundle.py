@@ -17,6 +17,7 @@ SIGNATURE = "model.manifest.sig"
 ALLOWED_LICENSES = {
     "apache-2.0", "mit", "bsd-3-clause", "agpl-3.0-only",
     "licenseref-kroko-piper-espeak-local-evaluation",
+    "licenseref-tokito-knowledge-private-evaluation",
 }
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 

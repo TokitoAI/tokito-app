@@ -52,12 +52,26 @@ A target is only a proposal; it contains no coordinates or rendering authority.
 The bounded prompt exposes at most 40 scalar facts, at most 240 characters each;
 excluded fields cannot be claimed as read. Full source records remain stored.
 
-This path is not yet connected to production bench selection/import. The old
-bench policy remains active until package admission, explicit reference-scope
-selection and real-device Qwen evaluation qualify the new path. Automatic
+The bench loads `knowledge.manifest.json` and `knowledge.sqlite` from the signed
+Knowledge search (embedding) bundle, alongside the matching encoder. Its signed
+inventory admits both; an arbitrary database copied into storage is not used.
+Naming a catalog alias in a question selects its reference scope; ambiguous
+names request clarification. No camera, GLB, Cloud session or manual registration
+is required for reference questions. Bounded conversation memory is reset when
+the selected reference changes or the bench loses foreground ownership. The
+actual local Qwen selects source facts and validated source text reaches local
+speech; it does not generate unchecked electrical claims. Imported authored
+project evidence retains its separate board-target authority. Automatic
 physical-board selection and AR highlighting have separate detector and geometry
 gates; their absence must not disable reference-scoped text answers. Unit tests
 cannot substitute for device qualification.
+
+The compiler also imports optional source-reviewed `knowledge/reference-facts.json`
+from the pinned dataset commit, retaining its hash, fact locator and primary-source
+URL. Overview facts and aliases are corpus data, never board-specific code branches.
+Current aggregate source redistribution rights remain unresolved. Private device
+evaluation uses an explicitly labelled private-evaluation license; public builds
+reject it. Do not relabel a mixed corpus as MIT to bypass that admission gate.
 
 ## Detector and 3D handoff
 

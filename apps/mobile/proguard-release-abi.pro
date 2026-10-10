@@ -125,3 +125,11 @@
     public dev.tokito.physical.dialogue.QairtContextMetadata admit(android.content.Context, dev.tokito.physical.dialogue.DialogueModel);
 }
 -keep class dev.tokito.physical.dialogue.NativeQnnInventory { private native <methods>; }
+-keepclassmembers class dev.tokito.physical.MainActivity {
+    public *** getLocalReasoningState();
+    public java.lang.Object respondLocally(java.lang.String, kotlin.coroutines.Continuation);
+}
+-keep class dev.tokito.physical.session.PhysicalSessionContext { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionRecord { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionStore { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionStore$Companion { public *; }

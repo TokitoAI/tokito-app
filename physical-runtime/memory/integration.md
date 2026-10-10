@@ -37,3 +37,12 @@ in `docs/DATASET_RAG.md`. Text/audio reference activation requires package
 admission, explicit reference-scope selection and device QA, not GLBs or AR
 registration. Automatic physical identity and component highlighting additionally
 require calibrated detector/variant binding and component-addressable assets.
+
+The production bench now consumes dataset records from the signed embedding
+bundle's `knowledge.manifest.json`/`knowledge.sqlite` inventory. Named catalog
+aliases select reference scope independently of camera/GLB presence. The actual
+MiniLM encoder and Qwen fact-selection path supply spoken source text; physical
+identity claims remain gated. Backgrounding retires the generator, SQLite handle,
+scope and bounded source-answer history. The mixed corpus still has unresolved
+public redistribution rights; private-evaluation admission is not a public
+release license grant. See `docs/DATASET_RAG.md` for provisioning and QA gates.

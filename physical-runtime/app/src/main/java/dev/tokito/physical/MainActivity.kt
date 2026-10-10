@@ -23,6 +23,10 @@ import dev.tokito.physical.dialogue.BoardReferenceContext
 import dev.tokito.physical.dialogue.LocalBenchDialoguePolicy
 import dev.tokito.physical.dialogue.LocalTextEmbeddingRuntime
 import dev.tokito.physical.dialogue.SqliteDesignVectorCache
+import dev.tokito.physical.dialogue.BoardKnowledgePackage
+import dev.tokito.physical.dialogue.LocalBoardRag
+import dev.tokito.physical.dialogue.TokitoDialogueRuntime
+import dev.tokito.physical.dialogue.DialogueModelProvisioner
 import dev.tokito.physical.model.ModelBundleRepository
 import dev.tokito.physical.model.ModelCapability
 import dev.tokito.physical.model.DeviceResourceGovernor
@@ -60,6 +64,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var measurement: MeasurementVoiceSession
     private var boardReference: BoardReferenceContext? = null
     private var embedding: LocalTextEmbeddingRuntime? = null
+    private var knowledgePackage: BoardKnowledgePackage? = null
+    private var localGenerator: TokitoDialogueRuntime? = null
+    private var localRag: LocalBoardRag? = null
+    @Volatile private var referenceScope: LocalBoardRag.Binding? = null
     private val knowledgePreparation = Mutex()
     private val embeddingOwner = Any()
     private val heavyWork = Mutex()
@@ -230,6 +238,7 @@ class MainActivity : AppCompatActivity() {
         preparationJob = null
         visionPreparationJob = null
         val retiredEmbedding = synchronized(embeddingOwner) { embedding.also { embedding = null } }
+        retireKnowledge()
         boardReference = null
         retiredEmbedding?.let { retired -> CoroutineScope(Dispatchers.IO).launch { retired.close() } }
         if (::call.isInitialized) {
@@ -242,6 +251,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        retireKnowledge()
         val retiredEmbedding = synchronized(embeddingOwner) {
             destroyed = true
             embedding.also { embedding = null }
@@ -364,7 +374,6 @@ class MainActivity : AppCompatActivity() {
                     if (!admitted) android.util.Log.w("TokitoDialogue", "Board reference does not match the bound session revision")
                 }
             }
-            if (reference == null) return@knowledge null
             // Explicit CPU encoder is independent of the unchanged Qwen NPU profile.
             val encoder = synchronized(embeddingOwner) { embedding } ?: run {
                 // Reuse a previously admitted native handle; streaming bundle rehash
@@ -381,16 +390,20 @@ class MainActivity : AppCompatActivity() {
                 if (!admitted) { created.close(); throw CancellationException("Bench preparation retired") }
             }
             var preparing = true
-            val index = SqliteDesignVectorCache(File(filesDir, "knowledge/design-vectors.sqlite")).use { cache ->
+            val index = if (reference != null) SqliteDesignVectorCache(File(filesDir, "knowledge/design-vectors.sqlite")).use { cache ->
                 reference.index.withEmbeddings(encoder, cache) {
                     if (preparing) caller.ensureActive()
                     requireForeground(epoch)
                     requireHeavyWork("Knowledge search", 256L * 1024L * 1024L)
                 }
-            }
+            } else null
             preparing = false
             checkpoint()
-            reference.copy(index = index)
+            val directory = requireNotNull(ModelBundleRepository(this@MainActivity).activeDirectory(ModelCapability.EMBEDDING))
+            val dataset = BoardKnowledgePackage.openIfPresent(directory)
+            try { synchronized(embeddingOwner) { checkpoint(); knowledgePackage?.close(); knowledgePackage = dataset } }
+            catch (failure: Throwable) { dataset?.close(); throw failure }
+            reference?.copy(index = requireNotNull(index))
         } } }
         caller.ensureActive()
         requireForeground(epoch)
@@ -418,8 +431,28 @@ class MainActivity : AppCompatActivity() {
         }
         caller.ensureActive()
         requireForeground(epoch)
-        // Admitted evidence and abstention need no unqualified generative model.
-        // Model preparation remains explicit in runtime quality evaluation.
+        if (knowledgePackage != null && localGenerator == null) {
+            val generator = TokitoDialogueRuntime(this, this)
+            localGenerator = generator
+            try {
+                val model = withContext(Dispatchers.IO) { heavyWork.withLock {
+                    checkpoint()
+                    requireHeavyWork("Local reasoning", 2L * 1024 * 1024 * 1024)
+                    val directory = requireNotNull(ModelBundleRepository(this@MainActivity).activeDirectory(ModelCapability.DIALOGUE)) {
+                        "Install the local conversation model to answer reference questions"
+                    }
+                    DialogueModelProvisioner.fromAdmittedBundle(directory).requireInstalled()
+                } }
+                generator.initialize(model)
+                checkpoint()
+                localRag = LocalBoardRag(requireNotNull(knowledgePackage).store, requireNotNull(embedding), generator,
+                    { referenceScope }, android.os.SystemClock::elapsedRealtime)
+            } catch (failure: Throwable) {
+                generator.close()
+                if (localGenerator === generator) localGenerator = null
+                throw failure
+            }
+        }
     }
 
     private suspend fun prepareLocalVision() {
@@ -467,10 +500,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun respondLocally(utterance: String): String {
+    /** In-process bench entry point shared by voice and installed-device conformance. */
+    suspend fun respondLocally(utterance: String): String {
         val epoch = foregroundEpoch
         val caller = coroutineContext
         val reference = boardReference
+        val dataset = knowledgePackage
+        if (dataset?.mentionsUnsupportedVariant(utterance) == true) {
+            referenceScope = null
+            return "That board variant is not in the current reference library. I won't substitute a different model's specifications."
+        }
+        if (dataset != null && dataset.matchingScopes(utterance).size > 1) {
+            return "Which board reference should I use? Please name one board at a time."
+        }
+        val namedScope = dataset?.resolve(utterance)
+        if (namedScope != null) referenceScope = LocalBoardRag.Binding(namedScope.boardId,
+            dataset.store.corpusRevision, "reference:$epoch:${namedScope.boardId}", Long.MAX_VALUE)
+        if (referenceScope != null) {
+            val rag = requireNotNull(localRag) { "Local reference reasoning is not ready. Install the knowledge and conversation bundles." }
+            val result = heavyWork.withLock { rag.answer(utterance) }
+            caller.ensureActive()
+            requireForeground(epoch)
+            return result.text
+        }
         val grounded = withContext(Dispatchers.IO) { heavyWork.withLock {
             caller.ensureActive()
             requireForeground(epoch)
@@ -490,8 +542,20 @@ class MainActivity : AppCompatActivity() {
         return grounded.text
     }
 
+    val localReasoningState: dev.tokito.physical.dialogue.DialogueRuntimeState?
+        get() = localGenerator?.state?.value
+
     private fun requireForeground(epoch: Long) {
         if (destroyed || !foregroundActive || epoch != foregroundEpoch) throw CancellationException("Bench foreground ownership retired")
+    }
+
+    private fun retireKnowledge() {
+        referenceScope = null
+        localRag = null
+        localGenerator?.close()
+        localGenerator = null
+        val retired = synchronized(embeddingOwner) { knowledgePackage.also { knowledgePackage = null } }
+        retired?.let { CoroutineScope(Dispatchers.IO).launch { heavyWork.withLock { it.close() } } }
     }
 
     private fun activateProjectTwinIfPresent() {

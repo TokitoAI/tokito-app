@@ -46,6 +46,11 @@ def compile_corpus(root: Path, board_ids: list[str]) -> dict:
     catalog = json.loads(raw)
     license_raw, license_source = read_source(root, "docs/sources/LICENSE_NOTES.md", revision)
     boards, records, sources = [], [], [source, license_source]
+    reference_facts = {}
+    if (root / "knowledge/reference-facts.json").exists():
+        reference_raw, reference_source = read_source(root, "knowledge/reference-facts.json", revision)
+        reference_facts = json.loads(reference_raw)
+        sources.append(reference_source)
     for board_id in board_ids:
         if board_id not in catalog:
             raise ValueError(f"unknown dataset board identity: {board_id}")
@@ -79,9 +84,22 @@ def compile_corpus(root: Path, board_ids: list[str]) -> dict:
                 raise ValueError("invalid source designator")
             grouped.setdefault(reference, []).append((facts, locator))
         boards.append({"board_id": board_id, "source_bundle": base, "relation": entry["relation"],
+                       "aliases": reference_facts.get(board_id, {}).get("aliases", [board_id.replace("_", " ")]),
                        "exact_component_mapping": entry["exact_component_mapping"],
                        "physical_revision_verified": False,
                        "highlight_authority": "requires_detector_identity_and_registered_component_binding"})
+        overview = reference_facts.get(board_id)
+        if overview:
+            for i, fact in enumerate(overview["facts"]):
+                if not isinstance(fact["text"], str) or not 1 <= len(fact["text"]) <= 240:
+                    raise ValueError("reference fact must be bounded source-reviewed text")
+                if not fact["source_url"].startswith("https://"):
+                    raise ValueError("reference fact requires a source URL")
+                records.append({"record_id": f"{board_id}:overview:{i}", "board_id": board_id,
+                    "component_id": f"{board_id}:reference", "reference_designator": "Board reference",
+                    "authority": "source_design_not_observed_component", "facts": {"description": fact["text"]},
+                    "citation": {**reference_source, "json_pointer": f"/{board_id}/facts/{i}", "url": fact["source_url"]},
+                    "relation": entry["relation"], "physical_identity_proven": False, "ar_node_id": None})
         for reference, sections in sorted(grouped.items()):
             component_id = f"{board_id}:{reference}"
             for section, (facts, locator) in enumerate(sections):
@@ -177,4 +195,7 @@ if __name__ == "__main__":
     report = vectorize(corpus, args.encoder.resolve(), args.output / "knowledge.sqlite")
     (args.output / "corpus.json").write_bytes(canonical(corpus))
     (args.output / "ingestion.json").write_bytes(canonical(report))
+    (args.output / "knowledge.manifest.json").write_bytes(canonical({"schema_version": 1,
+        "database_sha256": report["database_sha256"], "corpus_sha256": corpus["corpus_sha256"],
+        "encoder_model_sha256": report["encoder_model_sha256"], "boards": corpus["boards"]}))
     print(json.dumps(report, indent=2))

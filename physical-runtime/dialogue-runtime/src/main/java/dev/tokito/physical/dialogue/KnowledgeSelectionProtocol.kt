@@ -8,12 +8,14 @@ class KnowledgeSelectionRequest(
     val boardId: String,
     val corpusRevision: String,
     evidence: List<BoardKnowledgeStore.Evidence>,
+    private val history: List<DialogueTurn> = emptyList(),
 ) {
     data class Fact(val id: String, val recordId: String, val componentId: String, val reference: String,
                     val pointer: String, val value: String, val sourceCitation: String)
     val facts: List<Fact>
 
     init {
+        require(history.size <= 4 && history.all { it.text.length in 1..1024 && it.text.none { c -> c.isISOControl() && c !in "\n\r\t" } })
         require(boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl))
         require(corpusRevision.matches(Regex("[a-f0-9]{64}")))
         require(evidence.size in 1..12 && evidence.all { it.boardId == boardId })
@@ -53,6 +55,7 @@ class KnowledgeSelectionRequest(
     internal fun prompt(utterance: String): String = JSONObject()
         .put("question", utterance).put("board_id", boardId).put("corpus_revision", corpusRevision)
         .put("source_authority", "reference_design_not_verified_physical_identity")
+        .put("history_not_evidence", JSONArray(history.map { JSONObject().put("role", it.role.name).put("text", it.text) }))
         .put("facts", JSONArray(facts.map { fact -> JSONObject().put("id", fact.id)
             .put("component_id", fact.componentId).put("field", fact.pointer).put("value", fact.value) })).toString()
 
@@ -82,7 +85,12 @@ class KnowledgeSelectionRequest(
             require(target == null || selected.all { it.componentId == target })
             // Audio receives actual cited values, not unchecked free-form Qwen
             // prose. Component targeting is only a proposal, never coordinates.
-            return DialogueOutcome.Response("The reference design lists " + selected.joinToString(". ") { "${it.reference}: ${it.value}" },
+            val text = selected.joinToString(" ") {
+                if (it.pointer == "/facts/description") it.value
+                else "${it.reference}, ${it.pointer.substringAfterLast('/').replace('_', ' ')}: ${it.value}."
+            }
+            DialogueProtocol(DialogueLimits()).parseConversation(text)
+            return DialogueOutcome.Response(text,
                 selected, target)
         } catch (failure: Exception) {
             throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Qwen returned an invalid evidence selection", failure)
