@@ -177,9 +177,23 @@ not physical interruption, a factual-quality pass or proof of lock causality.
 The optimized extended sequence subsequently exceeded the isolated receipt's
 60s/65s deadlines after completing the raw corpus and two fresh turns. A shorter
 passing sequence does not qualify sustained deadline behavior. The exact APK
-contains the final isolated worker; the remaining stall's cause is unresolved.
+contains the final isolated worker; phase-only logs did not establish causality.
+The foreground-resume experiment below separates delayed scheduling from
+receipt-handler overhead without identifying a private OEM mechanism.
 **How to apply:** preserve fixed timer-setup/revocation-entry/exit diagnostics
 and the independent one-thread observational Java watchdog. Compare its deadline
 and fixed-role thread-state markers with a live thread dump before assigning
 causality. The watchdog changes no result, cancellation or native ownership;
 never log request data or treat a watchdog event as successful caller termination.
+
+The same-process foreground-resume experiment released the delayed watchdog and
+receipt timer together after roughly 278 seconds, with revocation/cancellation
+then completing promptly. A resumed UI owner, not instrumentation importance or
+screen-awake state, is required for raw-runtime QA. This supports process
+scheduling suspension, not a particular OEM implementation or a JNI deadlock.
+**How to apply:** construct raw dialogue only with a main-thread-bound RESUMED
+LifecycleOwner. Pause/stop permanently revoke that runtime; resume is explicit
+new ownership and still subject to process-wide native admission. Production
+host `onStop` revokes voice/turn ownership synchronously before epoch-guarded
+audio cleanup. Never introduce a hidden keepalive or replace raw factual-quality
+failure with an abstention/scheduling pass.

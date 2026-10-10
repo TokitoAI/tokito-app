@@ -2,7 +2,10 @@ package dev.tokito.physical.dialogue
 
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.LifecycleOwner
 import com.geniex.sdk.GenieXSdk
 import com.geniex.sdk.LlmWrapper
 import com.geniex.sdk.bean.ChatMessage
@@ -30,6 +33,7 @@ import kotlin.coroutines.resumeWithException
 
 class TokitoDialogueRuntime(
     context: Context,
+    foregroundOwner: LifecycleOwner,
     private val limits: DialogueLimits = DialogueLimits(),
 ) : AutoCloseable {
     private val applicationContext = context.applicationContext
@@ -53,6 +57,12 @@ class TokitoDialogueRuntime(
     private val recentProposalIds = ArrayDeque<String>()
     private val _state = MutableStateFlow<DialogueRuntimeState>(DialogueRuntimeState.Uninitialized)
     val state: StateFlow<DialogueRuntimeState> = _state.asStateFlow()
+    private val foreground: ForegroundDialogueLease
+
+    init {
+        check(Looper.myLooper() == Looper.getMainLooper()) { "Bind foreground dialogue on the main thread" }
+        foreground = ForegroundDialogueLease(foregroundOwner.lifecycle) { close() }
+    }
 
     suspend fun initialize(model: DialogueModel) = withTimeout(INITIALIZATION_DEADLINE_MS) {
         operation.withLock { initializeOwned(model) }
@@ -286,6 +296,9 @@ class TokitoDialogueRuntime(
     override fun close() {
         lifecycle.close { _state.value = DialogueRuntimeState.Closed }
         initialization.cancelPending()
+        foreground.close()
+        if (Looper.myLooper() == Looper.getMainLooper()) foreground.detach()
+        else Handler(Looper.getMainLooper()).post { foreground.detach() }
     }
 
     private fun initializationFailure(failure: DialogueFailure) {
@@ -294,6 +307,7 @@ class TokitoDialogueRuntime(
 
     private fun ensureOpen() {
         if (lifecycle.isClosed()) throw DialogueFailure(DialogueFailureCode.CLOSED, "Dialogue runtime is closed")
+        foreground.requireActive()
     }
 
     private fun ensureSupportedDevice() {

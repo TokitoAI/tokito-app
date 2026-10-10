@@ -5,9 +5,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.coroutineContext
 
 internal sealed interface CallState {
     data object Idle : CallState
@@ -33,8 +35,10 @@ internal class VoiceCallController(
     private var closed = false
     private var state: CallState = CallState.Idle
     private var turn: Job? = null
+    private var ownership = 0L
     private var lastFinalTimestamp = Long.MIN_VALUE
     private val preparationMutex = Mutex()
+    private val audioOwnershipMutex = Mutex()
     @Volatile private var prepared = false
 
     fun currentState(): CallState = state
@@ -45,16 +49,17 @@ internal class VoiceCallController(
 
     suspend fun warmUp() {
         check(!closed) { "voice call controller is closed" }
+        val owner = ownership
         if (prepared) return
         if (!active) transition(CallState.Preparing)
         try {
             ensurePrepared()
-            if (!active) transition(CallState.Idle)
+            if (!active && owner == ownership) transition(CallState.Idle)
         } catch (failure: CancellationException) {
-            if (!active) transition(CallState.Idle)
+            if (!active && owner == ownership) transition(CallState.Idle)
             throw failure
         } catch (failure: Throwable) {
-            if (!active) transition(CallState.Unavailable(failure.message ?: "Local voice call is unavailable"))
+            if (!active && owner == ownership) transition(CallState.Unavailable(failure.message ?: "Local voice call is unavailable"))
         }
     }
 
@@ -62,30 +67,45 @@ internal class VoiceCallController(
         check(!closed) { "voice call controller is closed" }
         if (active) return
         active = true
+        val owner = ++ownership
         if (!prepared) transition(CallState.Preparing)
         try {
             ensurePrepared()
-            if (!active) return
-            startListening()
+            if (!active || owner != ownership || closed) return
+            audioOwnershipMutex.withLock {
+                if (active && owner == ownership && !closed) startListening()
+            }
+            if (!active || owner != ownership || closed) return
             transition(CallState.Listening)
         } catch (failure: CancellationException) {
-            active = false
-            transition(CallState.Idle)
+            if (owner == ownership) { active = false; transition(CallState.Idle) }
             throw failure
         } catch (failure: Throwable) {
-            active = false
-            transition(CallState.Unavailable(failure.message ?: "Local voice call is unavailable"))
+            if (owner == ownership) {
+                active = false
+                transition(CallState.Unavailable(failure.message ?: "Local voice call is unavailable"))
+            }
         }
     }
 
     suspend fun stop() {
-        if (!active && state == CallState.Idle) return
+        cleanupRevokedTurn(revokeActiveTurn())
+    }
+
+    /** Called synchronously by host onStop, before deferred audio cleanup. */
+    fun revokeActiveTurn(): Long {
+        ownership++
         active = false
         turn?.cancel()
         turn = null
+        transition(CallState.Idle)
+        return ownership
+    }
+
+    suspend fun cleanupRevokedTurn(owner: Long) = audioOwnershipMutex.withLock {
+        if (owner != ownership || active || closed) return@withLock
         runCatching { interruptSpeech() }
         runCatching { stopListening() }
-        transition(CallState.Idle)
     }
 
     fun accept(segment: TranscriptSegment) {
@@ -93,32 +113,36 @@ internal class VoiceCallController(
         if (!active || !segment.isFinal || state != CallState.Listening || utterance.isEmpty()) return
         if (segment.capturedAtMonotonicMillis <= lastFinalTimestamp) return
         lastFinalTimestamp = segment.capturedAtMonotonicMillis
+        val owner = ownership
         turn = scope.launch {
+            val ownedTurn = coroutineContext.job
             transition(CallState.Thinking)
             try {
                 val response = respond(utterance).trim()
                 require(response.isNotEmpty()) { "Local dialogue returned an empty response" }
-                if (!active) return@launch
+                if (!active || owner != ownership) return@launch
                 val playbackStarted = CompletableDeferred<Unit>()
                 val playbackState = scope.launch {
                     playbackStarted.await()
-                    if (active && state == CallState.Thinking) transition(CallState.Speaking)
+                    if (active && owner == ownership && state == CallState.Thinking) transition(CallState.Speaking)
                 }
                 try {
                     speak(response) { playbackStarted.complete(Unit) }
                 } finally {
                     if (playbackStarted.isCompleted) playbackState.join() else playbackState.cancel()
                 }
-                if (active) transition(CallState.Listening)
+                if (active && owner == ownership) transition(CallState.Listening)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {
-                active = false
-                runCatching { stopListening() }
-                transition(CallState.Unavailable(failure.message ?: "Local conversation failed"))
+                if (owner == ownership) {
+                    active = false
+                    runCatching { stopListening() }
+                    transition(CallState.Unavailable(failure.message ?: "Local conversation failed"))
+                }
             } finally {
-                if (!active) runCatching { stopListening() }
-                turn = null
+                if (!active && owner == ownership) runCatching { stopListening() }
+                if (turn === ownedTurn) turn = null
             }
         }
     }
@@ -126,15 +150,18 @@ internal class VoiceCallController(
     fun fail(reason: String) {
         if (!active) return
         active = false
+        ownership++
         turn?.cancel()
         turn = null
-        scope.launch { runCatching { stopListening() } }
+        val retired = ownership
+        scope.launch { cleanupRevokedTurn(retired) }
         transition(CallState.Unavailable(reason))
     }
 
     override fun close() {
         if (closed) return
         closed = true
+        ownership++
         active = false
         turn?.cancel()
         turn = null
@@ -147,6 +174,7 @@ internal class VoiceCallController(
     }
 
     private fun transition(next: CallState) {
+        if (closed) return
         if (state == next) return
         state = next
         onState(next)

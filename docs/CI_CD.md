@@ -58,16 +58,18 @@ The unified app has optional device acceptance instrumentation under
 `apps/mobile/device-tests`. After importing signed bundles in Local models, build
 `:app:assembleRelease :app:assembleReleaseAndroidTest` with
 `-Ptokito.deviceTests=true`, install both APKs, and run
-`adb shell am instrument -w -r -e class dev.tokito.app.LocalModelsDeviceTest
-dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner`.
+the installed runner using the explicit packaged baseline method selection in
+`docs/RELEASE_DEVICE_QA.md`.
 This runs model resolution, multiple actual NPU generations, and speech playback
 inside `dev.tokito.app`. Model files stay in that app's private storage; the
 instrumentation APK has no production launcher. Local candidate models may
 also require `-Ptokito.models.allowEvaluation=true` as documented by the voice
 runtime. Do not set that property in publication builds.
 
-Keep the device awake and unlocked during instrumentation. Tests foreground the
-launcher; an OEM may suspend background NPU work while locked. Restore any temporary
-USB stay-awake setting afterward. Inspect the instrumentation summary, not only the
+Keep the device unlocked with the actual target Activity RESUMED during instrumentation.
+Raw runtime tests bind to that owner; losing foreground closes/cancels the runtime.
+An awake display or instrumentation importance does not prevent process suspension.
+Do not add hidden keepalives or override OEM power policy to claim a deadline pass.
+Inspect the instrumentation summary, not only the
 ADB exit code: ADB can exit zero when tests failed. These checks do not certify
 held-out physical-board recognition or authorize candidate-model redistribution.

@@ -125,6 +125,26 @@ completion. Its cancelled tasks are removed, and logs omit names, stacks,
 identities, prompts, answers and exception text. Keep this lifecycle acceptance
 gate separate from the known failed factual-quality evaluation.
 
+Follow-up diagnosis found that bringing the same running app process back to
+the foreground immediately released both timers after approximately 278 seconds.
+The watchdog and receipt revocation then progressed together; revocation and
+job-cancellation markers each completed in about one millisecond. This is
+evidence of delayed whole-process scheduling while the launcher owned the UI,
+not a native-held receipt-handler deadlock or a precise attribution to an OEM
+freeze implementation. Screen-awake and instrumentation/process-importance
+flags did not prove the app remained visibly foregrounded.
+
+Raw-runtime construction now requires an explicit `LifecycleOwner`, bound on
+the main thread while its state is `RESUMED`. Losing that state permanently
+closes the runtime and revokes the receipt before deferred native cleanup.
+Resume never silently reuses a revoked runtime: explicitly create a new one,
+which still cannot acquire native admission while earlier JNI is finishing.
+There is no wake lock, hidden keepalive, background service or OEM-setting
+override. Timers cannot promise wall-clock completion while the process is
+not being scheduled. Production evidence/abstention voice does not instantiate
+the raw runtime; its host synchronously revokes call/turn ownership in `onStop`
+before scheduling epoch-guarded audio cleanup.
+
 ## Local design retrieval
 
 `LocalDesignContextIndex` accepts records only after an assembly-context bundle

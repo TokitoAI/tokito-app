@@ -68,3 +68,43 @@ installed model manager, measured NPU response/cancellation suites, project
 sync/chat/schematic UI and process restart. Record unavailable exact-device
 checks as pending. Managed-device/UTP cleanup must not delete provisioned
 app-private models during this acceptance stage.
+
+The unified release packages nine baseline checks: the two
+`PhysicalSessionBridgeDeviceTest` tests, one `LocalBenchPolicyDeviceTest`, two
+`LocalGroundingDeviceTest` tests, and these four `LocalModelsDeviceTest` methods:
+`vendorJniBeanAbiSurvivesReleaseOptimization`, `installedModelsResolveInUnifiedRelease`,
+`npuGeneratesMultipleFreshResponses`, and `localSpeechLoadsAndPlaysAudio`.
+Select those methods explicitly when running the baseline. Selecting the entire
+LocalModels class also runs the separate raw electronics-quality evaluation,
+whose known failed factual/format evidence must remain failed. That evaluation
+is an additional tenth test, not an acceptance substitute.
+Legacy `dev.tokito.physical` subtree test classes are not packaged into the
+unified runner. Selecting those absent classes reports selector errors, not an
+application regression or a valid expanded hardware suite.
+
+```powershell
+$cases = @(
+  'dev.tokito.app.PhysicalSessionBridgeDeviceTest',
+  'dev.tokito.app.LocalBenchPolicyDeviceTest',
+  'dev.tokito.app.LocalGroundingDeviceTest',
+  'dev.tokito.app.LocalModelsDeviceTest#vendorJniBeanAbiSurvivesReleaseOptimization',
+  'dev.tokito.app.LocalModelsDeviceTest#installedModelsResolveInUnifiedRelease',
+  'dev.tokito.app.LocalModelsDeviceTest#npuGeneratesMultipleFreshResponses',
+  'dev.tokito.app.LocalModelsDeviceTest#localSpeechLoadsAndPlaysAudio'
+)
+adb -s <serial> shell am instrument -w -r -e class ($cases -join ',') dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner
+# Separate raw quality evidence; the current candidate is unqualified.
+adb -s <serial> shell am instrument -w -r -e class 'dev.tokito.app.LocalModelsDeviceTest#localElectronicsQualityEvidence' dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Raw NPU evaluation obtains and verifies an actual focused RESUMED target
+Activity before admission and each turn, and binds runtime ownership to that
+Activity's lifecycle. `startActivity` plus `waitForIdleSync`, a lit display or
+instrumentation importance alone does not prove foreground ownership. Losing
+that owner cancels/closes the runtime rather than waiting invisibly in the
+background or resuming it as successful. Model loading, timer/worker markers,
+and activity lifecycle must be compared when diagnosing a delayed turn.
+The independent diagnostic watchdog cannot run in a suspended process either.
+Never wake a stalled run and reinterpret the delayed cancellation as a passing
+deadline. Record interruption, resume and failed deadlines honestly, then run
+the proper foreground-owned scenario again; do not change device power policy.

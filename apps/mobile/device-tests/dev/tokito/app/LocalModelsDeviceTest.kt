@@ -19,12 +19,10 @@ import java.util.Locale
 class LocalModelsDeviceTest {
     private data class QualityCase(val id: String, val prompt: String, val rubric: String)
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private lateinit var foreground: android.app.Activity
 
     @Before fun keepTargetForeground() {
-        val launcher = checkNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
-        launcher.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(launcher)
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        foreground = ForegroundDeviceQa.launch()
     }
 
     @Test fun vendorJniBeanAbiSurvivesReleaseOptimization() {
@@ -45,7 +43,7 @@ class LocalModelsDeviceTest {
         val model = DialogueModelProvisioner.fromAdmittedBundle(
             repository.activeDirectory(ModelCapability.DIALOGUE)!!,
         ).requireInstalled()
-        val runtime = TokitoDialogueRuntime(context, DialogueLimits(maxPredictTokens = 128))
+        val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = 128))
         try {
             val loadStart = android.os.SystemClock.elapsedRealtime()
             withTimeout(120_000) { runtime.initialize(model) }
@@ -58,11 +56,13 @@ class LocalModelsDeviceTest {
                 "In one sentence, explain how a capacitor stores energy.",
                 "In one sentence, explain the difference between voltage and current.",
             ).withIndex()) {
+                ForegroundDeviceQa.requireResumed(foreground)
                 android.util.Log.i("TokitoDeviceQA", "NPU repeat phase=case_start index=$index")
                 val generationStart = android.os.SystemClock.elapsedRealtime()
                 val response = withTimeout(65_000) {
                     runtime.respond(DialogueRequest(utterance = prompt, deadlineMs = 60_000))
                 }
+                ForegroundDeviceQa.requireResumed(foreground)
                 android.util.Log.i("TokitoDeviceQA", "NPU repeat phase=receipt_returned index=$index")
                 assertTrue("Expected local generated response, got $response", response is DialogueOutcome.Response)
                 val answer = (response as DialogueOutcome.Response).text
@@ -83,7 +83,7 @@ class LocalModelsDeviceTest {
         val model = DialogueModelProvisioner.fromAdmittedBundle(
             repository.activeDirectory(ModelCapability.DIALOGUE)!!,
         ).requireInstalled()
-        val runtime = TokitoDialogueRuntime(context, DialogueLimits(maxPredictTokens = 128))
+        val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = 128))
         val cases = listOf(
             QualityCase("inductance", "In general, how does an inductor store energy?", "Magnetic field; not electric charge or energy creation."),
             QualityCase("diode", "In general, what does a diode do?", "Direction-dependent conduction; not an unconditional perfect one-way switch."),
@@ -103,8 +103,10 @@ class LocalModelsDeviceTest {
             withTimeout(120_000) { runtime.initialize(model) }
             repeat(2) { round ->
                 cases.forEach { (id, prompt, rubric) ->
+                    ForegroundDeviceQa.requireResumed(foreground)
                     val start = android.os.SystemClock.elapsedRealtime()
                     val outcome = withTimeout(65_000) { runtime.respond(DialogueRequest(prompt, deadlineMs = 60_000)) }
+                    ForegroundDeviceQa.requireResumed(foreground)
                     val answer = (outcome as? DialogueOutcome.Response)?.text.orEmpty()
                     val words = java.util.StringTokenizer(answer).countTokens()
                     val sentences = BreakIterator.getSentenceInstance(Locale.US).let { iterator ->

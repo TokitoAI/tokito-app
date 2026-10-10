@@ -201,7 +201,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if (::call.isInitialized) lifecycleScope.launch { call.stop() }
+        if (::call.isInitialized) {
+            val retired = call.revokeActiveTurn()
+            lifecycleScope.launch { call.cleanupRevokedTurn(retired) }
+        }
         if (::ar.isInitialized) ar.stop()
         super.onStop()
     }

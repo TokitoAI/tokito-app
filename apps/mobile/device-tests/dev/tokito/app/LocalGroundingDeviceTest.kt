@@ -61,7 +61,8 @@ class LocalGroundingDeviceTest {
             ModelBundleRepository(context).activeDirectory(ModelCapability.DIALOGUE)!!,
         ).requireInstalled()
         assertEquals(DialogueRuntime.QAIRT, model.runtime)
-        val runtime = TokitoDialogueRuntime(context, DialogueLimits(maxPredictTokens = 128))
+        val foreground = ForegroundDeviceQa.launch()
+        val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = 128))
         try {
             withTimeout(120_000) { runtime.initialize(model) }
             val failure = runCatching {

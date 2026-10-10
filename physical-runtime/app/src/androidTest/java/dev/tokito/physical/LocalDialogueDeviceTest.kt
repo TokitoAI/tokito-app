@@ -79,10 +79,15 @@ class LocalDialogueDeviceTest {
             DialogueModelProvisioner.fromAdmittedBundle(File(context.filesDir, "models/dialogue/active"))
                 .requireInstalled()
         }
-        val runtime = TokitoDialogueRuntime(
-            context,
-            DialogueLimits(maxPredictTokens = BuildConfig.DIALOGUE_MAX_PREDICT_TOKENS),
-        )
+        var createdRuntime: TokitoDialogueRuntime? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val activity = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                .single { it.packageName == context.packageName && it.hasWindowFocus() }
+            createdRuntime = TokitoDialogueRuntime(context, activity as androidx.lifecycle.LifecycleOwner,
+                DialogueLimits(maxPredictTokens = BuildConfig.DIALOGUE_MAX_PREDICT_TOKENS))
+        }
+        val runtime = checkNotNull(createdRuntime)
         try {
             withTimeout(90_000) { runtime.initialize(model) }
             val ungrounded = runtime.respond(
