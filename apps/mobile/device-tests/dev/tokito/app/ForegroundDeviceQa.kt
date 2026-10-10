@@ -9,6 +9,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import dev.tokito.physical.dialogue.DialogueLimits
 import dev.tokito.physical.dialogue.TokitoDialogueRuntime
+import java.util.concurrent.atomic.AtomicReference
 
 /** Real visible target UI, not a process importance flag or instrumentation
  * presence. No wake lock, keepalive service or OEM setting override.
@@ -22,12 +23,12 @@ internal object ForegroundDeviceQa {
         context.startActivity(launcher)
         val end = SystemClock.elapsedRealtime() + 10_000
         while (SystemClock.elapsedRealtime() < end) {
-            var activity: Activity? = null
+            val activity = AtomicReference<Activity?>()
             instrumentation.runOnMainSync {
-                activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
-                    .singleOrNull { it.packageName == context.packageName && it.hasWindowFocus() && !it.isFinishing }
+                activity.set(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .singleOrNull { it.packageName == context.packageName && it.hasWindowFocus() && !it.isFinishing })
             }
-            activity?.let { return it }
+            activity.get()?.let { return it }
             SystemClock.sleep(25)
         }
         error("Device QA requires a real resumed, focused target Activity")
@@ -42,10 +43,10 @@ internal object ForegroundDeviceQa {
 
     fun runtime(activity: Activity, limits: DialogueLimits): TokitoDialogueRuntime {
         requireResumed(activity)
-        var runtime: TokitoDialogueRuntime? = null
+        val runtime = AtomicReference<TokitoDialogueRuntime?>()
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            runtime = TokitoDialogueRuntime(activity, activity as LifecycleOwner, limits)
+            runtime.set(TokitoDialogueRuntime(activity, activity as LifecycleOwner, limits))
         }
-        return checkNotNull(runtime)
+        return checkNotNull(runtime.get())
     }
 }
