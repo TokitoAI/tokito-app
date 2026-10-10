@@ -82,7 +82,7 @@ class KnowledgeSelectionRequest(
             require(target == null || selected.all { it.componentId == target })
             // Audio receives actual cited values, not unchecked free-form Qwen
             // prose. Component targeting is only a proposal, never coordinates.
-            return DialogueOutcome.Response(selected.joinToString(". ") { "${it.reference}: ${it.value}" },
+            return DialogueOutcome.Response("The reference design lists " + selected.joinToString(". ") { "${it.reference}: ${it.value}" },
                 selected, target)
         } catch (failure: Exception) {
             throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Qwen returned an invalid evidence selection", failure)

@@ -16,7 +16,7 @@ class KnowledgeSelectionProtocolTest {
 
     @Test fun qwenCanSelectOnlyExistingCitedFactsNotInventTechnicalProse() {
         val answer = request().parse("""{"facts":["f0"],"target":"board:U1","abstain":false}""")
-        assertEquals("U1: Verified source microcontroller", answer.text)
+        assertEquals("The reference design lists U1: Verified source microcontroller", answer.text)
         assertEquals("board:U1", answer.componentTargetProposal)
         assertEquals("/facts/description", answer.sourceFacts.single().pointer)
         assertTrue(answer.sourceFacts.single().sourceCitation.contains("source.json"))
