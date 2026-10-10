@@ -8,7 +8,9 @@ steps:
     command: .buildkite/steps/release-android.sh
     agents:
       queue: release
-    depends_on: approve-release
+    depends_on:
+      - approve-release
+      - unified-android
     if: build.tag != null
     timeout_in_minutes: 75
     artifact_paths:
