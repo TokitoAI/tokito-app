@@ -36,11 +36,14 @@ class TokitoDialogueRuntime(
     private val protocol = DialogueProtocol(limits)
     private val operation = Mutex()
     private val initialization = InitializationWorker<LlmWrapper>()
-    private val lifecycle = DialogueLifecycle {
+    private val responses = ResponseWorker(retireEmpty = initialization::closeIfEmpty) {
+        // Runs under native admission only after vendor work and cleanup unwind.
+        runCatching { initialization.takeCurrent()?.close() }
         initialization.close()
         activeRuntime = null
         clearSession()
     }
+    private val lifecycle = DialogueLifecycle { responses.close() }
     private var activeRuntime: DialogueRuntime? = null
     private val sessionMessages = ArrayList<ChatMessage>()
     private var sessionChars = 0
@@ -57,6 +60,9 @@ class TokitoDialogueRuntime(
 
     private suspend fun initializeOwned(model: DialogueModel) {
         ensureOpen()
+        if (responses.isQuarantined()) {
+            throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Native dialogue runtime is quarantined")
+        }
         ensureSupportedDevice()
         require(model.artifacts.isNotEmpty()) { "Expected a non-empty model inventory" }
         if (!model.path.exists()) throw DialogueFailure(DialogueFailureCode.MODEL_MISSING, "Model bundle is absent")
@@ -136,12 +142,40 @@ class TokitoDialogueRuntime(
 
     suspend fun respond(request: DialogueRequest): DialogueOutcome = operation.withLock {
         ensureOpen()
-        lifecycle.responding { respondOwned(request) }
+        protocol.validateRequest(request)
+        lifecycle.responding {
+            val ready = _state.value as? DialogueRuntimeState.Ready
+                ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
+            val started = android.os.SystemClock.elapsedRealtime()
+            if (!lifecycle.publish { _state.value = DialogueRuntimeState.Generating }) ensureOpen()
+            try {
+                val outcome = responses.execute(request.deadlineMs) { respondOwned(request) }
+                lifecycle.publish { _state.value = ready }
+                outcome
+            } catch (failure: CancellationException) {
+                Log.i(TAG, "Generation receipt=cancelled elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
+                lifecycle.publish {
+                    _state.value = DialogueRuntimeState.Failed(DialogueFailure(
+                        DialogueFailureCode.GENERATION_CANCELLED, "Local generation was cancelled", failure))
+                }
+                throw failure
+            } catch (failure: DialogueFailure) {
+                if (failure.code == DialogueFailureCode.GENERATION_TIMEOUT) {
+                    Log.i(TAG, "Generation receipt=timeout elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
+                }
+                lifecycle.publish {
+                    _state.value = if (responses.isQuarantined()) DialogueRuntimeState.Failed(failure) else ready
+                }
+                throw failure
+            } catch (failure: Throwable) {
+                val wrapped = DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Local generation failed", failure)
+                lifecycle.publish { _state.value = DialogueRuntimeState.Failed(wrapped) }
+                throw wrapped
+            }
+        }
     }
 
     private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
-        val ready = _state.value as? DialogueRuntimeState.Ready
-            ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
         protocol.ungroundedIdentityClarification(request)?.let { return it }
         val prompt = protocol.requestPrompt(request)
         val toolMode = request.capabilities.isNotEmpty()
@@ -149,10 +183,13 @@ class TokitoDialogueRuntime(
         val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
         val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
-        if (!lifecycle.publish { _state.value = DialogueRuntimeState.Generating }) ensureOpen()
+        val started = android.os.SystemClock.elapsedRealtime()
+        fun phase(name: String) { Log.i(TAG, "Generation phase=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}") }
         return try {
-            val raw = generationDeadline(request.deadlineMs) {
+            val raw = run {
+                phase("prepare")
                 prepareSession(activeEngine, systemPrompt, prompt)
+                phase("template")
                 val templated = activeEngine.applyChatTemplate(
                     sessionMessages.toTypedArray(),
                     null,
@@ -170,6 +207,7 @@ class TokitoDialogueRuntime(
                         conversationalSampler(activeRuntime)
                     },
                 )
+                phase("native_generate")
                 buildString {
                     activeEngine.generateStreamFlow(templated.formattedText, generation).collect { result ->
                         when (result) {
@@ -185,6 +223,7 @@ class TokitoDialogueRuntime(
                     }
                 }
             }
+            phase("native_returned")
             sessionMessages.add(ChatMessage("assistant", raw))
             sessionChars += raw.length
             sessionTurns += 1
@@ -212,25 +251,25 @@ class TokitoDialogueRuntime(
                     recentProposalIds.addLast(outcome.id)
                     if (recentProposalIds.size > 64) recentProposalIds.removeFirst()
                 }
-                lifecycle.publish { _state.value = ready }
             }
         } catch (failure: CancellationException) {
+            phase("cleanup")
             stopInterruptedStream(activeEngine)
+            phase("cleanup_returned")
             sessionNeedsReset = true
-            lifecycle.publish { _state.value = ready }
             throw failure
         } catch (failure: DialogueFailure) {
             if (failure.code == DialogueFailureCode.GENERATION_TIMEOUT ||
                 failure.code == DialogueFailureCode.OUTPUT_LIMIT) {
+                phase("cleanup")
                 stopInterruptedStream(activeEngine)
+                phase("cleanup_returned")
             }
             sessionNeedsReset = true
-            lifecycle.publish { _state.value = ready }
             throw failure
         } catch (failure: Throwable) {
             sessionNeedsReset = true
             val wrapped = DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Local generation failed", failure)
-            lifecycle.publish { _state.value = DialogueRuntimeState.Failed(wrapped) }
             throw wrapped
         }
     }
@@ -245,6 +284,7 @@ class TokitoDialogueRuntime(
 
     override fun close() {
         lifecycle.close { _state.value = DialogueRuntimeState.Closed }
+        initialization.cancelPending()
     }
 
     private fun initializationFailure(failure: DialogueFailure) {

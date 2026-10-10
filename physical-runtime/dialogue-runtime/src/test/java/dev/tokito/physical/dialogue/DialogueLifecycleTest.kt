@@ -8,7 +8,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -60,18 +59,6 @@ class DialogueLifecycleTest {
         assertEquals(1, disposals)
     }
 
-    @Test fun generationDeadlineDoesNotReclassifyAnEnclosingCallerDeadline() = runTest {
-        val callerFailure = runCatching {
-            withTimeout(10) { generationDeadline(100) { awaitCancellation() } }
-        }.exceptionOrNull()
-        assertTrue(callerFailure is CancellationException)
-        assertFalse(callerFailure is DialogueFailure)
-        val ownedFailure = runCatching {
-            generationDeadline(10) { awaitCancellation() }
-        }.exceptionOrNull()
-        assertTrue(ownedFailure is DialogueFailure)
-        assertEquals(DialogueFailureCode.GENERATION_TIMEOUT, (ownedFailure as DialogueFailure).code)
-    }
 
     @Test fun closedRuntimeCannotStartOrPublishAnotherResponse() = runTest {
         var disposals = 0

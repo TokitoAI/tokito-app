@@ -11,6 +11,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class InitializationWorkerTest {
+    @Test fun cancellingLoadReceiptDoesNotDestroyAnAlreadyAdmittedEngine() = runBlocking {
+        val worker = InitializationWorker<Resource>()
+        val result = Resource()
+        try {
+            worker.load(2_000) { result }
+            awaitFinished(worker)
+            worker.cancelPending()
+            assertSame(result, worker.current())
+            assertEquals(0, result.closes.get())
+        } finally {
+            worker.close()
+            assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
+        }
+    }
     private suspend fun awaitFinished(worker: InitializationWorker<Resource>) {
         withTimeout(2_000) { while (worker.isFinishing()) delay(1) }
     }

@@ -156,12 +156,20 @@ without producing a model answer. Screen lock was observed, but its causal role
 was not established. Report fixed phases/timing and timeout state, never infer
 that NPU execution succeeded or was physically interrupted.
 
-Response ownership also guards terminal state and engine disposal. Closing a
-runtime marks it `Closed` before cancellation and does not wait for an active
-response; its engine is disposed only after that response unwinds. Late state
-publication is rejected. Caller cancellation remains coroutine cancellation,
-including a caller's shorter timeout; only the owned response deadline maps to
-`GENERATION_TIMEOUT`. **Why:** the old response catches restored `Ready` after
-close and converted cancellation into a domain failure. A JNI call which does
-not cooperate may still delay unwind; these ownership guarantees do not claim
-physical interruption or establish that a lock screen caused a device timeout.
+Response ownership guards terminal state, bounded caller waiting and engine
+disposal. The complete native response and cleanup run on an isolated worker;
+the caller owns only a revocable receipt, not a structured child joining JNI.
+Timeout/cancellation quarantines the runtime and rejects late output. The worker
+retains process-wide admission until native work, cleanup and disposal finish,
+blocking replacement model creation/generation as well as concurrent destruction.
+Empty replacement loaders are atomically sealed and retired immediately without
+joining the shared disposal queue; repeated recreation cannot retain unlimited
+resource-free runtimes behind a stuck native call.
+Close publishes terminal `Closed` immediately and does not join vendor cleanup.
+Caller cancellation remains cancellation, including a shorter outer timeout;
+only the owned receipt deadline maps to `GENERATION_TIMEOUT`.
+**Why:** a real optimized awake device run exceeded both 60s generation and 65s
+caller limits because vendor work or NonCancellable cleanup remained a child of
+the caller. Fixed phase/timing diagnostics locate future stalls without request
+text. A blocked native call may remain alive; bounded receipt termination is
+not physical interruption, a factual-quality pass or proof of lock causality.

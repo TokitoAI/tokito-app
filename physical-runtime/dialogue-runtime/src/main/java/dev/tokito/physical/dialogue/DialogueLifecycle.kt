@@ -4,7 +4,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.job
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
 
 /** Revokes publication immediately, but never destroys an engine still used by JNI.
@@ -51,10 +50,3 @@ internal class DialogueLifecycle(private val dispose: () -> Unit) {
         else owner.cancel(CancellationException("Dialogue runtime closed"))
     }
 }
-
-/** Only our own deadline becomes a domain failure. An enclosing caller deadline
- * is still coroutine cancellation and must retain its structured ownership.
- */
-internal suspend fun <T : Any> generationDeadline(deadlineMs: Long, block: suspend () -> T): T =
-    withTimeoutOrNull(deadlineMs) { block() }
-        ?: throw DialogueFailure(DialogueFailureCode.GENERATION_TIMEOUT, "Local generation exceeded its deadline")

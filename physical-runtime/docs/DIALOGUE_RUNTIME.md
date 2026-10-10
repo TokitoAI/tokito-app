@@ -89,14 +89,26 @@ Lock-screen conditions must be recorded separately; a timeout is not proof that
 the operating system suspended the NPU.
 
 Response close revokes state publication immediately: `Closed` is terminal and
-an interrupted response cannot restore `Ready` or `Failed`. It cancels its own
-structured response scope without joining vendor work on the closing thread;
-engine disposal waits until that scope has unwound, so destruction cannot race
-an active JNI call. Caller cancellation (including an enclosing deadline)
-remains coroutine cancellation, while only the response's own deadline becomes
-`GENERATION_TIMEOUT`. The SDK invokes template/reset/generation through JNI;
-cooperative cancellation and the configured deadline do not establish a hard
-wall-clock bound for unresponsive vendor code or a suspended process.
+an interrupted response cannot restore `Ready` or `Failed`. The caller awaits
+only an external cancellable receipt; the complete native response, including
+template/reset/generation and stop cleanup, runs on an isolated worker with no
+caller-owned child job. The owned deadline returns `GENERATION_TIMEOUT` without
+joining blocked JNI or NonCancellable cleanup. Caller cancellation (including
+an enclosing deadline) remains coroutine cancellation.
+
+Revoking the receipt permanently quarantines that runtime. It cannot become
+ready again, reload its model or deliver late output. The worker retains one
+process-wide native admission through generation, cleanup and engine disposal;
+replacement runtimes cannot create or generate while that lease is held. Close
+never destroys an engine still in use. Idle engine disposal uses one shared
+worker, rather than accumulating waiting JNI threads across runtime recreation.
+A resource-free replacement is retired immediately only after atomically sealing
+its empty loader against late creation; it does not queue a retained runtime
+behind blocked native work.
+Fixed phase/timing diagnostics distinguish prepare/template/native-generation
+and cleanup without logging request or model text. These guarantees bound the
+awake caller's wait, not physical vendor interruption; a suspended process
+cannot run its timer until scheduled again. No alternate backend is attempted.
 
 ## Local design retrieval
 

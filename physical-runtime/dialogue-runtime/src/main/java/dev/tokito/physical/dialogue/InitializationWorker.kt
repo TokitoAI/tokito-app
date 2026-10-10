@@ -1,7 +1,6 @@
 package dev.tokito.physical.dialogue
 
 import java.util.concurrent.Executors
-import java.util.concurrent.Semaphore
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -23,9 +22,18 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
     private var admitted: Pair<Any, T>? = null
 
     fun current(): T? = synchronized(lock) { admitted?.second }
+    /** Revoke a loading receipt without destroying an engine leased to generation. */
+    fun cancelPending() = synchronized(lock) { pendingContinuation?.cancel() }
+    /** Atomically seals an empty loader so caller-side teardown cannot race a new load. */
+    fun closeIfEmpty(): Boolean = synchronized(lock) {
+        if (pending != null || admitted != null) false
+        else { closed = true; executor.shutdown(); true }
+    }
+    /** Only the response worker holding native admission may synchronously dispose this. */
+    fun takeCurrent(): T? = synchronized(lock) { admitted?.second.also { admitted = null } }
     fun isFinishing(): Boolean = synchronized(lock) { pending != null }
     fun discardCurrent() = synchronized(lock) {
-        admitted?.second?.let { resource -> executor.execute { runCatching { resource.close() } } }
+        admitted?.second?.let(::scheduleDisposal)
         admitted = null
     }
 
@@ -35,7 +43,7 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
             val previous = synchronized(lock) {
                 check(!closed) { "Model loader is closed" }
                 check(pending == null) { "Previous native model load is still finishing" }
-                check(nativeLoadPermit.tryAcquire()) { "A native model load is already finishing" }
+                check(NativeDialogueAdmission.permit.tryAcquire()) { "Native dialogue work is already finishing" }
                 pending = attempt
                 pendingContinuation = continuation
                 admitted?.second.also { admitted = null }
@@ -71,7 +79,7 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
                             if (pendingContinuation === continuation) {
                                 pendingContinuation = null
                             }
-                            nativeLoadPermit.release()
+                            NativeDialogueAdmission.permit.release()
                             if (closed) executor.shutdown()
                         }
                     }
@@ -81,7 +89,7 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
                     if (pending === attempt) {
                         pending = null
                         pendingContinuation = null
-                        nativeLoadPermit.release()
+                        NativeDialogueAdmission.permit.release()
                     }
                 }
                 continuation.resumeWithException(failure)
@@ -94,7 +102,7 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
             admitted?.takeIf { it.first === attempt }?.second?.let { resource ->
                 admitted = null
                 // Disposal never blocks the UI/cancellation callback.
-                executor.execute { runCatching { resource.close() } }
+                scheduleDisposal(resource)
             }
         }
     }
@@ -104,15 +112,18 @@ internal class InitializationWorker<T : AutoCloseable> : AutoCloseable {
             if (closed) return
             closed = true
             pendingContinuation?.cancel()
-            admitted?.second?.let { resource -> executor.execute { runCatching { resource.close() } } }
+            admitted?.second?.let(::scheduleDisposal)
             admitted = null
             // Queued disposal and in-flight JNI finish; new work is rejected.
             if (pending == null) executor.shutdown()
         }
     }
 
-    private companion object {
-        // Recreating a runtime cannot accumulate blocked JNI loads after timeout.
-        val nativeLoadPermit = Semaphore(1)
+    private fun scheduleDisposal(resource: T) {
+        executor.execute {
+            NativeDialogueAdmission.permit.acquire()
+            try { runCatching { resource.close() } }
+            finally { NativeDialogueAdmission.permit.release() }
+        }
     }
 }
