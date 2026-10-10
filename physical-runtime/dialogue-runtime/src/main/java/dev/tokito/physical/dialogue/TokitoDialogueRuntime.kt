@@ -188,11 +188,12 @@ class TokitoDialogueRuntime(
     }
 
     private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
-        protocol.ungroundedIdentityClarification(request)?.let { return it }
-        val prompt = protocol.requestPrompt(request)
+        if (request.knowledgeSelection == null) protocol.ungroundedIdentityClarification(request)?.let { return it }
+        val prompt = request.knowledgeSelection?.prompt(request.utterance) ?: protocol.requestPrompt(request)
         val toolMode = request.capabilities.isNotEmpty()
         requireDialogueMode(activeRuntime, toolMode)
-        val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
+        val systemPrompt = if (request.knowledgeSelection != null) KnowledgeSelectionRequest.SYSTEM
+            else if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
         val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
         val started = android.os.SystemClock.elapsedRealtime()
@@ -262,7 +263,8 @@ class TokitoDialogueRuntime(
             sessionChars += raw.length
             sessionTurns += 1
             val outcome = try {
-                if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
+                request.knowledgeSelection?.parse(raw)
+                    ?: if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
             } catch (failure: DialogueFailure) {
                 if (failure.code == DialogueFailureCode.INVALID_MODEL_OUTPUT) {
                     Log.w(

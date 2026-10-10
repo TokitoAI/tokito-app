@@ -28,3 +28,10 @@ generic board-reference manifest. Guide target percentages are evidence-review
 coordinates only; they remain unbound until an authored-design source supplies
 the board coordinate frame. Pending-license guide media stays local and is
 non-redistributable even when its reviewed facts are tracked.
+
+The multiboard reference repository is `TokitoAI/tokito-app-dataset`, not a
+synthetic benchmark corpus. Compilation retains reference-variant limitations;
+catalog IDs and source designators cannot establish physical component identity.
+The native retrieval/Qwen-selection boundary and producer handoff are specified
+in `docs/DATASET_RAG.md`. Bench activation remains gated on package admission,
+calibrated detector/variant binding, device QA and component-addressable assets.

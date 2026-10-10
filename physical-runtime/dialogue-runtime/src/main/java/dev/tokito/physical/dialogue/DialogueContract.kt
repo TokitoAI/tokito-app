@@ -56,10 +56,15 @@ data class DialogueRequest(
     val capabilities: List<Capability> = emptyList(),
     val designContext: String? = null,
     val deadlineMs: Long = 4_000,
+    val knowledgeSelection: KnowledgeSelectionRequest? = null,
 )
 
 sealed interface DialogueOutcome {
-    data class Response(val text: String) : DialogueOutcome
+    data class Response(
+        val text: String,
+        val sourceFacts: List<KnowledgeSelectionRequest.Fact> = emptyList(),
+        val componentTargetProposal: String? = null,
+    ) : DialogueOutcome
     data class Clarification(val question: String) : DialogueOutcome
     data class ToolProposal(
         val id: String,

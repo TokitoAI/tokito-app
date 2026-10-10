@@ -199,6 +199,12 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
     }
 
     fun validateRequest(request: DialogueRequest) {
+        request.knowledgeSelection?.let {
+            if (request.designContext != null || request.capabilities.isNotEmpty() || request.observations.isNotEmpty() || request.history.isNotEmpty()) {
+                fail("Knowledge selection cannot mix unrelated evidence authorities")
+            }
+            if (it.prompt(request.utterance).length > limits.maxPromptChars - 2048) fail("Knowledge selection exceeds prompt bounds")
+        }
         if (request.utterance.isBlank() || request.utterance.length > limits.maxTurnChars) fail("Invalid utterance")
         if (request.utterance.any { it.isISOControl() && it !in "\n\r\t" }) fail("Utterance contains control characters")
         if (request.history.size > limits.maxHistoryTurns || request.history.any {
