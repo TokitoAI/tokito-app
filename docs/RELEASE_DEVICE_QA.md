@@ -1,5 +1,23 @@
 # Installed release acceptance
 
+`LocalQwenTokensDeviceTest` is the exact-Qwen token-budget qualification slice.
+It runs in the optimized unified app's signed-model sandbox, not the library
+instrumentation sandbox. Its first test verifies the actual QNN System binary
+inventory (including complete 4096 graph variants) and eight exact native token-ID
+checksums against the pinned host tokenizer reference. Its second test exercises
+the production native token-receipt boundary at output caps 64, 128 and 192 with
+two independent prompts each. Success requires available exact prompt counts
+and bounded generated-token counts; stream callback counts are not receipts.
+The paired DEX audit explicitly checks its five named reflective methods, with
+narrow release keeps rather than a new package-wide testing whitelist.
+These are additional qualification checks, not replacements for the baseline
+or factual-quality review. Until the installed runner passes them, the draft
+token-budget slice is not device-qualified and must not be merged or shipped.
+
+```powershell
+adb -s <serial> shell am instrument -w -r -e class dev.tokito.app.LocalQwenTokensDeviceTest dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
 `LocalEmbeddingDeviceTest` is an additional installed-device gate for the signed
 Knowledge search bundle. Run it explicitly after importing that bundle into the
 same optimized target. It checks native tokenizer/numerical conformance, twenty
@@ -58,7 +76,8 @@ python scripts/release-test-abi.py --target android/app/build/outputs/apk/releas
 The DEX audit checks shared class identity and method resolution (including
 facade inheritance); it rejects missing exports and changed signatures. `--rules`
 prints exact referenced classes for review when acceptance APIs change. It does
-not replace installed runner acceptance, cover arbitrary reflective calls, or
+not replace installed runner acceptance, cover arbitrary reflective calls beyond
+the explicitly declared exact-Qwen test entrypoints, or
 prove model quality. Do not install a pair that fails this preflight.
 
 Record the source commit, both APK SHA-256 values, signing identity and release
