@@ -124,6 +124,24 @@ def descriptor(name):
     return "L" + name.replace(".", "/") + ";"
 
 
+def vendor_jni_mapping_errors(mapping):
+    """Native reflection cannot consume renamed SDK bean fields/classes."""
+    errors, vendor = [], False
+    for line in mapping.splitlines():
+        header = re.fullmatch(r"(\S+) -> (\S+):", line)
+        if header:
+            original, residual = header.groups()
+            vendor = original.startswith(("com.geniex.sdk.bean.", "com.geniex.sdk.jni."))
+            if vendor and original != residual:
+                errors.append(f"JNI class renamed: {original} -> {residual}")
+        elif vendor and " -> " in line:
+            source, residual = line.strip().split(" -> ")
+            name = source.split("(", 1)[0].split()[-1].split(":")[-1].rsplit(".", 1)[-1]
+            if name != residual:
+                errors.append(f"JNI member renamed: {source} -> {residual}")
+    return errors
+
+
 def shared_exports(test_refs, test_defs, mapping, usage):
     aliases, originals = {}, set()
     for line in mapping.splitlines():
@@ -161,8 +179,12 @@ def main():
     parser.add_argument("--usage", required=True, type=Path)
     parser.add_argument("--rules", action="store_true")
     args = parser.parse_args()
+    mapping = args.mapping.read_text()
+    vendor_errors = vendor_jni_mapping_errors(mapping)
+    if vendor_errors and not args.rules:
+        raise SystemExit("Unstable vendor JNI ABI:\n" + "\n".join(vendor_errors))
     refs, defs, methods, _, _ = apk_types(args.test)
-    exports = shared_exports(refs, defs, args.mapping.read_text(), args.usage.read_text())
+    exports = shared_exports(refs, defs, mapping, args.usage.read_text())
     if args.rules:
         for name in sorted(exports):
             print("-keep,includedescriptorclasses class " + name[1:-1].replace("/", ".") + " { public *; protected *; }")

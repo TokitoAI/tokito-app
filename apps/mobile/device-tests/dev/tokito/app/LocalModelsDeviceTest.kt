@@ -24,6 +24,10 @@ class LocalModelsDeviceTest {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
+    @Test fun vendorJniBeanAbiSurvivesReleaseOptimization() {
+        requireGenieXJniAbi()
+    }
+
     @Test fun installedModelsResolveInUnifiedRelease() {
         val repository = ModelBundleRepository(context)
         ModelCapability.entries.forEach { capability ->

@@ -130,3 +130,11 @@ delegate families) in `apps/mobile/proguard-release-abi.pro`, never disable R8
 globally. Run the paired DEX class/method audit described in
 `docs/RELEASE_DEVICE_QA.md` before installing both outputs. This linkage check is
 not device execution or model-performance evidence.
+
+GenieX 0.3.1 has no AAR consumer keep rules. Its native LLM creation consumes
+private bean fields by original name. An optimized iQOO run crashed in native
+`strlen` during creation while its mapping renamed `model_path`/`model_name`
+and removed default fields. Preserve SDK bean/JNI classes and members via the dialogue
+consumer rules. Validate the Java ABI before native creation and include SDK
+mapping checks in release preflight. Never report NPU metrics from a run that
+crashes at initialization.

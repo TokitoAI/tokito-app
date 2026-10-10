@@ -19,6 +19,13 @@ test("paired release DEX linkage audit regression suite", () => {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
+test("vendor JNI bean identities and private fields remain stable under R8", async () => {
+  const rules = await readFile(new URL("../../../physical-runtime/dialogue-runtime/consumer-rules.pro", import.meta.url), "utf8");
+  assert.match(rules, /-keep,includedescriptorclasses class com\.geniex\.sdk\.bean\.\*\* \{ \*; \}/);
+  assert.match(rules, /-keep,includedescriptorclasses class com\.geniex\.sdk\.jni\.\*\* \{ \*; \}/);
+  assert.doesNotMatch(rules, /^\s*-(?:dontoptimize|dontshrink|dontobfuscate)/m);
+});
+
 test("release signing script forces optimization and remains idempotent", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tokito-release-"));
   try {

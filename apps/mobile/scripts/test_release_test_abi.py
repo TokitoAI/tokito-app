@@ -9,6 +9,14 @@ spec.loader.exec_module(abi)
 
 
 class ReleaseAbiTest(unittest.TestCase):
+    def test_vendor_jni_renamed_private_field_and_class_are_rejected(self):
+        mapping = "com.geniex.sdk.bean.LlmCreateInput -> com.geniex.sdk.bean.LlmCreateInput:\n    java.lang.String model_path -> b\ncom.geniex.sdk.bean.ModelConfig -> a:\n    int nCtx -> nCtx\n"
+        self.assertEqual(2, len(abi.vendor_jni_mapping_errors(mapping)))
+
+    def test_preserved_vendor_members_accept_line_mapping(self):
+        mapping = "com.geniex.sdk.bean.ModelConfig -> com.geniex.sdk.bean.ModelConfig:\n    int nCtx -> nCtx\n    1:5:void <init>(int):4:4 -> <init>\n    1:2:int getNCtx():5:5 -> getNCtx\n    1:2:int com.geniex.sdk.bean.ModelConfig.hashCode():5:5 -> hashCode\n"
+        self.assertEqual([], abi.vendor_jni_mapping_errors(mapping))
+
     def test_missing_and_merged_target_classes_are_exports(self):
         refs = {"La;", "Lkotlin/LazyKt;", "Landroid/app/Application;", "Ltest/Runner;"}
         mapping = "dev.tokito.Entry -> a:\nandroid.app.Application -> android.app.Application:\n"

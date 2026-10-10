@@ -65,6 +65,7 @@ class TokitoDialogueRuntime(
                 throw DialogueFailure(DialogueFailureCode.MODEL_INTEGRITY, "Model bundle does not match its pinned inventory")
             }
             withContext(Dispatchers.IO) {
+                requireGenieXJniAbi()
                 initializeGenieX()
                 engine?.close()
                 val modelConfig = when (model.runtime) {

@@ -45,6 +45,15 @@ than asking unconstrained generation to imitate the tool schema.
 
 ## Input and output boundary
 
+The GenieX AAR's JNI beans are an external binary contract. GenieX 0.3.1 does
+not supply consumer shrink rules, while native creation reads private fields
+such as `model_path` by their original JVM name. The dialogue module preserves
+the SDK `bean` and `jni` boundaries under production R8. Before entering native
+creation, `requireGenieXJniAbi` validates the pinned field and entrypoint ABI;
+a mismatch fails model admission instead of attempting a potentially fatal
+native lookup. Release mapping preflight and installed instrumentation cover
+this boundary; debug-only inference does not prove a minified release safe.
+
 Inputs are bounded conversation turns, compact observation summaries, optional
 retrieved design evidence, and host-declared capabilities. Raw camera frames and
 audio never enter the text prompt. Generation is serialized, cancellable,
