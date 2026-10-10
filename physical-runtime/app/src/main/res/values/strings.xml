@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="transcript_partial">Hearing…</string>
+    <string name="transcript_final">You said</string>
     <string name="app_name">Tokito Physical</string>
     <string name="product_title">Tokito</string>
     <string name="camera_content_description">Live board camera with registered AR guidance</string>

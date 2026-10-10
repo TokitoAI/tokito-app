@@ -274,3 +274,10 @@ synthesis deadline, and drains the hardware playback head before releasing the
 track. **Why:** generation plus playback can exceed a shared timer even for a
 valid answer, while successful blocking writes can still leave the last audio
 buffer queued. Preserve interruption checks during both writes and draining.
+
+Bench voice UI displays ephemeral partial and final local STT transcripts in a
+bounded Material panel. Partial updates are not live-announced; the final text
+is polite accessible feedback. Only a resumed listening session can update it.
+Pause, call retirement and measurement capture clear it; it is never saved as
+view state or telemetry. **Why:** users need to distinguish ASR mistakes from
+retrieval failures without retaining microphone transcripts or stale turn text.

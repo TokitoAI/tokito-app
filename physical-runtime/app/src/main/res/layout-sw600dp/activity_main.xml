@@ -166,6 +166,8 @@
             app:strokeColor="@color/tokito_border" />
     </LinearLayout>
 
+    <include android:id="@+id/transcriptPanel" layout="@layout/view_live_transcript" />
+
     <LinearLayout
         android:id="@+id/measurementPanel"
         android:layout_width="360dp"

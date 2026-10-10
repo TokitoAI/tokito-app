@@ -240,6 +240,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        clearTranscript()
         preparationJob?.cancel()
         preparationJob = null
         retireKnowledge()
@@ -366,6 +367,16 @@ class MainActivity : AppCompatActivity() {
                 voice.events.collect { event ->
                     when (event) {
                         is VoiceEvent.Transcript -> {
+                            if (!measurement.isActive && call.currentState() == CallState.Listening &&
+                                lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                val text = event.segment.text.take(512).trim()
+                                binding.transcriptPanel.root.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+                                binding.transcriptPanel.transcriptLabel.setText(
+                                    if (event.segment.isFinal) R.string.transcript_final else R.string.transcript_partial)
+                                binding.transcriptPanel.transcriptText.accessibilityLiveRegion =
+                                    if (event.segment.isFinal) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
+                                binding.transcriptPanel.transcriptText.text = text
+                            }
                             if (measurement.isActive) {
                                 measurement.accept(event.segment)?.let { renderMeasurementTurn(it) }
                             } else {
@@ -587,7 +598,14 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun clearTranscript() {
+        binding.transcriptPanel.root.visibility = View.GONE
+        binding.transcriptPanel.transcriptText.text = ""
+        binding.transcriptPanel.transcriptLabel.text = ""
+    }
+
     private fun renderCallState(state: CallState) {
+        if (state == CallState.Idle || state == CallState.Preparing) clearTranscript()
         val label = when (state) {
             CallState.Idle -> getString(R.string.call_ready)
             CallState.Preparing -> getString(R.string.call_preparing)
@@ -617,6 +635,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun beginMeasurementCapture() {
+        clearTranscript()
         measurement.begin()
         binding.measurementPanel.visibility = View.VISIBLE
         binding.measurementStateText.text = getString(R.string.measurement_listening)
