@@ -101,6 +101,17 @@ internal data class QairtContextMetadata(val capacity: Int, val bosTokenId: Int 
 }
 
 internal data class QwenTokenBudget(val promptTokens: Int, val reservedOutputTokens: Int, val capacity: Int) {
+    companion object {
+        fun availableContext(promptTokens: Int, capacity: Int, minimumOutputTokens: Int): QwenTokenBudget {
+            // One slot remains for termination. The configured minimum is an
+            // admission floor, not a fixed generation ceiling.
+            val available = capacity.toLong() - promptTokens - 1
+            if (available < minimumOutputTokens || available > Int.MAX_VALUE) {
+                throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Insufficient compiled context for the answer")
+            }
+            return QwenTokenBudget(promptTokens, available.toInt(), capacity)
+        }
+    }
     init {
         require(promptTokens > 0 && reservedOutputTokens > 0 && capacity > 0)
         if (promptTokens.toLong() + reservedOutputTokens > capacity) {

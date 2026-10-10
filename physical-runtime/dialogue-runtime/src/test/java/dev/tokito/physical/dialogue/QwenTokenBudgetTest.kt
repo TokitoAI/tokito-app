@@ -7,6 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QwenTokenBudgetTest {
+    @Test fun usesRemainingCompiledContextInsteadOfFixed512TokenCeiling() {
+        val budget = QwenTokenBudget.availableContext(1000, 4096, 512)
+        assertEquals(3095, budget.reservedOutputTokens)
+        budget.validateReceipt(1000, 900, "eos")
+        assertFailure { QwenTokenBudget.availableContext(3600, 4096, 512) }
+        assertFailure { budget.validateReceipt(1000, 3096, "eos") }
+    }
     @Test fun accountsForSignedBosWithoutDoubleInsertionOrMagicOffset() {
         val context = QairtContextMetadata(4096, 17)
         assertEquals(3, context.freshPromptTokenCount(intArrayOf(2, 3)))

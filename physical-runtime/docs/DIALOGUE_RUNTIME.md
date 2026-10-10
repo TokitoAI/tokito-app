@@ -5,7 +5,9 @@
 The QAIRT path counts the complete `applyChatTemplate` result with the exact
 signed generator tokenizer before starting generation. Character and UTF-8
 byte limits remain separate resource bounds; neither is a token estimate.
-The prompt plus reserved `maxPredictTokens` must fit the admitted context.
+The prompt must leave at least `maxPredictTokens` answer tokens. QAIRT generation
+uses the remaining compiled context minus one termination slot, not a fixed
+512-token ceiling. Deadline and character bounds remain independent safeguards.
 Completion requires an available vendor token receipt with the same prompt
 count, positive bounded generated count, and no context-exhaustion stop reason.
 Native KV state is reset between turns; silent sliding-window eviction is not

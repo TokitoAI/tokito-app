@@ -229,7 +229,8 @@ Run the host exact-ID reference check and real Android JNI conformance tests;
 host reference parity alone is not a device or generation-cap pass.
 
 Conversation admission uses the actual 4,096-token signed graph capacity and
-reserves 512 output tokens. The evidence character preflight permits up to
+requires at least 512 output tokens. Generation uses remaining compiled context
+minus one termination slot, not a fixed 512-token ceiling. The evidence character preflight permits up to
 12,000 characters; it is not a tokenizer estimate or an authorization to exceed
 the compiled context. If the complete formatted prompt overflows, oldest quoted
 history is evicted and the candidate is re-tokenized. Current question, verified
@@ -248,9 +249,12 @@ its manifest. Bench reference questions use that admitted corpus and the same
 384-dimensional encoder; they do not require a GLB or camera registration.
 Every microphone and typed question searches the full admitted corpus through
 the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
-Quoted previous questions add separately retrieved follow-up context; they
-cannot displace the current question's ranked results. Source descriptions and
+Bench queries start fresh: no previous question or generated answer enters
+retrieval or the next prompt. Source descriptions and
 other records share the bounded fact budget, retaining their original citations.
+The selector receives at most 24 round-robin source facts and no conversation
+history. **Why:** repeated installed-device
+turns otherwise exceeded compiled context and mixed unrelated prior references.
 **Why:** ASR spelling and unknown reference names must not bypass RAG and enter
 the older no-source path. Semantic reference retrieval is not physical board
 identification; it grants no AR targets or observed identity.
@@ -271,13 +275,30 @@ validation remains mandatory regardless of decoding. One malformed or
 token-limited selection may be repaired with the exact same admitted evidence
 inside the existing overall deadline; partial output is never accepted.
 **Why:** deterministic decoding is not a factual guardrail and can create
-repetition loops. Do not raise the context/output cap to hide that failure.
+repetition loops. More available output space is not proof of a repetition or
+factual-quality fix; qualify complete answers independently.
+
+Streaming speech recognition uses bounded `modified_beam_search` with four
+active paths, not greedy token pruning. **Why:** technical names need competing
+acoustic hypotheses. This does not guarantee correct acronyms; qualify real
+microphone questions independently from typed RAG tests. Do not substitute
+hardcoded transcript corrections for acoustic recognition.
 
 Local Sherpa playback has a measured-audio-duration deadline separate from the
 synthesis deadline, and drains the hardware playback head before releasing the
 track. **Why:** generation plus playback can exceed a shared timer even for a
 valid answer, while successful blocking writes can still leave the last audio
 buffer queued. Preserve interruption checks during both writes and draining.
+
+Bench voice UI displays ephemeral partial and final local STT transcripts in a
+bounded Material panel. Partial updates are not live-announced; the final text
+is polite accessible feedback. Only a resumed listening session can update it.
+Pause, call retirement and measurement capture clear it; it is never saved as
+view state or telemetry. **Why:** users need to distinguish ASR mistakes from
+retrieval failures without retaining microphone transcripts or stale turn text.
+The caption and voice controls share one horizontal layout dock and one inset
+owner. Never restore absolute caption offsets beside independently inset-adjusted
+controls; those overlap on landscape phones with navigation bars or larger fonts.
 
 Camera zoom uses CameraX-reported bounds and actual observed ratio. The surface
 intercepts only multi-touch zoom so the guidance overlay retains single-tap

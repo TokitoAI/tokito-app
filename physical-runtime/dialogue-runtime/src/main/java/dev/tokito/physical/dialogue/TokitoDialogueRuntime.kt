@@ -111,7 +111,7 @@ class TokitoDialogueRuntime(
                     DialogueRuntime.QAIRT -> ModelConfig(
                         nCtx = 0,
                         nGpuLayers = 0,
-                        max_tokens = limits.maxPredictTokens,
+                        max_tokens = requireNotNull(admittedContext).capacity - 1,
                         enable_thinking = false,
                     )
                     DialogueRuntime.LLAMA_CPP -> ModelConfig(
@@ -232,7 +232,7 @@ class TokitoDialogueRuntime(
                     }
                     val budget = tokenizer?.let {
                         val context = requireNotNull(qairtContext)
-                        QwenTokenBudget(context.freshPromptTokenCount(it.encode(text)), limits.maxPredictTokens, context.capacity)
+                        QwenTokenBudget.availableContext(context.freshPromptTokenCount(it.encode(text)), context.capacity, limits.maxPredictTokens)
                     }
                     Triple(prompt, text, budget)
                 }
@@ -242,7 +242,7 @@ class TokitoDialogueRuntime(
                     "chatmlAssistant=${formattedText.contains("<|im_start|>assistant")}, " +
                     "nonThinkingPrefix=${formattedText.endsWith("<think>\n\n</think>\n\n")}")
                 val generation = GenerationConfig(
-                    maxTokens = limits.maxPredictTokens,
+                    maxTokens = tokenBudget?.reservedOutputTokens ?: limits.maxPredictTokens,
                     samplerConfig = if (request.knowledgeSelection != null) {
                         // Qwen's non-thinking decoder must not be forced into
                         // greedy top-1 loops. Source validation, not greedy
@@ -283,7 +283,7 @@ class TokitoDialogueRuntime(
                                     "promptTokens=${result.profile.promptTokens} " +
                                     "generatedTokens=${result.profile.generatedTokens} ttftMs=${result.profile.ttftMs} " +
                                     "promptTimeMs=${result.profile.promptTimeMs} decodeTimeMs=${result.profile.decodeTimeMs}")
-                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
+                                validateGenerationReceipt(result.profile, generation.maxTokens)
                             }
                             is LlmStreamResult.Error -> throw result.throwable
                         }
@@ -304,7 +304,9 @@ class TokitoDialogueRuntime(
                             "endsObject=${raw.trimEnd().endsWith('}')}, " +
                             "containsThinkTag=${raw.contains("<think>") || raw.contains("</think>")}, " +
                             "objectStart=${raw.indexOf('{')}, objectEnd=${raw.lastIndexOf('}')}, " +
-                            "containsFence=${raw.contains("```")}",
+                            "containsFence=${raw.contains("```")}, " +
+                            "validationType=${failure.cause?.javaClass?.simpleName ?: "protocol"}, " +
+                            "schemaReason=${failure.cause?.message?.takeIf { it in setOf("Envelope boundary", "Trailing content", "Selector schema mismatch", "Selection count exceeds supplied facts", "Selection ID is not a string") } ?: "other"}",
                     )
                 }
                 throw failure

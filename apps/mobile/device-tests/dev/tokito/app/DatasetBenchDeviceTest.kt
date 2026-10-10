@@ -25,6 +25,7 @@ class DatasetBenchDeviceTest {
     @Test fun repeatedReferenceTurnsFinishWithoutTokenExhaustion() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
+        ForegroundDeviceQa.launch()
         val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
         val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -37,6 +38,7 @@ class DatasetBenchDeviceTest {
                 "What is ESP 32?" to "Espressif",
                 "What is ESP8266?" to "ESP8266",
                 "What is FRDM MCXN236?" to "NXP",
+                "What MCU does the FRDM NXP board use?" to "MCX",
                 "What is Ultimainboard?" to "Ultimaker",
             )
             val failures = mutableListOf<String>()
