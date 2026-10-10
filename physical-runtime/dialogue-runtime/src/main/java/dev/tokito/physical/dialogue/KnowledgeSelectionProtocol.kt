@@ -83,24 +83,25 @@ class KnowledgeSelectionRequest(
             val trimmed = raw.trim()
             val envelope = Regex("\\A```(?:json)?\\s*\\n([\\s\\S]*?)\\n```\\z")
                 .matchEntire(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
-            require(envelope.startsWith("{") && envelope.endsWith("}"))
+            require(envelope.startsWith("{") && envelope.endsWith("}")) { "Envelope boundary" }
             val tokenizer = org.json.JSONTokener(envelope)
             val output = tokenizer.nextValue() as JSONObject
-            require(tokenizer.nextClean() == '\u0000')
+            require(tokenizer.nextClean() == '\u0000') { "Trailing content" }
             val keys = output.keys().asSequence().toSet()
             require(keys == setOf("facts")) { "Selector schema mismatch" }
             val ids = output.getJSONArray("facts")
-            require(ids.length() in 0..facts.size) { "Selection count exceeds supplied facts" }
+            require(ids.length() in 0..48) { "Selection count exceeds supplied facts" }
             val cited = (0 until ids.length()).map { index ->
                 val id = ids.get(index)
                 require(id is String) { "Selection ID is not a string" }
                 facts.single { it.id == id }
             }
-            require(cited.map { it.id }.distinct().size == cited.size)
             // Validate every ID before imposing the spoken response budget.
             // An extra valid source selection is not hallucination; unchecked
             // IDs never escape validation, even beyond the four spoken facts.
-            val selected = cited.take(4)
+            // A repeated valid ID carries no additional authority. Validate
+            // every ID first, then deduplicate rather than reject a safe answer.
+            val selected = cited.distinctBy { it.id }.take(4)
             if (selected.isEmpty()) {
                 return DialogueOutcome.Response("The retrieved source evidence does not establish that answer.")
             }
@@ -125,6 +126,11 @@ class KnowledgeSelectionRequest(
             is unfamiliar. For a definition question, select the supplied description that
             defines the reference. Do not abstain because you do not recognize its name.
             A bare name asks for a definition. References may be compared if both are supplied.
+            Select only facts directly relevant to the current question. Do not include
+            another reference merely because it appeared in history or retrieved sources.
+            A source that states the processor family or architecture answers a processor
+            question at that level. Select that source even if an exact chip suffix is
+            not supplied; never invent the missing suffix or reject the documented family.
             Do not substitute a family's description for an undocumented specific variant.
             Return exactly one JSON object: {"facts":["f0"]}.
             The facts array contains zero to four supplied fact ID strings, not fact objects,

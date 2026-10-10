@@ -305,7 +305,8 @@ class TokitoDialogueRuntime(
                             "containsThinkTag=${raw.contains("<think>") || raw.contains("</think>")}, " +
                             "objectStart=${raw.indexOf('{')}, objectEnd=${raw.lastIndexOf('}')}, " +
                             "containsFence=${raw.contains("```")}, " +
-                            "validationType=${failure.cause?.javaClass?.simpleName ?: "protocol"}",
+                            "validationType=${failure.cause?.javaClass?.simpleName ?: "protocol"}, " +
+                            "schemaReason=${failure.cause?.message?.takeIf { it in setOf("Envelope boundary", "Trailing content", "Selector schema mismatch", "Selection count exceeds supplied facts", "Selection ID is not a string") } ?: "other"}",
                     )
                 }
                 throw failure
