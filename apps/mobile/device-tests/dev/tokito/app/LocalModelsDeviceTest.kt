@@ -17,6 +17,7 @@ import java.util.Locale
 
 /** Runs inside the installed unified app and requires UI-imported signed models. */
 class LocalModelsDeviceTest {
+    private data class QualityCase(val id: String, val prompt: String, val rubric: String)
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Before fun keepTargetForeground() {
@@ -82,18 +83,18 @@ class LocalModelsDeviceTest {
         ).requireInstalled()
         val runtime = TokitoDialogueRuntime(context, DialogueLimits(maxPredictTokens = 128))
         val cases = listOf(
-            Triple("inductance", "In general, how does an inductor store energy?", "Magnetic field; not electric charge or energy creation."),
-            Triple("diode", "In general, what does a diode do?", "Direction-dependent conduction; not an unconditional perfect one-way switch."),
-            Triple("pullup", "In general, why use a pull-up resistor on a digital input?", "Defined default high when undriven; not current amplification."),
-            Triple("decoupling", "In general, why put a decoupling capacitor near an IC power pin?", "Local transient charge and reduced supply noise; not DC blocking in series."),
-            Triple("short", "In general, how is a short circuit different from an open circuit?", "Short is low resistance; open interrupts conduction; not reversed."),
-            Triple("battery", "In general, how does a battery store energy differently from a capacitor?", "Battery chemical energy versus capacitor electric field; not magnetic energy."),
-            Triple("led", "In general, why does an LED need current limiting?", "Avoids excessive current/damage; LED is not inherently a safe current regulator."),
-            Triple("series", "In general, what happens to total resistance when two resistors are connected in series?", "Resistances add; not below either individual positive resistance."),
-            Triple("ground", "In general, what does circuit ground mean?", "Reference potential/return; not necessarily earth."),
-            Triple("frequency", "In general, how does capacitor impedance change as AC frequency increases?", "Ideal capacitive impedance decreases; real parasitics may differ."),
-            Triple("meter", "In general, why should power be disconnected before measuring resistance with a multimeter?", "Meter supplies test signal; live voltage invalidates reading and can damage equipment."),
-            Triple("mosfet", "In general, what controls conduction in a MOSFET?", "Gate-to-source voltage; not continuous large gate current."),
+            QualityCase("inductance", "In general, how does an inductor store energy?", "Magnetic field; not electric charge or energy creation."),
+            QualityCase("diode", "In general, what does a diode do?", "Direction-dependent conduction; not an unconditional perfect one-way switch."),
+            QualityCase("pullup", "In general, why use a pull-up resistor on a digital input?", "Defined default high when undriven; not current amplification."),
+            QualityCase("decoupling", "In general, why put a decoupling capacitor near an IC power pin?", "Local transient charge and reduced supply noise; not DC blocking in series."),
+            QualityCase("short", "In general, how is a short circuit different from an open circuit?", "Short is low resistance; open interrupts conduction; not reversed."),
+            QualityCase("battery", "In general, how does a battery store energy differently from a capacitor?", "Battery chemical energy versus capacitor electric field; not magnetic energy."),
+            QualityCase("led", "In general, why does an LED need current limiting?", "Avoids excessive current/damage; LED is not inherently a safe current regulator."),
+            QualityCase("series", "In general, what happens to total resistance when two resistors are connected in series?", "Resistances add; not below either individual positive resistance."),
+            QualityCase("ground", "In general, what does circuit ground mean?", "Reference potential/return; not necessarily earth."),
+            QualityCase("frequency", "In general, how does capacitor impedance change as AC frequency increases?", "Ideal capacitive impedance decreases; real parasitics may differ."),
+            QualityCase("meter", "In general, why should power be disconnected before measuring resistance with a multimeter?", "Meter supplies test signal; live voltage invalidates reading and can damage equipment."),
+            QualityCase("mosfet", "In general, what controls conduction in a MOSFET?", "Gate-to-source voltage; not continuous large gate current."),
         )
         val failures = mutableListOf<String>()
         try {
