@@ -230,6 +230,27 @@ class MainActivity : AppCompatActivity() {
         renderCallState(call.currentState())
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Qwen ownership is permanently revoked by pause, even if stop never
+        // follows (for example a permission dialog). Resume needs a fresh host.
+        if (foregroundActive && ::call.isInitialized && preparationJob?.isActive != true) {
+            preparationJob = lifecycleScope.launch { call.warmUp() }
+        }
+    }
+
+    override fun onPause() {
+        preparationJob?.cancel()
+        preparationJob = null
+        retireKnowledge()
+        if (::call.isInitialized) {
+            call.invalidatePreparation()
+            val retired = call.revokeActiveTurn()
+            lifecycleScope.launch { call.cleanupRevokedTurn(retired) }
+        }
+        super.onPause()
+    }
+
     override fun onStop() {
         foregroundActive = false
         foregroundEpoch++
