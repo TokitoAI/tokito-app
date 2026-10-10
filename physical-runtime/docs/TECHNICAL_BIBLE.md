@@ -52,6 +52,9 @@ Natural-language confidence is never a substitute for a typed result.
     cloud inference, cloud speech, or remote reasoning service.
 12. Local generative-model output cannot bypass typed tools, deterministic
     measurement parsing, confidence gates, or evidence requirements.
+13. In an active board session, an unmatched question remains evidence-bound.
+    Only explicit general-electronics educational intent can select ungrounded
+    local conversation; reference identity and board-relative wording cannot.
 
 ## 3. Runtime boundary
 

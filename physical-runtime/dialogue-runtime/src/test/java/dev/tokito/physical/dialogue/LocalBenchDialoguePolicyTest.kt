@@ -62,4 +62,34 @@ class LocalBenchDialoguePolicyTest {
         }
         assertEquals(fact, policy.answer("  What is\nJ1?\t", index)!!.text)
     }
+
+    @Test fun ambiguousBenchQuestionsRequireEvidenceRatherThanGeneration() {
+        // Regression queries are not detector vocabulary: no component list.
+        listOf(
+            "What voltage can the power connector accept?", "What is the control input for?",
+            "Can I connect a battery?", "Is the output isolated?", "Which way should it face?",
+            "What about pin 7?", "Will 12 volts damage anything?", "How does the control work?",
+        ).forEach { query ->
+            listOf(null, index).forEach { context ->
+                val answer = policy.answer(query, context)!!
+                // An admitted matching fact is also safe; never null/generation.
+                assertTrue(query, answer.text.contains("verified board context") || answer.text == fact)
+                assertNull(answer.boardTarget)
+            }
+        }
+    }
+
+    @Test fun explicitEducationDoesNotAdoptUnrelatedBoardFacts() {
+        listOf(
+            "Explain capacitance", "Explain what a resistor does",
+            "How does an LDO regulate voltage?", "What is a connector?",
+            "In general, how do voltage dividers work?", "General electronics: explain isolation",
+        ).forEach { query ->
+            assertNull(query, policy.answer(query, null))
+            assertNull(query, policy.answer(query, index))
+        }
+        listOf("In general, can J1 take 100 V?", "Explain a connector on this board").forEach { query ->
+            assertTrue(query, policy.answer(query, null) != null)
+        }
+    }
 }

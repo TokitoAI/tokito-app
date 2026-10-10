@@ -101,7 +101,13 @@ or token-rate improvement is claimed without an exact-device report.
 An explicit unknown reference or unresolved board-specific question returns a
 clarification, not a general-knowledge answer about the user's board. General
 electronics questions remain available through the local LLM without a board
-reference. The guard validates input bounds before either route.
+reference. In an active bench session an unmatched question is conservatively
+board-bound, not evidence of general intent. Only explicit educational phrasing
+(for example "Explain capacitance", "How does a resistor work?", or "In general,
+...") may select the general local-model route; explicit component references
+and deictic board wording still require evidence. The guard validates input
+bounds before either route. This is structured/lexical retrieval, not vector
+search, and embeddings are not required to enforce that boundary.
 A bounded, ambiguity-gated edit-distance recovery may match an ASR-corrupted
 phrase against aliases carried by the signed board reference; otherwise the
 host asks the user to repeat the component name. No transcript replacement or
