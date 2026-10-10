@@ -10,6 +10,7 @@ pub mod base_url;
 pub mod conversation_store;
 pub mod conversations;
 pub mod error;
+pub mod http_diagnostics;
 pub mod preview;
 pub mod realtime;
 pub mod reviews;

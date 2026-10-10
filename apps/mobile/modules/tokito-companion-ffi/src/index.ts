@@ -29,6 +29,7 @@ export type NativeAccount = {
 };
 
 export type TokitoCompanionFfiNative = {
+  httpDiagnostics(): Promise<string>;
   activateWorkspace(base: string, token: string, owner: string): void;
   deactivateWorkspace(owner: string): void;
   startQueues(base: string, token: string, owner: string): Promise<void>;

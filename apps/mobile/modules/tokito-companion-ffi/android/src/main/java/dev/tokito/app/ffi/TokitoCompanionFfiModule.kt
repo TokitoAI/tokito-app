@@ -100,6 +100,7 @@ class TokitoCompanionFfiModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("TokitoCompanionFfi")
     Events("onSyncStatus", "onSyncBootstrap", "onSyncEvent", "onSyncConflict", "onSyncError", "onConversationChange", "onAuthorizationRevoked")
+    AsyncFunction("httpDiagnostics") { uniffi.tokito_companion_ffi.drainHttpDiagnostics() }
 
     OnDestroy {
       stopQueues()
@@ -444,6 +445,8 @@ class TokitoCompanionFfiModule : Module() {
 
           override fun onError(message: String) {
             if (!authorization.owns(lease)) return
+            val diagnostics = uniffi.tokito_companion_ffi.drainHttpDiagnostics()
+            if (diagnostics != "[]") Log.w("TokitoHttp", diagnostics)
             if (message.contains("unauthorized", ignoreCase = true) || message.contains("session expired", ignoreCase = true)) { revoked(lease); return }
             sendEvent("onSyncError", mapOf("subscriptionId" to subscriptionId, "message" to message))
           }
@@ -505,6 +508,8 @@ class TokitoCompanionFfiModule : Module() {
     } catch (err: CompanionException) {
       // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
       val code = err::class.java.simpleName
+      val diagnostics = uniffi.tokito_companion_ffi.drainHttpDiagnostics()
+      if (diagnostics != "[]") Log.w("TokitoHttp", diagnostics)
       if (err is CompanionException.Unauthorized) revoked(lease)
       Log.w(TAG, "UniFFI call failed: $code (${err.message})")
       throw CodedException(code, err.message ?: code, err)

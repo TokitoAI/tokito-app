@@ -95,10 +95,12 @@ fn stream_client() -> Result<reqwest::Client, CloudError> {
 
 async fn response_error(response: reqwest::Response) -> CloudError {
     let status = response.status().as_u16();
+    crate::http_diagnostics::record("realtime_request", status, "http_status");
     let body = response.json::<StatusBody>().await.ok();
     match status {
         401 | 403 => CloudError::Unauthorized,
-        404 | 503 => CloudError::Unavailable,
+        404 | 500..=599 => CloudError::Unavailable,
+        429 => CloudError::RateLimited,
         409 => CloudError::Conflict {
             current_version: body
                 .as_ref()
@@ -127,7 +129,7 @@ pub async fn register_device(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "register_device").await
     } else {
         Err(response_error(response).await)
     }
@@ -149,7 +151,7 @@ pub async fn bootstrap_realtime(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "bootstrap").await
     } else {
         Err(response_error(response).await)
     }
@@ -168,7 +170,7 @@ pub async fn submit_sync_command(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "sync_command").await
     } else {
         Err(response_error(response).await)
     }
@@ -226,7 +228,10 @@ where
                 }
                 if !matches!(
                     error,
-                    CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected
+                    CloudError::Network(_)
+                        | CloudError::Unavailable
+                        | CloudError::RateLimited
+                        | CloudError::Unexpected
                 ) {
                     return Err(error);
                 }

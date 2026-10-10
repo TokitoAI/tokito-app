@@ -115,15 +115,16 @@ impl VerifiedIdentityStore {
                 self.revoke(&origin, token)?;
                 Err(CloudError::Unauthorized)
             }
-            Err(error @ (CloudError::Network(_) | CloudError::Unavailable)) => {
-                match self.cached(&origin, token, now)? {
-                    Some(account) => Ok(VerifiedIdentity {
-                        account,
-                        online: false,
-                    }),
-                    None => Err(error),
-                }
-            }
+            Err(
+                error
+                @ (CloudError::Network(_) | CloudError::Unavailable | CloudError::RateLimited),
+            ) => match self.cached(&origin, token, now)? {
+                Some(account) => Ok(VerifiedIdentity {
+                    account,
+                    online: false,
+                }),
+                None => Err(error),
+            },
             Err(error) => Err(error),
         }
     }

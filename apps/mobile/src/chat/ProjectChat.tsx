@@ -11,6 +11,7 @@ import { selectedSheet, type ChatSheet } from "./sheetContext";
 import { ChatMarkdown } from "./ChatMarkdownView";
 import { ChatScrollIntent } from "./chatScroll";
 import { chatCardLayout } from "./chatLayout";
+import { sendBlockReason } from "./sendReadiness";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 
 type Props = { baseUrl: string; token: string; project: string; design: string; version: number; sheets: ChatSheet[]; onReview: () => void };
@@ -168,10 +169,11 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     finally { if (connection.current === client && scope.current.current(ticket)) setBusy(false); }
   }
   async function send(): Promise<void> {
-    if (needsSheet) { setError("Choose the sheet you want Tokito to work on before sending."); return; }
     const client = connection.current;
     const content = draft.trim();
-    if (!client || !ready || !content || sending || sendingTicket.current !== null || blocked || isActive(run)) return;
+    const problem = sendBlockReason({hasSession:client !== null,ready,busy,inFlight:sending || sendingTicket.current !== null || isActive(run),blocked:blocked !== null,needsSheet,hasText:!!content});
+    if (problem !== null) { setError(problem); return; }
+    if (client === null) return; // Type narrowing; eligibility rejects this above.
     const ticket = scope.current.ticket();
     sendingTicket.current = ticket;
     setSending(true); setError(null);
@@ -216,6 +218,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     finally { if (sendingTicket.current === ticket) sendingTicket.current = null; }
   }
   const active = sending || isActive(run);
+  const sendProblem = sendBlockReason({hasSession:connection.current !== null,ready,busy,inFlight:sending || sendingTicket.current !== null || isActive(run),blocked:blocked !== null,needsSheet,hasText:!!draft.trim()});
   // While replaying an active run, its durable prefaces belong to the single
   // live card. Once settled, the saved server messages replace that card.
   const { rows: displayedRows, hasSavedAnswer } = chatHistoryProjection(rows, run, savedRun);
@@ -226,7 +229,6 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
       <Pressable accessibilityRole="button" onPress={() => void choose(null)} style={styles.thread}><Text style={styles.link}>New chat</Text></Pressable>
       {threads.map(t => <Pressable key={t.id} accessibilityRole="tab" accessibilityState={{ selected: thread === t.id }} onPress={() => void choose(t.id)} style={[styles.thread, thread === t.id && styles.selected]}><Text numberOfLines={1} style={styles.threadText}>{t.title || "Design conversation"}</Text></Pressable>)}
     </ScrollView></View>
-    {error ? <View style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Try again</Text></Pressable></View> : null}
     {blocked ? <View style={styles.feedback}><Text style={styles.muted}>This message was not sent. Restore it to review and send against the current design.</Text><PrimaryButton label="Restore message" onPress={() => {
       const client = connection.current;
       if (!client) return;
@@ -256,8 +258,10 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
       ListFooterComponent={<View style={styles.footer}>{!hasSavedAnswer && (view.text || active) ? <View style={[styles.bubble, chatCardLayout.assistant]}><Text style={styles.author}>Tokito</Text>{view.text ? <ChatMarkdown content={view.text} /> : <Text style={styles.muted}>{view.activity || (sending ? "Waiting to send…" : "Working on your design…")}</Text>}{view.text && active && view.activity ? <View style={styles.activity}><ActivityIndicator size="small" color={tokens.accent} /><Text style={styles.muted}>{view.activity}</Text></View> : null}</View> : null}{view.proposals.map(proposal => <View key={proposal.turnId} style={styles.proposal}><Text style={styles.proposalTitle}>Changes prepared</Text><Text style={styles.muted}>{Array.isArray(proposal.payload.ops) ? `${proposal.payload.ops.length} proposed changes. ` : ""}Review before applying to this design.</Text><PrimaryButton label="Review changes" onPress={onReview} /></View>)}{view.error ? <View style={styles.feedback}><ErrorText>{view.error}</ErrorText></View> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
     {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); followLatest(true); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
+    {error ? <View accessibilityLiveRegion="polite" style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Try again</Text></Pressable></View> : null}
+    {needsSheet ? <View style={styles.feedback}><Text style={styles.muted}>Choose a synchronized sheet before sending. Your draft is kept.</Text></View> : null}
     <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
-      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={!ready || busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
+      {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={sendProblem !== null} onPress={() => void send()} />}
     </View>
   </KeyboardAvoidingView>;
 }

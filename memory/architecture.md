@@ -142,6 +142,15 @@ management; navigation must not stop project synchronization. Cold start restore
 the verified session automatically. Transient identity/startup failures retry on
 foreground and a bounded timer; authentication and malformed-protocol failures do
 not retry indefinitely. Native SSE/outbox workers own online recovery after startup.
+HTTP 429 and 5xx responses are transient, not malformed protocol;
+retry registration/bootstrap cancellably without changing queued command IDs.
+Successful responses with invalid schemas remain terminal protocol failures.
+The bounded in-memory HTTP evidence ring records only fixed operation names,
+status codes and classifications, never URLs, credentials or response bodies.
+Native bridge failures emit those records under the TokitoHttp log tag.
+Chat send errors and recovery actions remain adjacent to the composer, outside
+history scrolling. Send eligibility includes exact session, sheet, queue and
+in-flight state; unavailable actions cannot appear as unexplained no-ops.
 Device registration and a consistent bootstrap must succeed before the outbox
 or SSE worker starts. Network/service outages retry cancellably, keeping queued
 commands intact; protocol/authentication failures stop instead of inventing a

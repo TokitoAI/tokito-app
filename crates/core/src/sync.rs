@@ -99,11 +99,13 @@ fn client() -> Result<reqwest::Client, CloudError> {
 }
 
 fn map_status(status: u16, body_status: Option<&str>) -> CloudError {
+    crate::http_diagnostics::record("project_request", status, "http_status");
     match status {
         401 | 403 => CloudError::Unauthorized,
         // Companion routes missing on an older gateway, or store not open.
         404 => CloudError::Unavailable,
-        503 => CloudError::Unavailable,
+        500..=599 => CloudError::Unavailable,
+        429 => CloudError::RateLimited,
         _ => {
             let _ = body_status;
             CloudError::Unexpected
@@ -148,7 +150,7 @@ pub async fn list_projects(base: &str, token: &str) -> Result<Vec<ProjectListIte
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
         200 => {
-            let body: ListBody = resp.json().await.map_err(|_| CloudError::Unexpected)?;
+            let body: ListBody = crate::http_diagnostics::decode(resp, "project_list").await?;
             Ok(body.projects)
         }
         code => {
@@ -173,7 +175,7 @@ pub async fn get_project(
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
-        200 => resp.json().await.map_err(|_| CloudError::Unexpected),
+        200 => crate::http_diagnostics::decode(resp, "project_detail").await,
         code => {
             let body = resp.json::<StatusBody>().await.ok();
             Err(map_status(code, body.as_ref().map(|b| b.status.as_str())))

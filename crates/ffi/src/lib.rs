@@ -27,6 +27,12 @@ use tokito_companion_core::{
 
 uniffi::setup_scaffolding!();
 
+/// Bounded status/classification only; never credentials or response bodies.
+#[uniffi::export]
+pub fn drain_http_diagnostics() -> String {
+    tokito_companion_core::http_diagnostics::drain()
+}
+
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 fn runtime() -> &'static tokio::runtime::Runtime {
@@ -564,7 +570,7 @@ async fn run_sync_session(
         };
         match result {
             Ok(cursor) => break cursor,
-            Err(CloudError::Network(_) | CloudError::Unavailable) => {
+            Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::RateLimited) => {
                 listener.on_status("reconnecting".into())
             }
             Err(error) => {
@@ -660,7 +666,12 @@ async fn run_outbox(
                     break;
                 }
                 Err(CloudError::Unauthorized) => return Err(CloudError::Unauthorized),
-                Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected) => {
+                Err(
+                    CloudError::Network(_)
+                    | CloudError::Unavailable
+                    | CloudError::RateLimited
+                    | CloudError::Unexpected,
+                ) => {
                     break;
                 }
                 Err(error) => return Err(error),

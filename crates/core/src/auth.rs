@@ -71,8 +71,7 @@ pub async fn otp_request(base: &str, email: &str) -> Result<(), CloudError> {
         200 => Ok(()),
         429 => Err(classify_429(resp).await),
         502 => Err(CloudError::SendFailed),
-        503 => Err(CloudError::Unavailable),
-        _ => Err(CloudError::Unexpected),
+        status => Err(crate::http_diagnostics::transient(status).unwrap_or(CloudError::Unexpected)),
     }
 }
 
@@ -114,22 +113,24 @@ pub async fn me(base: &str, token: &str) -> Result<CloudAccount, CloudError> {
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
         200 => {
-            let body: MeBody = resp.json().await.map_err(|_| CloudError::Unexpected)?;
+            let body: MeBody = crate::http_diagnostics::decode(resp, "auth_me").await?;
             Ok(CloudAccount {
                 email: body.email,
                 plan: body.plan,
             })
         }
-        401 => Err(CloudError::Unauthorized),
-        503 => Err(CloudError::Unavailable),
-        _ => Err(CloudError::Unexpected),
+        401 | 403 => Err(CloudError::Unauthorized),
+        status => {
+            crate::http_diagnostics::record("auth_me", status, "http_status");
+            Err(crate::http_diagnostics::transient(status).unwrap_or(CloudError::Unexpected))
+        }
     }
 }
 
 async fn session_from_response(resp: reqwest::Response) -> Result<CloudSession, CloudError> {
     match resp.status().as_u16() {
         200 => {
-            let body: SessionBody = resp.json().await.map_err(|_| CloudError::Unexpected)?;
+            let body: SessionBody = crate::http_diagnostics::decode(resp, "auth_session").await?;
             Ok(CloudSession {
                 token: body.token,
                 email: body.email,
@@ -137,8 +138,10 @@ async fn session_from_response(resp: reqwest::Response) -> Result<CloudSession, 
             })
         }
         401 => Err(CloudError::InvalidCode),
-        503 => Err(CloudError::Unavailable),
-        _ => Err(CloudError::Unexpected),
+        status => {
+            crate::http_diagnostics::record("auth_session", status, "http_status");
+            Err(crate::http_diagnostics::transient(status).unwrap_or(CloudError::Unexpected))
+        }
     }
 }
 

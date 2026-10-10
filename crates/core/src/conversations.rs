@@ -219,13 +219,20 @@ async fn request<T: for<'de> Deserialize<'de>>(
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
     let (status, bytes) = bounded_body(response).await?;
+    crate::http_diagnostics::record("chat_request", status, "http_status");
     if !(200..300).contains(&status) {
         return Err(status_error(status, &bytes));
     }
     if bytes.is_empty() {
-        serde_json::from_value(Value::Null).map_err(|_| CloudError::Unexpected)
+        serde_json::from_value(Value::Null).map_err(|_| {
+            crate::http_diagnostics::record("chat_request", status, "malformed_success_body");
+            CloudError::Unexpected
+        })
     } else {
-        serde_json::from_slice(&bytes).map_err(|_| CloudError::Unexpected)
+        serde_json::from_slice(&bytes).map_err(|_| {
+            crate::http_diagnostics::record("chat_request", status, "malformed_success_body");
+            CloudError::Unexpected
+        })
     }
 }
 
