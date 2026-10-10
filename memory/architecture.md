@@ -45,6 +45,10 @@ rejection stops the entire account worker. Chat replay likewise continues past
 unavailable independent threads; missing threads and proposals become explicit
 blocked items rather than infinite retries. Retrying an uncertain transmission
 must preserve its exact durable command body and IDs.
+Definitively rejected conversation creation quarantines both the pending thread
+and its dependent draft in one transaction. Keep the unconfirmed conversation
+visible after restart. Explicit draft recovery retains its creation ID/body and
+unblocks that creation; transient network/rate-limit failures retry unchanged.
 **Why:** a project-specific outage must not starve another project's work, and
 display sorting must never silently reorder authoritative decisions.
 

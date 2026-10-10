@@ -125,7 +125,7 @@ impl ConversationStore {
             return Err(CloudError::Unavailable);
         }
         tx.execute(
-            "INSERT INTO chat_outbox(message_id,thread_id,body) VALUES(?1,?2,?3)",
+            "INSERT INTO chat_outbox(message_id,thread_id,body,error) VALUES(?1,?2,?3,(SELECT error FROM chat_thread_outbox WHERE thread_id=?2))",
             params![message.request.message_id, message.thread_id, body],
         )
         .map_err(db_error)?;
@@ -174,18 +174,43 @@ impl ConversationStore {
         tx.commit().map_err(db_error)
     }
     pub fn pending_threads(&self) -> Result<Vec<Thread>, CloudError> {
+        self.local_threads(false)
+    }
+    /// Includes rejected creations so offline/recovery navigation retains them.
+    pub fn unconfirmed_threads(&self) -> Result<Vec<Thread>, CloudError> {
+        self.local_threads(true)
+    }
+    fn local_threads(&self, include_blocked: bool) -> Result<Vec<Thread>, CloudError> {
         let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let mut stmt = conn
-            .prepare("SELECT body FROM chat_thread_outbox WHERE error IS NULL ORDER BY rowid")
+            .prepare("SELECT body FROM chat_thread_outbox WHERE error IS NULL OR ?1 ORDER BY rowid")
             .map_err(db_error)?;
         let rows = stmt
-            .query_map([], |r| r.get::<_, String>(0))
+            .query_map([include_blocked], |r| r.get::<_, String>(0))
             .map_err(db_error)?
             .map(|r| {
                 serde_json::from_str(&r.map_err(db_error)?).map_err(|_| CloudError::Unexpected)
             })
             .collect();
         rows
+    }
+    /// Rejection and dependent draft quarantine commit together. Neither is lost
+    /// on restart and neither is replayed until explicit draft recovery.
+    pub fn block_thread(&self, id: &str, reason: &str) -> Result<(), CloudError> {
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let reason = reason.chars().take(256).collect::<String>();
+        tx.execute(
+            "UPDATE chat_thread_outbox SET error=?2 WHERE thread_id=?1",
+            params![id, reason],
+        )
+        .map_err(db_error)?;
+        tx.execute(
+            "UPDATE chat_outbox SET error=?2 WHERE thread_id=?1",
+            params![id, reason],
+        )
+        .map_err(db_error)?;
+        tx.commit().map_err(db_error)
     }
     pub fn thread_pending(&self, id: &str) -> Result<bool, CloudError> {
         self.conn
@@ -375,6 +400,13 @@ impl ConversationStore {
         tx.execute("INSERT INTO chat_recovered_drafts(thread_id,content) VALUES(?1,?2) ON CONFLICT(thread_id) DO UPDATE SET content=excluded.content", params![message.thread_id, message.request.content]).map_err(db_error)?;
         tx.execute("DELETE FROM chat_outbox WHERE message_id=?1", [message_id])
             .map_err(db_error)?;
+        // This is an explicit user recovery, not an automatic retry/rebase.
+        // Reuse the identical thread creation body and identity.
+        tx.execute(
+            "UPDATE chat_thread_outbox SET error=NULL WHERE thread_id=?1",
+            [&message.thread_id],
+        )
+        .map_err(db_error)?;
         tx.commit().map_err(db_error)?;
         Ok(message.request.content)
     }
@@ -749,6 +781,34 @@ mod tests {
     }
 
     #[test]
+    fn rejected_thread_and_draft_remain_recoverable_without_automatic_retry() {
+        let store = store();
+        let thread = Thread {
+            id: "t".into(),
+            project_id: "p".into(),
+            design_id: "d".into(),
+            title: "Draft".into(),
+            created_at: 1,
+            updated_at: 1,
+        };
+        store.enqueue_thread(&thread).unwrap();
+        store.enqueue(&pending()).unwrap();
+        store.block_thread("t", "missing_design").unwrap();
+        assert!(store.pending_threads().unwrap().is_empty());
+        assert!(store.pending().unwrap().is_empty());
+        assert_eq!(store.unconfirmed_threads().unwrap()[0].id, "t");
+        assert_eq!(store.blocked("t").unwrap()[0].request.content, "test");
+        assert_eq!(store.restore_blocked("m").unwrap(), "test");
+        assert_eq!(store.pending_threads().unwrap()[0].id, "t");
+        assert_eq!(store.recovered_draft("t").unwrap().as_deref(), Some("test"));
+        assert!(store.pending().unwrap().is_empty());
+        store.block_thread("t", "missing_design").unwrap();
+        store.enqueue(&pending()).unwrap();
+        assert!(store.queued_for_thread("t").unwrap().unwrap().blocked);
+        assert!(store.pending().unwrap().is_empty());
+    }
+
+    #[test]
     fn retry_keeps_identity_and_different_body_cannot_reuse_id() {
         let store = store();
         let mut message = pending();
@@ -948,6 +1008,45 @@ mod tests {
         {
             let store = ConversationStore::open(&path, "a").unwrap();
             assert_eq!(store.pending().unwrap().len(), 1);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejected_thread_quarantine_survives_restart_and_recovery_keeps_creation_identity() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-thread-rejection-{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
+        let thread = Thread {
+            id: "t".into(),
+            project_id: "p".into(),
+            design_id: "d".into(),
+            title: "Draft".into(),
+            created_at: 1,
+            updated_at: 1,
+        };
+        {
+            let store = ConversationStore::open(&path, "a").unwrap();
+            store.enqueue_thread(&thread).unwrap();
+            store.enqueue(&pending()).unwrap();
+            store.block_thread("t", "missing_project").unwrap();
+        }
+        {
+            let store = ConversationStore::open(&path, "a").unwrap();
+            assert!(store.pending_threads().unwrap().is_empty());
+            assert!(store.pending().unwrap().is_empty());
+            assert_eq!(store.blocked("t").unwrap()[0].request.content, "test");
+            store.restore_blocked("m").unwrap();
+            assert_eq!(
+                encode(&store.pending_threads().unwrap()[0]).unwrap(),
+                encode(&thread).unwrap()
+            );
+        }
+        {
+            let store = ConversationStore::open(&path, "a").unwrap();
+            assert_eq!(store.recovered_draft("t").unwrap().as_deref(), Some("test"));
+            assert_eq!(store.pending_threads().unwrap()[0].id, "t");
         }
         std::fs::remove_file(path).unwrap();
     }

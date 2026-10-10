@@ -122,7 +122,7 @@ impl ConversationSession {
             }
             Err(error) => return Err(self.failure(error)),
         };
-        for local in self.store.pending_threads()? {
+        for local in self.store.unconfirmed_threads()? {
             if local.project_id == project
                 && local.design_id == design
                 && !threads.iter().any(|t| t.id == local.id)
@@ -431,6 +431,39 @@ async fn outbox(
                         return;
                     }
                 }
+                Err(
+                    error @ (CloudError::Conflict { .. }
+                    | CloudError::Unexpected
+                    | CloudError::Unavailable),
+                ) => {
+                    if store
+                        .block_thread(&thread.id, "thread_creation_rejected")
+                        .is_err()
+                    {
+                        emit(
+                            listener.as_ref(),
+                            serde_json::json!({"type":"storage_error"}),
+                        );
+                        return;
+                    }
+                    let blocked = match store.blocked(&thread.id) {
+                        Ok(messages) => messages,
+                        Err(_) => {
+                            emit(
+                                listener.as_ref(),
+                                serde_json::json!({"type":"storage_error"}),
+                            );
+                            return;
+                        }
+                    };
+                    for message in blocked {
+                        emit(
+                            listener.as_ref(),
+                            serde_json::json!({"type":"blocked","message":message,"reason":error.to_string()}),
+                        );
+                    }
+                    continue;
+                }
                 Err(CloudError::Unauthorized) => {
                     session_stop.send_replace(true);
                     revoke_identity(&identity_path, &base, &token);
@@ -710,6 +743,113 @@ mod tests {
             1,
             "a missing thread must not be automatically retried"
         );
+    }
+
+    #[tokio::test]
+    async fn rejected_thread_creation_is_not_replayed_and_other_projects_continue() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/v1/companion/devices"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"device","label":"test","platform":"android","last_seen_at":1}))).mount(&server).await;
+        for (thread, status) in [("invalid", 400), ("deleted", 404), ("offline", 503)] {
+            Mock::given(method("PUT"))
+                .and(path(format!(
+                    "/v1/projects/{thread}/designs/d/threads/{thread}"
+                )))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+        }
+        Mock::given(method("PUT")).and(path("/v1/projects/good/designs/d/threads/good"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"good","project_id":"good","design_id":"d","title":"Draft","created_at":1,"updated_at":1}))).expect(1).mount(&server).await;
+        Mock::given(method("POST")).and(path("/v1/projects/good/designs/d/threads/good/messages"))
+            .respond_with(|request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"run_id":body["run_id"],"message_id":body["message_id"],"project_id":"good","design_id":"d","thread_id":"good","status":"running","created_at":1,"updated_at":1}))
+            }).expect(1).mount(&server).await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        let (stop, _) = watch::channel(false);
+        let (wake, wake_rx) = mpsc::channel(1);
+        let listener = Arc::new(Listener::default());
+        let session = ConversationSession {
+            base: server.uri(),
+            token: "token".into(),
+            device: "device".into(),
+            store: store.clone(),
+            stop: stop.clone(),
+            wake,
+            listener: listener.clone(),
+            identity_path: String::new(),
+        };
+        for id in ["invalid", "deleted", "offline", "good"] {
+            store
+                .enqueue_thread(&api::Thread {
+                    id: id.into(),
+                    project_id: id.into(),
+                    design_id: "d".into(),
+                    title: "Draft".into(),
+                    created_at: 1,
+                    updated_at: 1,
+                })
+                .unwrap();
+            session
+                .send(
+                    id.into(),
+                    "d".into(),
+                    id.into(),
+                    "Keep this draft".into(),
+                    0,
+                    "planner".into(),
+                    None,
+                )
+                .unwrap();
+        }
+        let worker = tokio::spawn(outbox(
+            server.uri(),
+            "token".into(),
+            ("device".into(), String::new()),
+            store.clone(),
+            stop.clone(),
+            wake_rx,
+            listener.clone(),
+        ));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let requests = server.received_requests().await.unwrap();
+                if requests
+                    .iter()
+                    .filter(|r| r.url.path().ends_with("/threads/offline"))
+                    .count()
+                    >= 2
+                    && store.queued_for_thread("good").unwrap().is_none()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send_replace(true);
+        worker.await.unwrap();
+        for id in ["invalid", "deleted"] {
+            assert_eq!(
+                store.blocked(id).unwrap()[0].request.content,
+                "Keep this draft"
+            );
+            assert_eq!(
+                server
+                    .received_requests()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .filter(|r| r.url.path().ends_with(&format!("/threads/{id}")))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(store.pending_threads().unwrap()[0].id, "offline");
+        assert_eq!(store.pending().unwrap()[0].thread_id, "offline");
+        assert_eq!(store.unconfirmed_threads().unwrap().len(), 3);
     }
 
     #[test]
