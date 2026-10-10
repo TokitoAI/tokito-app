@@ -33,5 +33,7 @@ The multiboard reference repository is `TokitoAI/tokito-app-dataset`, not a
 synthetic benchmark corpus. Compilation retains reference-variant limitations;
 catalog IDs and source designators cannot establish physical component identity.
 The native retrieval/Qwen-selection boundary and producer handoff are specified
-in `docs/DATASET_RAG.md`. Bench activation remains gated on package admission,
-calibrated detector/variant binding, device QA and component-addressable assets.
+in `docs/DATASET_RAG.md`. Text/audio reference activation requires package
+admission, explicit reference-scope selection and device QA, not GLBs or AR
+registration. Automatic physical identity and component highlighting additionally
+require calibrated detector/variant binding and component-addressable assets.

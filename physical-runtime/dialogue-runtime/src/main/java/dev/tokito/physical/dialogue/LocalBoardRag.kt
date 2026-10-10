@@ -21,24 +21,25 @@ class LocalBoardRag(
     data class Binding(
         val boardId: String,
         val corpusRevision: String,
-        val registrationRevision: String,
+        /** Revision of the selected reference scope, not an AR registration. */
+        val scopeRevision: String,
         val expiresAtElapsedMs: Long,
     ) {
         init {
             require(boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl))
             require(corpusRevision.matches(Regex("[a-f0-9]{64}")))
-            require(registrationRevision.isNotBlank() && registrationRevision.length <= 256)
+            require(scopeRevision.isNotBlank() && scopeRevision.length <= 256 && scopeRevision.none(Char::isISOControl))
             require(expiresAtElapsedMs > 0)
         }
     }
 
     suspend fun answer(utterance: String): DialogueOutcome.Response {
         DialogueProtocol(DialogueLimits()).validateRequest(DialogueRequest(utterance))
-        val binding = currentBinding() ?: return DialogueOutcome.Response("I need a verified board identity before searching its reference data.")
+        val binding = currentBinding() ?: return DialogueOutcome.Response("Select a board reference before searching its reference data.")
         fun requireCurrent() {
             require(binding.corpusRevision == store.corpusRevision && currentBinding() == binding &&
                 elapsedRealtimeMs() < binding.expiresAtElapsedMs) {
-                "Board identity or registration changed during local reasoning"
+                "Board reference scope changed during local reasoning"
             }
         }
         requireCurrent()
@@ -50,7 +51,7 @@ class LocalBoardRag(
                 requireCurrent()
             }
         }
-        if (evidence.isEmpty()) return DialogueOutcome.Response("No reference records are available for the identified board.")
+        if (evidence.isEmpty()) return DialogueOutcome.Response("No reference records are available for the selected board.")
         val selection = KnowledgeSelectionRequest(binding.boardId, binding.corpusRevision, evidence)
         val answer = generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = selection))
         coroutineContext.ensureActive()

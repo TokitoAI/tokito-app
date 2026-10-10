@@ -38,9 +38,12 @@ verify signatures or grant rights itself. Searches filter board scope before
 ranking. Missing board data is empty retrieval, not a cross-board neighbour.
 
 `LocalBoardRag` orchestrates background embedding, scoped retrieval and actual
-`TokitoDialogueRuntime` Qwen requests. Board/corpus/registration bindings are
+`TokitoDialogueRuntime` Qwen requests. Board/corpus/reference-scope bindings are
 checked before and after asynchronous work. The provider must expose an atomic
-native observation snapshot, never UI text. Query and corpus encoders match.
+native scope snapshot, not unchecked model output. A scope can be an explicitly
+selected catalog reference; it does not assert that a physical board has been
+identified. Query and corpus encoders match. Text/audio reference answers do not
+require camera tracking, AR registration, GLBs or component highlighting.
 
 Qwen selects existing source fact IDs and optionally a component ID. Native
 validation rejects invented facts, cross-component targets, extra prose and
@@ -50,9 +53,11 @@ The bounded prompt exposes at most 40 scalar facts, at most 240 characters each;
 excluded fields cannot be claimed as read. Full source records remain stored.
 
 This path is not yet connected to production bench selection/import. The old
-bench policy remains active until package admission, calibrated board selection,
-real-device Qwen evaluation and full AR integration qualify the new path. Unit
-tests cannot substitute for that qualification.
+bench policy remains active until package admission, explicit reference-scope
+selection and real-device Qwen evaluation qualify the new path. Automatic
+physical-board selection and AR highlighting have separate detector and geometry
+gates; their absence must not disable reference-scoped text answers. Unit tests
+cannot substitute for device qualification.
 
 ## Detector and 3D handoff
 
