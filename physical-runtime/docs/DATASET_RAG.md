@@ -86,6 +86,12 @@ names (`componentNodePrefix` plus reference designator). Authored context suppli
 placement, side, orientation and landmarks. Separate selectable nodes are
 required; a board-only mesh cannot support component highlighting.
 
+The local selector accepts a single JSON object, optionally enclosed by one
+whole-response JSON code fence. This is presentation normalization only: prose
+outside the fence, extra objects/keys, unknown fact IDs, conflicting targets and
+unsupported claims still fail closed. Spoken answers are composed from validated
+retrieved source values, not arbitrary generated engineering claims.
+
 The join is catalog board/variant -> reviewed assembly context -> designator ->
 component GLB node. Knowledge IDs are `board_id:reference_designator`, separating
 reused references. The AR controller resolves the designator through admitted

@@ -41,6 +41,17 @@ class KnowledgeSelectionProtocolTest {
         assertNull(answer.componentTargetProposal)
     }
 
+    @Test fun wholeJsonFenceIsPresentationOnlyAndStillValidatesEvidence() {
+        val json = """{"facts":["f0"],"target":null,"abstain":false}"""
+        for (language in listOf("json", "")) {
+            assertEquals("Verified source microcontroller", request().parse("```$language\n$json\n```").text)
+        }
+        for (raw in listOf("Answer: ```json\n$json\n```", "```json\n$json\n``` extra",
+            "```json\n{\"facts\":[\"invented\"],\"target\":null,\"abstain\":false}\n```")) {
+            assertThrows(DialogueFailure::class.java) { request().parse(raw) }
+        }
+    }
+
     @Test fun noMixedToolAuthorityOrHistoryForRag() {
         val protocol = DialogueProtocol(DialogueLimits())
         val valid = DialogueRequest("Where is the MCU?", knowledgeSelection = request())

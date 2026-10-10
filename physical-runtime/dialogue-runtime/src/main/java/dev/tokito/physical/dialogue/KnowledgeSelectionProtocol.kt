@@ -61,8 +61,15 @@ class KnowledgeSelectionRequest(
 
     internal fun parse(raw: String): DialogueOutcome.Response {
         try {
-            require(raw.length <= 4096 && raw.trim().startsWith("{") && raw.trim().endsWith("}"))
-            val tokenizer = org.json.JSONTokener(raw)
+            require(raw.length <= 4096)
+            // A model may wrap the entire JSON envelope in a Markdown code
+            // fence. Remove only that exact presentation wrapper, never search
+            // arbitrary prose for an object or relax evidence validation.
+            val trimmed = raw.trim()
+            val envelope = Regex("\\A```(?:json)?\\s*\\n([\\s\\S]*?)\\n```\\z")
+                .matchEntire(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
+            require(envelope.startsWith("{") && envelope.endsWith("}"))
+            val tokenizer = org.json.JSONTokener(envelope)
             val output = tokenizer.nextValue() as JSONObject
             require(tokenizer.nextClean() == '\u0000')
             require(output.keys().asSequence().toSet() == setOf("facts", "target", "abstain"))
