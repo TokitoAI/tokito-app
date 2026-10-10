@@ -138,11 +138,18 @@ if (project.findProperty('tokito.deviceTests') == 'true') {
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation project(':dialogue-runtime')
     androidTestImplementation project(':voice-runtime')
+    androidTestImplementation project(':physical-ar-runtime')
     androidTestImplementation project(':expo-modules-core')
     androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'
   }
 }
 `;
+    }
+    if (!result.modResults.contents.includes("androidTestImplementation project(':physical-ar-runtime')")) {
+      result.modResults.contents = result.modResults.contents.replace(
+        "androidTestImplementation project(':voice-runtime')",
+        "androidTestImplementation project(':voice-runtime')\n    androidTestImplementation project(':physical-ar-runtime')",
+      );
     }
     if (!result.modResults.contents.includes("androidTestImplementation project(':expo-modules-core')")) {
       result.modResults.contents = result.modResults.contents.replace(

@@ -266,3 +266,11 @@ synthesis deadline, and drains the hardware playback head before releasing the
 track. **Why:** generation plus playback can exceed a shared timer even for a
 valid answer, while successful blocking writes can still leave the last audio
 buffer queued. Preserve interruption checks during both writes and draining.
+
+Camera zoom uses CameraX-reported bounds and actual observed ratio. The surface
+intercepts only multi-touch zoom so the guidance overlay retains single-tap
+registration. Zoom changes advance a geometry revision and invalidate registered
+AR and pose history; discard queued observations from the earlier revision.
+**Why:** scaling the preview without invalidating registration presents old
+component locations as current evidence. Test controls and pinch on hardware,
+not only by looking for a zoom label in a screenshot.

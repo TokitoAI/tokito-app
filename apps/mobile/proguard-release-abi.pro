@@ -142,3 +142,4 @@
 -keep class dev.tokito.physical.session.PhysicalSessionRecord { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionStore { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionStore$Companion { public *; }
+-keep class ai.tokito.physical.ar.ArCameraSurface { public *; }

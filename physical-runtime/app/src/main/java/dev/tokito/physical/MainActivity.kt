@@ -156,6 +156,22 @@ class MainActivity : AppCompatActivity() {
 
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
         ar = ArSessionController(this, binding.cameraSurface, ::renderArState)
+        binding.cameraSurface.onZoomChanged = { ratio, minimum, maximum ->
+            binding.zoomResetButton.text = if (ratio == null) getString(R.string.camera_zoom_loading)
+                else getString(R.string.camera_zoom_ratio, ratio)
+            binding.zoomResetButton.contentDescription = if (ratio == null) getString(R.string.camera_zoom_reset)
+                else getString(R.string.camera_zoom_current, ratio)
+            binding.zoomResetButton.isEnabled = ratio != null
+            binding.zoomOutButton.isEnabled = ratio != null && minimum != null && ratio > minimum + 0.01f
+            binding.zoomInButton.isEnabled = ratio != null && maximum != null && ratio < maximum - 0.01f
+        }
+        binding.zoomInButton.setOnClickListener {
+            binding.cameraSurface.currentZoomRatio?.let { binding.cameraSurface.setZoomRatio(it * 1.25f) }
+        }
+        binding.zoomOutButton.setOnClickListener {
+            binding.cameraSurface.currentZoomRatio?.let { binding.cameraSurface.setZoomRatio(it / 1.25f) }
+        }
+        binding.zoomResetButton.setOnClickListener { binding.cameraSurface.setZoomRatio(1f) }
         call = VoiceCallController(
             scope = lifecycleScope,
             prepare = ::prepareLocalAi,

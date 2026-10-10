@@ -69,6 +69,14 @@ camera loss, backgrounding, or explicit suspension invalidates the graph and
 scene; resuming requires registration again. Camera capture is bound to an
 Android `LifecycleOwner` and is unbound during stop.
 
+The bench supports pinch-to-zoom and accessible zoom-out, ratio/reset and zoom-in
+controls. Ratios are clamped to CameraX's reported bounds, never assumed from a
+phone model. Ratio changes invalidate registration, clear pose stability history
+and advance the camera geometry revision. Frames and queued inference results
+from an older geometry revision cannot restore positional overlays. Pinch
+gestures cancel board-corner taps; after zoom, registration must be acquired
+again against the current crop. Camera observers are removed during stop.
+
 ## Integration example
 
 ```kotlin
