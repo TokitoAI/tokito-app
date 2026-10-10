@@ -80,7 +80,7 @@ class LocalComponentVisionRuntime private constructor(
             var confidence = Float.NEGATIVE_INFINITY
             for (candidateClass in manifest.classNames.indices) {
                 val score = value(values, 4 + candidateClass, anchor)
-                if (score.isFinite() && score > confidence) {
+                if (ComponentTensorContract.isProbability(score) && score > confidence) {
                     classId = candidateClass
                     confidence = score
                 }
@@ -195,7 +195,19 @@ class LocalComponentVisionRuntime private constructor(
             require(!document.optBoolean("release_eligible", true)) { "experimental loader requires release_eligible=false" }
             val digest = document.getString("model_sha256").removePrefix("sha256:").lowercase()
             require(digest.matches(Regex("[a-f0-9]{64}"))) { "invalid component model digest" }
-            val actual = MessageDigest.getInstance("SHA-256").digest(modelFile.readBytes()).toHex()
+            val actual = modelFile.inputStream().use { input ->
+                val hash = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val size = input.read(buffer)
+                    if (size < 0) break
+                    total += size
+                    require(total <= MAXIMUM_MODEL_BYTES) { "component model grew beyond its byte bound" }
+                    hash.update(buffer, 0, size)
+                }
+                hash.digest().toHex()
+            }
             require(MessageDigest.isEqual(actual.toByteArray(), digest.toByteArray())) { "component model digest mismatch" }
             val namesDocument = document.getJSONArray("class_names")
             val classNames = (0 until namesDocument.length()).map(namesDocument::getString)
@@ -212,8 +224,9 @@ class LocalComponentVisionRuntime private constructor(
                 maximumDetections = document.getInt("maximum_detections").also { require(it in 1..1000) },
                 coordinatesNormalized = document.getBoolean("coordinates_normalized"),
             )
-            val options = Interpreter.Options().setNumThreads(max(1, Runtime.getRuntime().availableProcessors() / 2))
+            val options = Interpreter.Options().setNumThreads((Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4))
             val interpreter = Interpreter(modelFile, options)
+            try {
             require(interpreter.inputTensorCount == 1 && interpreter.outputTensorCount == 1) { "unexpected component model interface" }
             require(interpreter.getInputTensor(0).dataType() == DataType.FLOAT32 && interpreter.getOutputTensor(0).dataType() == DataType.FLOAT32) {
                 "component experiment currently requires float32 tensors"
@@ -232,7 +245,12 @@ class LocalComponentVisionRuntime private constructor(
                 outputShape[2] == channels && outputShape[1] > 0 -> OutputLayout(false, outputShape[1])
                 else -> error("unexpected component vision output shape: ${outputShape.contentToString()}")
             }
+            ComponentTensorContract.requireBoundedOutput(outputLayout.anchors, manifest.classNames.size)
             return LocalComponentVisionRuntime(manifest, interpreter, inputLayout, outputLayout)
+            } catch (failure: Throwable) {
+                interpreter.close()
+                throw failure
+            }
         }
 
         private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
@@ -241,5 +259,16 @@ class LocalComponentVisionRuntime private constructor(
         private const val MODEL_FILE = "model.tflite"
         private const val MAXIMUM_MANIFEST_BYTES = 64L * 1024L
         private const val MAXIMUM_MODEL_BYTES = 128L * 1024L * 1024L
+    }
+}
+
+internal object ComponentTensorContract {
+    fun isProbability(value: Float): Boolean = value.isFinite() && value in 0f..1f
+
+    fun requireBoundedOutput(anchors: Int, classes: Int) {
+        require(classes in 1..64 && anchors in 1..100_000 &&
+            (4L + classes) * anchors * Float.SIZE_BYTES <= 32L * 1024L * 1024L) {
+            "component output tensor exceeds its allocation budget"
+        }
     }
 }

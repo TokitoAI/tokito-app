@@ -53,6 +53,11 @@ component-smoke/
 The current runtime accepts float32 NCHW or NHWC input and float32 output in
 either `[1, classes + 4, anchors]` or `[1, anchors, classes + 4]` layout. It
 validates the model digest before constructing the interpreter.
+Digest verification streams through a bounded buffer. Tensor admission caps
+output at 100,000 anchors and 32 MiB, CPU workers at four, and confidence values
+at finite probabilities in [0, 1]. Rejected tensor contracts close their native
+interpreter. Host contract tests cover malformed scores and allocation bounds;
+they do not qualify live-camera lifecycle or detector accuracy.
 
 ## Build and run
 

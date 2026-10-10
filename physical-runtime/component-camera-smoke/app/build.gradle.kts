@@ -38,4 +38,5 @@ tasks.named("preBuild") { dependsOn(syncComponentRuntime) }
 dependencies {
     implementation("com.google.ai.edge.litert:litert:1.4.1")
     implementation("org.json:json:20250517")
+    testImplementation("junit:junit:4.13.2")
 }
