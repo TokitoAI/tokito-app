@@ -40,6 +40,18 @@ class PoseStabilizerTest {
     }
 
     @Test
+    fun `camera geometry reset requires a fresh full stability window`() {
+        val stabilizer = PoseStabilizer(manifest)
+        val base = System.nanoTime()
+        stabilizer.accept(observation(base))
+        stabilizer.accept(observation(base + 20_000_000L))
+        stabilizer.reset()
+        assertNull(stabilizer.accept(observation(base + 40_000_000L)))
+        assertNull(stabilizer.accept(observation(base + 60_000_000L)))
+        assertNotNull(stabilizer.accept(observation(base + 80_000_000L)))
+    }
+
+    @Test
     fun `a single rejected frame does not reset the stability window`() {
         val stabilizer = PoseStabilizer(manifest)
         val base = System.nanoTime()

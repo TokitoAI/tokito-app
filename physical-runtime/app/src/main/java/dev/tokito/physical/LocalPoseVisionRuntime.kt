@@ -44,10 +44,15 @@ class LocalPoseVisionRuntime private constructor(
     private val stabilizer = PoseStabilizer(manifest)
     private val output = Array(1) { Array(17) { FloatArray(8400) } }
     private var analyzedFrames = 0L
+    private var geometryRevision = -1L
     private var closed = false
 
     @Synchronized
     fun analyze(frame: ArCameraSurface.CameraFrame): PoseVisionObservation? {
+        if (geometryRevision != frame.geometryRevision) {
+            stabilizer.reset()
+            geometryRevision = frame.geometryRevision
+        }
         if (closed) {
             frame.bitmap.recycle()
             return null
@@ -246,6 +251,7 @@ class LocalPoseVisionRuntime private constructor(
 
 internal class PoseStabilizer(private val config: LocalPoseVisionRuntime.Manifest) {
     private val history = ArrayDeque<PoseVisionObservation>()
+    fun reset() { history.clear() }
 
     fun reject(): PoseVisionObservation? {
         // A single sub-threshold frame is not evidence that the board
