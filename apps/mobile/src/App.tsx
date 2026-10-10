@@ -33,7 +33,6 @@ import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { retryableStartup } from "./sync/startupRetry";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
 import { BrandTile } from "./ui/primitives";
-import { getTokitoCompanionFfi } from "../modules/tokito-companion-ffi/src";
 
 type Route =
   | { name: "projects" }
@@ -106,14 +105,11 @@ function AppContent({
   const restoreInFlight = useRef(false);
   const restoreRequested = useRef(false);
   const [restoreRequest, setRestoreRequest] = useState(0);
-  useEffect(() => {
-    const listener = getTokitoCompanionFfi().addListener("onAuthorizationRevoked", () => {
+  const handleAuthorizationRevoked = useCallback(() => {
       restoreRequested.current = false;
       setState({ status: "signed_out" }); setSignedOutView("sign_in");
       setRetryRestore(false); setBootError("Your session expired. Sign in again to continue.");
       void auth.signOut();
-    });
-    return () => listener.remove();
   }, [auth]);
 
   const refresh = useCallback(async () => {
@@ -234,7 +230,7 @@ function AppContent({
 
   if (route.name === "models") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <View style={styles.root}>
         <StatusBar style="light" />
         <ModelManagerScreen onBack={() => setRoute({ name: "projects" })} />
@@ -245,7 +241,7 @@ function AppContent({
 
   if (route.name === "live_schematic") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <LiveSchematicViewerScreen
           client={client}
@@ -260,7 +256,7 @@ function AppContent({
 
   if (route.name === "svg") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <SchematicViewerScreen
           client={client}
@@ -277,7 +273,7 @@ function AppContent({
     const detailId = route.name === "project" ? route.id : null;
     const masterWidth = Math.min(330, Math.max(280, Math.floor(width * 0.28)));
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <View style={styles.split}>
         <StatusBar style="light" />
         <View style={[styles.master, { width: masterWidth }]}>
@@ -332,7 +328,7 @@ function AppContent({
 
   if (route.name === "project") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <ProjectDetailScreen
           client={client}
@@ -352,7 +348,7 @@ function AppContent({
   }
 
   return (
-    <RealtimeWorkspaceProvider client={client} token={token}>
+    <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <StatusBar style="light" />
       <ProjectListScreen
         client={client}

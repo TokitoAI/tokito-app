@@ -30,6 +30,7 @@ android {
 }
 
 dependencies {
+  testImplementation "junit:junit:4.13.2"
   // UniFFI Kotlin bindings require JNA:
   // https://mozilla.github.io/uniffi-rs/latest/kotlin/gradle.html
   implementation "net.java.dev.jna:jna:5.14.0@aar"

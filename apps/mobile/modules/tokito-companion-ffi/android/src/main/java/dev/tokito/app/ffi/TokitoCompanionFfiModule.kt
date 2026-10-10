@@ -31,6 +31,7 @@ class TokitoCompanionFfiModule : Module() {
   private val reviews = ConcurrentHashMap<String, ReviewSession>()
   private val runs = ConcurrentHashMap<String, Pair<String, RunSubscription>>()
   private val queueLock = Any()
+  private val authorization = AuthorizationEpoch()
   private var queueScope: Pair<String, String>? = null
   private var queueOwner: String? = null
   private var queueChat: ConversationSession? = null
@@ -38,6 +39,8 @@ class TokitoCompanionFfiModule : Module() {
   private var queueTimer: java.util.concurrent.ScheduledExecutorService? = null
 
   private fun stopQueues() = synchronized(queueLock) {
+    authorization.invalidate()
+    subscriptions.values.forEach { it.stop() }; subscriptions.clear()
     queueTimer?.shutdownNow(); queueTimer = null
     queueChat?.shutdown(); queueChat = null
     queueReviews?.shutdown(); queueReviews = null
@@ -45,30 +48,39 @@ class TokitoCompanionFfiModule : Module() {
     runs.values.forEach { it.second.stop() }; runs.clear()
     queueScope = null; queueOwner = null
   }
-  private fun revoked() {
+  private fun revoked(lease: AuthorizationEpoch.Lease?) = synchronized(queueLock) {
+    if (!authorization.owns(lease)) return@synchronized
+    val owner = queueOwner
     stopQueues()
-    subscriptions.values.forEach { it.stop() }; subscriptions.clear()
-    sendEvent("onAuthorizationRevoked", emptyMap<String, String>())
+    if (owner != null) sendEvent("onAuthorizationRevoked", mapOf("owner" to owner))
   }
   private fun ensureQueues(base: String, token: String) = synchronized(queueLock) {
     if (queueScope == (base to token)) return@synchronized
     stopQueues()
+    val lease = authorization.begin(base, token)
     val context = requireNotNull(appContext.reactContext)
     val preferences = context.getSharedPreferences("tokito-installation", 0)
     val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also { check(preferences.edit().putString("id", it).commit()) }
     val listener = object : ConversationListener {
-      override fun onChange(payloadJson: String) {
-        if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(); return }
+      override fun onChange(payloadJson: String) = synchronized(queueLock) {
+        if (!authorization.owns(lease)) return@synchronized
+        if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(lease); return@synchronized }
         conversations.keys.forEach { id -> sendEvent("onConversationChange", mapOf("sessionId" to id, "watchId" to "", "payloadJson" to payloadJson)) }
       }
     }
-    val chat = CompanionClient(base).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
-    val review = try { CompanionClient(base).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath) } catch (error: Exception) { chat.shutdown(); throw error }
+    val chat = try {
+      CompanionClient(base).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
+    } catch (error: Exception) { authorization.invalidate(); throw error }
+    val review = try { CompanionClient(base).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath) } catch (error: Exception) { authorization.invalidate(); chat.shutdown(); throw error }
+    if (!authorization.owns(lease)) {
+      chat.shutdown(); review.shutdown()
+      throw CodedException("Unauthorized", "Session startup was superseded", null)
+    }
     queueChat = chat; queueReviews = review; queueScope = base to token
     queueTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor().also { executor ->
       executor.scheduleWithFixedDelay({
         try { review.replayPending() }
-        catch (error: CompanionException) { if (error is CompanionException.Unauthorized) revoked() }
+        catch (error: CompanionException) { if (error is CompanionException.Unauthorized) revoked(lease) }
         catch (_: Exception) { /* Durable commands remain pending; next tick retries. */ }
       }, 0, 3, java.util.concurrent.TimeUnit.SECONDS)
     }
@@ -90,7 +102,13 @@ class TokitoCompanionFfiModule : Module() {
       reviews.clear()
     }
 
-    AsyncFunction("startQueues") { base: String, token: String, owner: String -> runFfi { synchronized(queueLock) { ensureQueues(base, token); queueOwner = owner } } }
+    AsyncFunction("startQueues") { base: String, token: String, owner: String -> runFfi {
+      synchronized(queueLock) {
+        if (queueOwner != null && queueOwner != owner) stopQueues()
+        ensureQueues(base, token)
+        queueOwner = owner
+      }
+    } }
     AsyncFunction("stopQueues") { owner: String -> synchronized(queueLock) { if (queueOwner == owner) stopQueues() } }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
@@ -98,10 +116,10 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("getSchematicPreview") { base: String, token: String, project: String, design: String, version: String, sheet: String ->
-      runFfi { uniffi.tokito_companion_ffi.getSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
+      runFfi(authorization.matching(base, token)) { uniffi.tokito_companion_ffi.getSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
     }
     AsyncFunction("cachedSchematicPreview") { base: String, token: String, project: String, design: String, version: String, sheet: String ->
-      runFfi { uniffi.tokito_companion_ffi.cachedSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
+      runFfi(authorization.matching(base, token)) { uniffi.tokito_companion_ffi.cachedSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
     }
 
     AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String ->
@@ -183,11 +201,13 @@ class TokitoCompanionFfiModule : Module() {
     }
     AsyncFunction("watchConversationRun") { sessionId: String, run: String, after: String, watchId: String ->
       runFfi {
+        val lease = authorization.capture()
         require(watchId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         runs.remove(watchId)?.second?.stop()
         val listener = object : ConversationListener {
           override fun onChange(payloadJson: String) {
-            if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(); return }
+            if (!authorization.owns(lease)) return
+            if (JSONObject(payloadJson).optString("type") == "unauthorized") { revoked(lease); return }
             sendEvent("onConversationChange", mapOf("sessionId" to sessionId, "watchId" to watchId, "payloadJson" to payloadJson))
           }
         }
@@ -198,11 +218,11 @@ class TokitoCompanionFfiModule : Module() {
     AsyncFunction("stopConversationRunWatch") { watchId: String -> runs.remove(watchId)?.second?.stop() }
 
     AsyncFunction("otpRequest") { baseUrl: String, email: String ->
-      runFfi { CompanionClient(baseUrl).otpRequest(email) }
+      runFfi(null) { CompanionClient(baseUrl).otpRequest(email) }
     }
 
     AsyncFunction("otpVerify") { baseUrl: String, email: String, code: String ->
-      runFfi {
+      runFfi(null) {
         val session = CompanionClient(baseUrl).otpVerify(email, code)
         mapOf(
           "token" to session.token,
@@ -213,7 +233,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("oauthExchange") { baseUrl: String, code: String ->
-      runFfi {
+      runFfi(null) {
         val session = CompanionClient(baseUrl).oauthExchange(code)
         mapOf(
           "token" to session.token,
@@ -224,7 +244,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("me") { baseUrl: String, token: String ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         val account = CompanionClient(baseUrl).me(token)
         mapOf(
           "email" to account.email,
@@ -234,7 +254,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("resolveIdentity") { baseUrl: String, token: String ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         val context = requireNotNull(appContext.reactContext)
         val identity = CompanionClient(baseUrl).resolveIdentity(token, context.filesDir.resolve("tokito/verified-identity.sqlite3").absolutePath)
         JSONObject(mapOf("account" to mapOf("email" to identity.account.email, "plan" to identity.account.plan), "online" to identity.online)).toString()
@@ -242,14 +262,14 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("forgetIdentity") { baseUrl: String, token: String ->
-      runFfi {
+      runFfi(null) {
         val context = requireNotNull(appContext.reactContext)
         CompanionClient(baseUrl).forgetIdentity(token, context.filesDir.resolve("tokito/verified-identity.sqlite3").absolutePath)
       }
     }
 
     AsyncFunction("listProjects") { baseUrl: String, token: String ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         CompanionClient(baseUrl).listProjects(token).map { p ->
           mapOf(
             "id" to p.id,
@@ -262,7 +282,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("getProject") { baseUrl: String, token: String, projectId: String ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         val p = CompanionClient(baseUrl).getProject(token, projectId)
         // Return one JSON string across Expo's native boundary. Expo's dynamic
         // value converter is not reliable for recursively nested Kotlin maps
@@ -304,7 +324,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("listProposals") { baseUrl: String, token: String, projectId: String, status: String? ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         CompanionClient(baseUrl).listProposals(token, projectId, status).map { p ->
           mapOf(
             "id" to p.id,
@@ -322,7 +342,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("decideProposal") { baseUrl: String, token: String, projectId: String, proposalId: String, decision: String, note: String? ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         val p = CompanionClient(baseUrl).decideProposal(token, projectId, proposalId, decision, note)
         mapOf(
           "id" to p.id,
@@ -339,7 +359,7 @@ class TokitoCompanionFfiModule : Module() {
     }
 
     AsyncFunction("getArtifact") { baseUrl: String, token: String, projectId: String, name: String ->
-      runFfi {
+      runFfi(authorization.matching(baseUrl, token)) {
         val art = CompanionClient(baseUrl).getArtifact(token, projectId, name)
         mapOf(
           "contentType" to art.contentType,
@@ -351,6 +371,8 @@ class TokitoCompanionFfiModule : Module() {
 
     AsyncFunction("startSync") { baseUrl: String, token: String, projectId: String? ->
       runFfi {
+        ensureQueues(baseUrl, token)
+        val lease = authorization.matching(baseUrl, token)
         val context = requireNotNull(appContext.reactContext) { "React context unavailable" }
         val installationId = Settings.Secure.getString(
           context.contentResolver,
@@ -358,14 +380,16 @@ class TokitoCompanionFfiModule : Module() {
         ).takeUnless { it.isNullOrBlank() } ?: UUID.randomUUID().toString()
         val statePath = context.filesDir.resolve("tokito/realtime-sync.sqlite3")
         statePath.parentFile?.mkdirs()
-        val subscriptionId = projectId ?: "workspace"
+        val subscriptionId = UUID.randomUUID().toString()
         subscriptions.remove(subscriptionId)?.stop()
         val listener = object : SyncListener {
           override fun onStatus(status: String) {
+            if (!authorization.owns(lease)) return
             sendEvent("onSyncStatus", mapOf("subscriptionId" to subscriptionId, "status" to status))
           }
 
           override fun onBootstrap(cursor: ULong, resourcesJson: String) {
+            if (!authorization.owns(lease)) return
             sendEvent(
               "onSyncBootstrap",
               mapOf(
@@ -377,6 +401,7 @@ class TokitoCompanionFfiModule : Module() {
           }
 
           override fun onEvent(eventJson: String) {
+            if (!authorization.owns(lease)) return
             sendEvent("onSyncEvent", mapOf("subscriptionId" to subscriptionId, "eventJson" to eventJson))
           }
 
@@ -385,6 +410,7 @@ class TokitoCompanionFfiModule : Module() {
             currentVersion: ULong,
             currentPayloadJson: String,
           ) {
+            if (!authorization.owns(lease)) return
             sendEvent(
               "onSyncConflict",
               mapOf(
@@ -397,7 +423,8 @@ class TokitoCompanionFfiModule : Module() {
           }
 
           override fun onError(message: String) {
-            if (message.contains("unauthorized", ignoreCase = true) || message.contains("session expired", ignoreCase = true)) { revoked(); return }
+            if (!authorization.owns(lease)) return
+            if (message.contains("unauthorized", ignoreCase = true) || message.contains("session expired", ignoreCase = true)) { revoked(lease); return }
             sendEvent("onSyncError", mapOf("subscriptionId" to subscriptionId, "message" to message))
           }
         }
@@ -410,7 +437,13 @@ class TokitoCompanionFfiModule : Module() {
           statePath.absolutePath,
           listener,
         )
-        subscriptions[subscriptionId] = subscription
+        synchronized(queueLock) {
+          if (!authorization.owns(lease)) {
+            subscription.stop()
+            throw CodedException("Unauthorized", "Session startup was superseded", null)
+          }
+          subscriptions[subscriptionId] = subscription
+        }
         subscriptionId
       }
     }
@@ -446,13 +479,13 @@ class TokitoCompanionFfiModule : Module() {
     }
   }
 
-  private fun <T> runFfi(block: () -> T): T {
+  private fun <T> runFfi(lease: AuthorizationEpoch.Lease? = authorization.capture(), block: () -> T): T {
     return try {
       block()
     } catch (err: CompanionException) {
       // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
       val code = err::class.java.simpleName
-      if (err is CompanionException.Unauthorized) revoked()
+      if (err is CompanionException.Unauthorized) revoked(lease)
       Log.w(TAG, "UniFFI call failed: $code (${err.message})")
       throw CodedException(code, err.message ?: code, err)
     } catch (err: Exception) {

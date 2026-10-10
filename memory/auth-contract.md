@@ -38,3 +38,11 @@ Sign-out clears the secure session before forgetting its old native identity,
 so delayed native completion cannot clear a newer sign-in.
 **Why:** authorization is temporal as well as account-scoped; a valid response
 to a retired operation is not permission to replace the current session.
+
+Android queue lifetimes carry native authorization leases. A callback or HTTP
+401 can revoke only the lease that created it, including across reopening the
+same credentials. Unauthenticated OTP/OAuth errors never revoke a workspace.
+Revocation events carry the ephemeral workspace owner, not credentials; the
+active workspace filters that owner before changing the JavaScript session.
+Sync subscriptions use distinct lifetime IDs so queued events cannot populate
+a later workspace merely because it has the same project selection.

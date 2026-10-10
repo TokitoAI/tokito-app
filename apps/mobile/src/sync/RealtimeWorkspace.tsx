@@ -5,6 +5,7 @@ import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
 import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
 import { retryableStartup, startupRetryDelay } from "./startupRetry";
+import { ownsWorkspaceEvent } from "./workspaceOwnership";
 import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 
 export type SyncResource = {
@@ -62,8 +63,9 @@ function parseJson<T>(value: string): T {
 export function RealtimeWorkspaceProvider({
   client,
   token,
+  onAuthorizationRevoked,
   children,
-}: PropsWithChildren<{ client: CloudClient; token: string }>): JSX.Element {
+}: PropsWithChildren<{ client: CloudClient; token: string; onAuthorizationRevoked: () => void }>): JSX.Element {
   const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>(client.startSync ? "connecting" : "disabled");
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +78,9 @@ export function RealtimeWorkspaceProvider({
     const native = getTokitoCompanionFfi();
     const owner = `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let disposed = false;
+    const revoked = native.addListener("onAuthorizationRevoked", event => {
+      if (ownsWorkspaceEvent(owner, event.owner, disposed)) onAuthorizationRevoked();
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const open = async (): Promise<void> => {
       try { await native.startQueues(client.baseUrl(), token, owner); if (disposed) await native.stopQueues(owner); }
@@ -89,8 +94,8 @@ export function RealtimeWorkspaceProvider({
       }
     };
     void open();
-    return () => { disposed = true; clearTimeout(timer); void native.stopQueues(owner); };
-  }, [client, token]);
+    return () => { disposed = true; revoked.remove(); clearTimeout(timer); void native.stopQueues(owner); };
+  }, [client, token, onAuthorizationRevoked]);
 
   useEffect(() => {
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {

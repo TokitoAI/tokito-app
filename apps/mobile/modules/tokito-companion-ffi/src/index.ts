@@ -3,7 +3,7 @@ import { requireNativeModule } from "expo-modules-core";
 export type NativeEventSubscription = { remove(): void };
 
 export type SyncNativeEventMap = {
-  onAuthorizationRevoked: Record<string, never>;
+  onAuthorizationRevoked: { owner: string };
   onConversationChange: { sessionId: string; watchId: string; payloadJson: string };
   onSyncStatus: { subscriptionId: string; status: string };
   onSyncBootstrap: { subscriptionId: string; cursor: string; resourcesJson: string };

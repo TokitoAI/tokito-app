@@ -14,7 +14,7 @@ npm run audit
 TOKITO_ANDROID_TARGETS=arm64-v8a ../../scripts/build-android-ffi.sh
 npx expo prebuild --platform android --clean --non-interactive
 node scripts/configure-android-release.mjs
-./android/gradlew -p android assembleRelease bundleRelease \
+./android/gradlew -p android :tokito-companion-ffi:testReleaseUnitTest :tokito-companion-ffi:lintRelease assembleRelease bundleRelease \
   -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
 
 apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
