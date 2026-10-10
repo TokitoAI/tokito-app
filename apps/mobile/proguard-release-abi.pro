@@ -130,6 +130,10 @@
     public java.lang.Object respondLocally(java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,includedescriptorclasses class kotlin.TuplesKt { public *; }
+-keepclassmembers class kotlin.Pair {
+    public java.lang.Object component1();
+    public java.lang.Object component2();
+}
 -keep,includedescriptorclasses class kotlin.io.CloseableKt { public *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.DelayKt { public *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.Dispatchers { public *; }
