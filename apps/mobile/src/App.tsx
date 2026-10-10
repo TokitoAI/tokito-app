@@ -14,7 +14,7 @@ import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-nati
 import Constants from "expo-constants";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { createCloudClient, type CloudClient } from "./native/bridge";
-import { AuthService } from "./auth/AuthService";
+import { AuthOperationSuperseded, AuthService } from "./auth/AuthService";
 import type { AuthState } from "./auth/AuthService";
 import { SecureSessionStore } from "./auth/secureSessionStore";
 import { MemorySessionStore } from "./auth/sessionStore";
@@ -104,8 +104,11 @@ function AppContent({
   const [restoreBlocked, setRestoreBlocked] = useState(false);
   const [retryRestore, setRetryRestore] = useState(false);
   const restoreInFlight = useRef(false);
+  const restoreRequested = useRef(false);
+  const [restoreRequest, setRestoreRequest] = useState(0);
   useEffect(() => {
     const listener = getTokitoCompanionFfi().addListener("onAuthorizationRevoked", () => {
+      restoreRequested.current = false;
       setState({ status: "signed_out" }); setSignedOutView("sign_in");
       setRetryRestore(false); setBootError("Your session expired. Sign in again to continue.");
       void auth.signOut();
@@ -114,7 +117,7 @@ function AppContent({
   }, [auth]);
 
   const refresh = useCallback(async () => {
-    if (restoreInFlight.current) return;
+    if (restoreInFlight.current) { restoreRequested.current = true; return; }
     restoreInFlight.current = true;
     setBooting(true);
     setBootError(null);
@@ -128,6 +131,7 @@ function AppContent({
         setSignedOutView("home");
       }
     } catch (err) {
+      if (err instanceof AuthOperationSuperseded) return;
       const message =
         err instanceof CompanionError
           ? err.message
@@ -145,6 +149,10 @@ function AppContent({
     } finally {
       restoreInFlight.current = false;
       setBooting(false);
+      if (restoreRequested.current) {
+        restoreRequested.current = false;
+        setRestoreRequest(request => request + 1);
+      }
     }
   }, [auth]);
 
@@ -162,7 +170,7 @@ function AppContent({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, restoreRequest]);
 
   useEffect(() => {
     if (!retryRestore || booting || signedOutView === "sign_in") return;

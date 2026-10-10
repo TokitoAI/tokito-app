@@ -29,3 +29,12 @@ another account's project cache. An explicit 401 revokes the binding; malformed
 responses fail closed. Sign-out clears both the binding and secure session.
 Cached identity permits private local reads, not server authorization or a claim
 that the update transport is live.
+
+JavaScript authentication operations carry an in-memory generation. Sign-out,
+new OTP verification, and a new restore invalidate older responses; superseded
+responses cannot publish UI state, refresh the secure session, or clear it on a
+late 401. Secure-store operations are serialized independently of network calls.
+Sign-out clears the secure session before forgetting its old native identity,
+so delayed native completion cannot clear a newer sign-in.
+**Why:** authorization is temporal as well as account-scoped; a valid response
+to a retired operation is not permission to replace the current session.
