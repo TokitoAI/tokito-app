@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
-import { ConversationClient } from "./conversationClient";
+import { ConversationClient, conversationTitle } from "./conversationClient";
 import { chatFailure, ConversationScope } from "./conversationState";
 import { belongsToDisplayedRun, chatHistoryProjection, emptyRun, isActive, object, parseRun, reduceRun, string, type ChatRow, type ChatRun, type ChatThread, type RunView } from "./conversationModel";
 import { tokens } from "../theme";
@@ -46,16 +46,20 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const sendingTicket = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
   function updateDraft(text: string): void { scope.current.save(selected.current, text); setDraft(text); }
+  function followLatest(animated = false): void {
+    const offset = scrollIntent.current.target();
+    if (offset !== null) list.current?.scrollToOffset({ offset, animated });
+  }
 
   async function load(client: ConversationClient, id: string, before: number | null = null): Promise<void> {
     const ticket = scope.current.ticket();
     const request = ++historyRequest.current;
     const page = await client.history(project, design, id, before);
     if (connection.current !== client || selected.current !== id || !scope.current.current(ticket) || request !== historyRequest.current) return;
+    if (before === null) { scrollIntent.current.open(); setShowLatest(false); }
     setOlder(page.olderCursor);
     setRows(prior => before === null ? page.messages : [...page.messages, ...prior.filter(r => !page.messages.some(m => m.id === r.id))]);
     if (before === null) {
-      scrollIntent.current.open(); setShowLatest(false);
       const [pending, recovered] = await Promise.all([client.queued(id), client.recoveredDraft(id)]);
       if (connection.current !== client || selected.current !== id || !scope.current.current(ticket) || request !== historyRequest.current) return;
       setBlocked(pending?.blocked ? pending : null);
@@ -110,6 +114,10 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
           try { return reduceRun(previous, change.event); }
           catch { return { ...previous, error: "Live response could not be displayed. Reopen this conversation to recover it." }; }
         });
+      } else if (change.type === "run_snapshot") {
+        const snapshot = parseRun(change.run);
+        if (snapshot.thread_id !== selected.current || snapshot.run_id !== displayedRun.current) return;
+        setRun(snapshot); setSending(false); setNotice(null);
       } else if (change.type === "settled") {
         const settled = parseRun(change.run);
         if (settled.thread_id !== selected.current || settled.run_id !== displayedRun.current) return;
@@ -170,23 +178,39 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     displayedRun.current = null; setSavedRun(null); setRun(null); setView(emptyRun());
     scrollIntent.current.latest(); setShowLatest(false);
     try {
+      const title = conversationTitle(content);
+      const firstCommand = selected.current === null
+        ? scope.current.firstMessageCommand(JSON.stringify([project, design, title, content, activeSheetId, "planner"]), () => client.newCommand(), version)
+        : null;
+      const firstVersion = firstCommand === null ? version : scope.current.firstMessageVersion(firstCommand);
       await client.stopWatching();
       if (connection.current !== client || !scope.current.current(ticket)) return;
       let id = selected.current;
+      let pending: Record<string, unknown>;
       if (id === null) {
-        const created = await client.create(project, design, content.slice(0, 80));
+        if (firstCommand === null) throw new Error("Conversation changed before sending");
+        const receipt = await client.startChat(firstCommand, project, design, content, firstVersion, activeSheetId);
+        // Commit owns the original text even when navigation finishes before
+        // the receipt. Retain a newer draft/command; never clear another scope.
+        const ownsDraft = scope.current.finishFirstMessage(firstCommand);
+        if (ownsDraft && scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(null).trim() === content) scope.current.save(null, "");
         if (connection.current !== client || !scope.current.current(ticket) || selected.current !== null) return;
-        id = created.id; selected.current = id; setThread(id); setThreads(items => [created, ...items]);
-        scope.current.save(null, ""); scope.current.save(id, content);
-      }
-      const pending = await client.sendChat(project, design, id, content, version, activeSheetId);
+        id = receipt.thread.id; selected.current = id; setThread(id);
+        setThreads(items => items.some(item => item.id === id) ? items : [receipt.thread, ...items]);
+        pending = receipt.message;
+      } else pending = await client.sendChat(project, design, id, content, version, activeSheetId);
       // A successful durable enqueue owns this text, even if navigation finished
       // while it was pending. Do not leave a second sendable copy in its draft.
       if (scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(id).trim() === content) scope.current.save(id, "");
       if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
       const request = object(pending.request);
+      const runId = string(request.run_id);
+      displayedRun.current = runId;
       setRows(items => items.some(item => item.id === request.message_id) ? items : [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
       setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…");
+      // Acceptance may beat the JS receipt for a newly created thread. The
+      // durable run ID recovers its actual state and events without fake status.
+      if (acceptedMessage.current !== runId) await client.watch(runId);
     } catch (error) { if (connection.current === client && scope.current.current(ticket)) { setSending(false); setError(chatFailure(error)); } }
     finally { if (sendingTicket.current === ticket) sendingTicket.current = null; }
   }
@@ -222,15 +246,15 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
       onMomentumScrollBegin={() => scrollIntent.current.drag()}
       onMomentumScrollEnd={() => scrollIntent.current.end()}
       onScroll={e => { const n = e.nativeEvent; scrollIntent.current.scroll(n.contentSize.height, n.layoutMeasurement.height, n.contentOffset.y); setShowLatest(!scrollIntent.current.following); }} scrollEventThrottle={100}
-      onLayout={() => { if (scrollIntent.current.following) list.current?.scrollToEnd({ animated: false }); }}
-      onContentSizeChange={() => { if (scrollIntent.current.following) list.current?.scrollToEnd({ animated: false }); }}
-      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+      onLayout={event => { scrollIntent.current.layout(event.nativeEvent.layout.height); followLatest(); }}
+      onContentSizeChange={(_width, height) => { scrollIntent.current.content(height); followLatest(); }}
+      maintainVisibleContentPosition={showLatest ? { minIndexForVisible: 0 } : undefined}
       ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { scrollIntent.current.earlier(); setShowLatest(true); const client = connection.current; const ticket = scope.current.ticket(); if (client && thread) void load(client, thread, older).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
       ListEmptyComponent={busy ? <ActivityIndicator color={tokens.accent} style={styles.empty} /> : <View style={styles.empty}><Text style={styles.emptyTitle}>What would you like to build?</Text><Text style={styles.muted}>Ask about this design or describe a change. You review changes before they are applied.</Text></View>}
       renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" && styles.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text>{item.role === "assistant" ? <ChatMarkdown content={item.content} /> : <Text selectable style={styles.body}>{item.content}</Text>}</View>}
       ListFooterComponent={<View style={styles.footer}>{!hasSavedAnswer && (view.text || active) ? <View style={styles.bubble}><Text style={styles.author}>Tokito</Text>{view.text ? <ChatMarkdown content={view.text} /> : <Text style={styles.muted}>{view.activity || (sending ? "Waiting to send…" : "Working on your design…")}</Text>}{view.text && active && view.activity ? <View style={styles.activity}><ActivityIndicator size="small" color={tokens.accent} /><Text style={styles.muted}>{view.activity}</Text></View> : null}</View> : null}{view.proposals.map(proposal => <View key={proposal.turnId} style={styles.proposal}><Text style={styles.proposalTitle}>Changes prepared</Text><Text style={styles.muted}>{Array.isArray(proposal.payload.ops) ? `${proposal.payload.ops.length} proposed changes. ` : ""}Review before applying to this design.</Text><PrimaryButton label="Review changes" onPress={onReview} /></View>)}{view.error ? <View style={styles.feedback}><ErrorText>{view.error}</ErrorText></View> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
-    {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); list.current?.scrollToEnd({ animated: true }); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
+    {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); followLatest(true); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
     <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
       {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={!ready || busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
     </View>

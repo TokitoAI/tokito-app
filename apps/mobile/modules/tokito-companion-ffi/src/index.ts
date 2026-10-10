@@ -43,7 +43,8 @@ export type TokitoCompanionFfiNative = {
   openConversations(baseUrl: string, token: string, sessionId: string, owner: string): Promise<string>;
   closeConversations(sessionId: string): Promise<void>;
   conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
-  createConversation(sessionId: string, project: string, design: string, title: string): Promise<string>;
+  newConversationCommand(): string;
+  startConversation(sessionId: string, command: string, project: string, design: string, content: string, version: string, kind: string, activeSheetId: string | null): Promise<string>;
   conversationHistory(sessionId: string, project: string, design: string, thread: string, before: string | null): Promise<string>;
   cachedConversationHistory(sessionId: string, thread: string, after: string): Promise<string>;
   sendConversationMessage(sessionId: string, project: string, design: string, thread: string, content: string, version: string, kind: string, activeSheetId: string | null): Promise<string>;

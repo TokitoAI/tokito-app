@@ -38,8 +38,14 @@ protocol and the native bench entry point.
 Shared Cloud conversation history and generation run journals are server-owned.
 Phone chat opens at the latest turn, but only a reader drag can disable live
 scroll following. Earlier-message pagination preserves the reading anchor;
-the Latest action restores following. Streamed output belongs to its exact
-run ID: stop the previous watch before queueing a new user message, and ignore
+the Latest action restores following.
+Async history hydration follows measured content and viewport sizes rather
+than FlatList's estimated last-row geometry. Preserve visible-item anchors
+only while reading older messages: keeping that anchor during hydration can
+override the initial latest-message scroll. Footer-only streamed output must
+also follow even when there are no saved rows yet.
+Streamed output belongs to its exact run ID: stop the previous watch before
+queueing a new user message, and ignore
 late events for older runs. Tool-separated response rounds preserve completed
 prefaces instead of replacing or duplicating them. Render assistant Markdown
 from tokens into native components, never HTML/WebView execution or remote
@@ -68,6 +74,17 @@ Definitively rejected conversation creation quarantines both the pending thread
 and its dependent draft in one transaction. Keep the unconfirmed conversation
 visible after restart. Explicit draft recovery retains its creation ID/body and
 unblocks that creation; transient network/rate-limit failures retry unchanged.
+New-conversation first sends use one native transaction for the thread, message,
+and immutable command receipt. The UI retains a command UUID and its original
+revision until receipt delivery; a background revision update does not silently
+change an uncertain command. Exact retries return original thread/message/run
+IDs even after acknowledgement. Changed intent conflicts. Confirmed deletion
+removes receipt content but retains a tombstone so retries cannot resurrect it.
+Receipt storage is bounded and fails closed rather than evicting retry identity.
+Run watchers wait locally while the message is queued and surface quarantined
+messages without requesting nonexistent runs. Once acknowledged, an actual
+server run snapshot plus durable event replay recovers acceptance which preceded
+the UI's receipt; never synthesize a running status to fill that race.
 **Why:** a project-specific outage must not starve another project's work, and
 display sorting must never silently reorder authoritative decisions.
 

@@ -16,10 +16,24 @@ export function chatFailure(error: unknown): string {
 export class ConversationScope {
   private revision = 0;
   private drafts = new Map<string | null, string>();
+  private firstMessage: { intent: string; command: string; version: number } | null = null;
   next(): number { return ++this.revision; }
   current(ticket: number): boolean { return ticket === this.revision; }
   ticket(): number { return this.revision; }
   draft(thread: string | null): string { return this.drafts.get(thread) ?? ""; }
   save(thread: string | null, text: string): void { this.drafts.set(thread, text); }
-  reset(): void { this.next(); this.drafts.clear(); }
+  firstMessageCommand(intent: string, allocate: () => string, version = 0): string {
+    if (this.firstMessage?.intent !== intent) this.firstMessage = { intent, command: allocate(), version };
+    return this.firstMessage.command;
+  }
+  firstMessageVersion(command: string): number {
+    if (this.firstMessage?.command !== command) throw new Error("Conversation command was superseded");
+    return this.firstMessage.version;
+  }
+  finishFirstMessage(command: string): boolean {
+    if (this.firstMessage?.command !== command) return false;
+    this.firstMessage = null;
+    return true;
+  }
+  reset(): void { this.next(); this.drafts.clear(); this.firstMessage = null; }
 }

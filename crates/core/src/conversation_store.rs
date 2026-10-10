@@ -5,6 +5,7 @@ use std::{path::Path, sync::Mutex, time::Duration};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{
     conversations::{Run, RunEvent, SendMessage, Thread, ThreadPage},
@@ -14,6 +15,8 @@ use crate::{
 const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PENDING: i64 = 100;
 const MAX_RUN_BYTES: i64 = 64 * 1024 * 1024;
+const MAX_FIRST_RECEIPT_BYTES: i64 = 64 * 1024 * 1024;
+const MAX_FIRST_RECEIPTS: i64 = 100_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingMessage {
@@ -27,6 +30,12 @@ pub struct PendingMessage {
 pub struct QueuedMessage {
     pub message: PendingMessage,
     pub blocked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirstMessageReceipt {
+    pub thread: Thread,
+    pub message: PendingMessage,
 }
 
 pub struct ConversationStore {
@@ -68,6 +77,7 @@ impl ConversationStore {
             .map_err(db_error)?;
         conn.execute_batch("CREATE TABLE IF NOT EXISTS chat_owner (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_outbox (message_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL UNIQUE, body TEXT NOT NULL, error TEXT);
+            CREATE INDEX IF NOT EXISTS chat_outbox_run ON chat_outbox(json_extract(body,'$.request.run_id'));
             CREATE TABLE IF NOT EXISTS chat_runs (run_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, body TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0, event_bytes INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS chat_runs_thread ON chat_runs(thread_id);
             CREATE TABLE IF NOT EXISTS chat_events (run_id TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,seq));
@@ -75,7 +85,9 @@ impl ConversationStore {
             CREATE TABLE IF NOT EXISTS chat_thread_outbox(thread_id TEXT PRIMARY KEY,body TEXT NOT NULL,error TEXT);
             CREATE TABLE IF NOT EXISTS chat_thread_indexes (project_id TEXT NOT NULL, design_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(project_id,design_id));
             CREATE TABLE IF NOT EXISTS chat_recovered_drafts (thread_id TEXT PRIMARY KEY, content TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS chat_messages (thread_id TEXT NOT NULL, seq INTEGER NOT NULL, message_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(thread_id,seq), UNIQUE(thread_id,message_id));")
+            CREATE TABLE IF NOT EXISTS chat_messages (thread_id TEXT NOT NULL, seq INTEGER NOT NULL, message_id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(thread_id,seq), UNIQUE(thread_id,message_id));
+            CREATE TABLE IF NOT EXISTS chat_first_message_receipts(command_id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,intent_digest TEXT NOT NULL,body TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0);
+            CREATE INDEX IF NOT EXISTS chat_first_message_thread ON chat_first_message_receipts(thread_id);")
             .map_err(db_error)?;
         let tx = conn.transaction().map_err(db_error)?;
         let existing: Option<String> = tx
@@ -97,9 +109,17 @@ impl ConversationStore {
     }
 
     pub fn enqueue(&self, message: &PendingMessage) -> Result<(), CloudError> {
-        let body = encode(message)?;
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
+        Self::enqueue_message_tx(&tx, message)?;
+        tx.commit().map_err(db_error)
+    }
+
+    fn enqueue_message_tx(
+        tx: &rusqlite::Transaction<'_>,
+        message: &PendingMessage,
+    ) -> Result<(), CloudError> {
+        let body = encode(message)?;
         let existing: Option<String> = tx
             .query_row(
                 "SELECT body FROM chat_outbox WHERE message_id=?1",
@@ -134,12 +154,20 @@ impl ConversationStore {
             [&message.thread_id],
         )
         .map_err(db_error)?;
-        tx.commit().map_err(db_error)
+        Ok(())
     }
     pub fn enqueue_thread(&self, thread: &Thread) -> Result<(), CloudError> {
-        let body = encode(thread)?;
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
+        Self::enqueue_thread_tx(&tx, thread)?;
+        tx.commit().map_err(db_error)
+    }
+
+    fn enqueue_thread_tx(
+        tx: &rusqlite::Transaction<'_>,
+        thread: &Thread,
+    ) -> Result<(), CloudError> {
+        let body = encode(thread)?;
         let existing: Option<String> = tx
             .query_row(
                 "SELECT body FROM chat_thread_outbox WHERE thread_id=?1",
@@ -171,10 +199,120 @@ impl ConversationStore {
             params![thread.id, body],
         )
         .map_err(db_error)?;
-        tx.commit().map_err(db_error)
+        Ok(())
+    }
+
+    /// One durable command creates a thread and its first message. Receipt identity
+    /// survives acknowledgement, process death, and explicit thread deletion.
+    pub fn enqueue_first_message(
+        &self,
+        command_id: &str,
+        thread: &Thread,
+        message: &PendingMessage,
+    ) -> Result<FirstMessageReceipt, CloudError> {
+        if uuid::Uuid::parse_str(command_id).is_err()
+            || thread.id.is_empty()
+            || thread.id.len() > 128
+            || thread.project_id.trim().is_empty()
+            || thread.project_id.len() > 128
+            || thread.design_id.trim().is_empty()
+            || thread.design_id.len() > 128
+            || thread.title.trim().is_empty()
+            || thread.title.len() > 240
+            || thread.id != message.thread_id
+            || thread.project_id != message.project_id
+            || thread.design_id != message.design_id
+            || message.request.message_id.is_empty()
+            || message.request.message_id.len() > 128
+            || message.request.run_id.is_empty()
+            || message.request.run_id.len() > 128
+            || message.request.device_id.trim().is_empty()
+            || message.request.device_id.len() > 256
+            || message.request.content.trim().is_empty()
+            || message.request.content.len() > 64 * 1024
+            || message.request.base_schematic_version > i64::MAX as u64
+            || message
+                .request
+                .active_sheet_id
+                .as_ref()
+                .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
+        {
+            return Err(CloudError::Unexpected);
+        }
+        let command_id = uuid::Uuid::parse_str(command_id)
+            .map_err(|_| CloudError::Unexpected)?
+            .to_string();
+        // Generated IDs/timestamps are results, not caller intent. All actual
+        // context and request fields participate, including sheet and budget.
+        let mut request =
+            serde_json::to_value(&message.request).map_err(|_| CloudError::Unexpected)?;
+        request
+            .as_object_mut()
+            .ok_or(CloudError::Unexpected)?
+            .remove("message_id");
+        request
+            .as_object_mut()
+            .ok_or(CloudError::Unexpected)?
+            .remove("run_id");
+        let intent = encode(
+            &serde_json::json!({"project":thread.project_id,"design":thread.design_id,"title":thread.title,"request":request}),
+        )?;
+        let digest = format!("{:x}", Sha256::digest(intent.as_bytes()));
+        let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let existing: Option<(String, String, bool)> = tx.query_row(
+            "SELECT intent_digest,body,deleted FROM chat_first_message_receipts WHERE command_id=?1",
+            [&command_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+        ).optional().map_err(db_error)?;
+        if let Some((expected, body, deleted)) = existing {
+            if expected != digest || deleted {
+                return Err(CloudError::Conflict {
+                    current_version: 0,
+                    current_payload: "null".into(),
+                });
+            }
+            return serde_json::from_str(&body).map_err(|_| CloudError::Unexpected);
+        }
+        let receipt = FirstMessageReceipt {
+            thread: thread.clone(),
+            message: message.clone(),
+        };
+        let body = encode(&receipt)?;
+        let (count, bytes): (i64,i64) = tx.query_row(
+            "SELECT COUNT(*),COALESCE(SUM(LENGTH(CAST(body AS BLOB))),0) FROM chat_first_message_receipts", [],
+            |row| Ok((row.get(0)?,row.get(1)?)),
+        ).map_err(db_error)?;
+        // Never evict idempotency identity and silently permit duplicate sends.
+        // Confirmed deletions below remove content, retaining compact tombstones.
+        if count >= MAX_FIRST_RECEIPTS || bytes + body.len() as i64 > MAX_FIRST_RECEIPT_BYTES {
+            return Err(CloudError::Unavailable);
+        }
+        Self::enqueue_thread_tx(&tx, thread)?;
+        Self::enqueue_message_tx(&tx, message)?;
+        tx.execute("INSERT INTO chat_first_message_receipts(command_id,thread_id,intent_digest,body) VALUES(?1,?2,?3,?4)", params![command_id,thread.id,digest,body]).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        Ok(receipt)
     }
     pub fn pending_threads(&self) -> Result<Vec<Thread>, CloudError> {
         self.local_threads(false)
+    }
+
+    /// A watcher must not request a run which is still only a local command.
+    pub fn queued_for_run(&self, run_id: &str) -> Result<Option<QueuedMessage>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let row: Option<(String, bool)> = conn.query_row(
+            "SELECT body,error IS NOT NULL FROM chat_outbox WHERE json_extract(body,'$.request.run_id')=?1",
+            [run_id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(db_error)?;
+        row.map(|(body, blocked)| {
+            Ok(QueuedMessage {
+                message: serde_json::from_str(&body).map_err(|_| CloudError::Unexpected)?,
+                blocked,
+            })
+        })
+        .transpose()
     }
     /// Includes rejected creations so offline/recovery navigation retains them.
     pub fn unconfirmed_threads(&self) -> Result<Vec<Thread>, CloudError> {
@@ -621,6 +759,11 @@ impl ConversationStore {
             .map_err(db_error)?;
         tx.execute("DELETE FROM chat_threads WHERE thread_id=?1", [thread_id])
             .map_err(db_error)?;
+        tx.execute(
+            "UPDATE chat_first_message_receipts SET body='',deleted=1 WHERE thread_id=?1",
+            [thread_id],
+        )
+        .map_err(db_error)?;
         let indexes = {
             let mut stmt = tx
                 .prepare("SELECT project_id,design_id,body FROM chat_thread_indexes")
@@ -778,6 +921,230 @@ mod tests {
     }
     fn store() -> ConversationStore {
         ConversationStore::init(Connection::open_in_memory().unwrap(), "account").unwrap()
+    }
+
+    fn first_thread() -> Thread {
+        Thread {
+            id: "t".into(),
+            project_id: "p".into(),
+            design_id: "d".into(),
+            title: "Draft".into(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn first_message_commits_every_record_and_exact_replay_keeps_original_ids() {
+        let store = store();
+        let command = uuid::Uuid::new_v4().to_string();
+        let first = store
+            .enqueue_first_message(&command, &first_thread(), &pending())
+            .unwrap();
+        assert_eq!(store.pending_threads().unwrap().len(), 1);
+        assert_eq!(store.pending().unwrap().len(), 1);
+        let mut candidate_thread = first_thread();
+        candidate_thread.id = "retry-generated-thread".into();
+        candidate_thread.created_at = 99;
+        let mut candidate = pending();
+        candidate.thread_id = candidate_thread.id.clone();
+        candidate.request.message_id = "retry-generated-message".into();
+        candidate.request.run_id = "retry-generated-run".into();
+        let replay = store
+            .enqueue_first_message(&command.to_uppercase(), &candidate_thread, &candidate)
+            .unwrap();
+        assert_eq!(encode(&first).unwrap(), encode(&replay).unwrap());
+        assert_eq!(store.pending_threads().unwrap().len(), 1);
+        assert_eq!(store.pending().unwrap().len(), 1);
+        for change in ["content", "revision", "sheet", "budget", "scope"] {
+            let mut altered = pending();
+            let mut thread = first_thread();
+            match change {
+                "content" => altered.request.content = "different".into(),
+                "revision" => altered.request.base_schematic_version = 3,
+                "sheet" => altered.request.active_sheet_id = Some(uuid::Uuid::new_v4().to_string()),
+                "budget" => altered.request.budget = json!({"max_iterations":1}),
+                _ => {
+                    thread.project_id = "other".into();
+                    altered.project_id = "other".into();
+                }
+            }
+            assert!(matches!(
+                store.enqueue_first_message(&command, &thread, &altered),
+                Err(CloudError::Conflict { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn failed_first_message_rolls_back_thread_and_receipt() {
+        let store = store();
+        store.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_message BEFORE INSERT ON chat_outbox BEGIN SELECT RAISE(ABORT,'injected storage failure'); END;").unwrap();
+        assert!(store
+            .enqueue_first_message(
+                &uuid::Uuid::new_v4().to_string(),
+                &first_thread(),
+                &pending()
+            )
+            .is_err());
+        assert!(store.unconfirmed_threads().unwrap().is_empty());
+        assert!(store.cached_tail("p", "d", "t", None).unwrap().is_none());
+        assert!(store.pending().unwrap().is_empty());
+        let count: i64 = store
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM chat_first_message_receipts",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn first_message_capacity_failure_never_leaves_half_a_conversation() {
+        let store = store();
+        for index in 0..MAX_PENDING {
+            let mut message = pending();
+            message.thread_id = format!("existing-thread-{index}");
+            message.request.message_id = format!("existing-message-{index}");
+            message.request.run_id = format!("existing-run-{index}");
+            store.enqueue(&message).unwrap();
+        }
+        assert!(matches!(
+            store.enqueue_first_message(
+                &uuid::Uuid::new_v4().to_string(),
+                &first_thread(),
+                &pending()
+            ),
+            Err(CloudError::Unavailable)
+        ));
+        assert!(store.pending_threads().unwrap().is_empty());
+        assert!(store.cached_tail("p", "d", "t", None).unwrap().is_none());
+        assert_eq!(store.pending().unwrap().len(), MAX_PENDING as usize);
+    }
+
+    #[test]
+    fn first_message_validates_all_context_before_committing() {
+        let store = store();
+        for field in [
+            "command", "scope", "content", "title", "sheet", "revision", "device",
+        ] {
+            let mut thread = first_thread();
+            let mut message = pending();
+            let mut command = uuid::Uuid::new_v4().to_string();
+            match field {
+                "command" => command = "invalid".into(),
+                "scope" => message.design_id = "foreign".into(),
+                "content" => message.request.content = " ".into(),
+                "title" => thread.title = " ".into(),
+                "sheet" => message.request.active_sheet_id = Some("invalid".into()),
+                "revision" => message.request.base_schematic_version = u64::MAX,
+                _ => message.request.device_id.clear(),
+            }
+            assert!(store
+                .enqueue_first_message(&command, &thread, &message)
+                .is_err());
+        }
+        assert!(store.pending_threads().unwrap().is_empty());
+        assert!(store.pending().unwrap().is_empty());
+    }
+
+    #[test]
+    fn receipt_survives_acknowledgement_and_deletion_cannot_resurrect_thread() {
+        let store = store();
+        let command = uuid::Uuid::new_v4().to_string();
+        let first = store
+            .enqueue_first_message(&command, &first_thread(), &pending())
+            .unwrap();
+        store.finish_thread(&first.thread).unwrap();
+        store.acknowledge(&run()).unwrap();
+        assert!(store.pending().unwrap().is_empty());
+        let replay = store
+            .enqueue_first_message(&command, &first_thread(), &pending())
+            .unwrap();
+        assert_eq!(encode(&first).unwrap(), encode(&replay).unwrap());
+        assert!(store.pending().unwrap().is_empty());
+        store.remove_thread("t").unwrap();
+        assert!(matches!(
+            store.enqueue_first_message(&command, &first_thread(), &pending()),
+            Err(CloudError::Conflict { .. })
+        ));
+        let body: String = store
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT body FROM chat_first_message_receipts", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn first_message_restarts_and_concurrent_connections_return_one_receipt() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-chat-first-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let command = uuid::Uuid::new_v4().to_string();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+        let stores: Vec<_> = (0..4)
+            .map(|_| ConversationStore::open(&path, "account").unwrap())
+            .collect();
+        let threads: Vec<_> = stores
+            .into_iter()
+            .enumerate()
+            .map(|(index, store)| {
+                let command = command.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut thread = first_thread();
+                    thread.id = format!("thread-{index}");
+                    let mut message = pending();
+                    message.thread_id = thread.id.clone();
+                    message.request.message_id = format!("message-{index}");
+                    message.request.run_id = format!("run-{index}");
+                    barrier.wait();
+                    store
+                        .enqueue_first_message(&command, &thread, &message)
+                        .unwrap()
+                })
+            })
+            .collect();
+        let receipts: Vec<_> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        for receipt in &receipts {
+            assert_eq!(encode(receipt).unwrap(), encode(&receipts[0]).unwrap());
+        }
+        {
+            let store = ConversationStore::open(&path, "account").unwrap();
+            assert_eq!(store.pending_threads().unwrap().len(), 1);
+            assert_eq!(store.pending().unwrap().len(), 1);
+            let replay = store
+                .enqueue_first_message(&command, &first_thread(), &pending())
+                .unwrap();
+            assert_eq!(encode(&replay).unwrap(), encode(&receipts[0]).unwrap());
+            store
+                .block_thread(&replay.thread.id, "missing_design")
+                .unwrap();
+        }
+        {
+            let store = ConversationStore::open(&path, "account").unwrap();
+            assert!(store.pending().unwrap().is_empty());
+            assert_eq!(store.unconfirmed_threads().unwrap().len(), 1);
+            assert_eq!(
+                store.blocked(&receipts[0].thread.id).unwrap()[0]
+                    .request
+                    .content,
+                "test"
+            );
+        }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

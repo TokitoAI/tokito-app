@@ -2,6 +2,8 @@ import type { TokitoCompanionFfiNative, NativeEventSubscription } from "../../mo
 import { object, string, parseHistory, parseJson, parseRun, parseThread, type ChatHistory, type ChatRun, type ChatThread } from "./conversationModel";
 
 let instance = 0;
+/** At most 240 UTF-8 bytes, without splitting a Unicode code point. */
+export function conversationTitle(content: string): string { return Array.from(content).slice(0, 60).join(""); }
 /** One native session per signed-in project view; sign-out disposes all workers. */
 export class ConversationClient {
   constructor(private readonly native: TokitoCompanionFfiNative) {}
@@ -34,8 +36,18 @@ export class ConversationClient {
     if (!Array.isArray(value) || value.length > 100) throw new Error("Invalid conversation list");
     return value.map(parseThread);
   }
-  async create(project: string, design: string, title: string): Promise<ChatThread> {
-    return parseThread(parseJson(await this.native.createConversation(this.id, project, design, title)));
+  newCommand(): string { return this.native.newConversationCommand(); }
+  async startChat(command: string, project: string, design: string, content: string, version: number, activeSheetId: string | null): Promise<{ thread: ChatThread; message: Record<string, unknown> }> {
+    if (!Number.isSafeInteger(version) || version < 0) throw new Error("Refresh the design before sending");
+    const receipt = object(parseJson(await this.native.startConversation(this.id, command, project, design, content, String(version), "planner", activeSheetId)));
+    const title = conversationTitle(content);
+    const thread = parseThread(receipt.thread), message = object(receipt.message), request = object(message.request);
+    if (thread.project_id !== project || thread.design_id !== design || thread.title !== title
+      || message.project_id !== project || message.design_id !== design || message.thread_id !== thread.id
+      || request.content !== content || request.base_schematic_version !== version || request.kind !== "planner"
+      || (request.active_sheet_id ?? null) !== activeSheetId) throw new Error("Conversation receipt does not match the saved message");
+    if (!string(request.message_id) || !string(request.run_id) || !thread.id) throw new Error("Conversation receipt has no message identity");
+    return { thread, message };
   }
   async history(project: string, design: string, thread: string, before: number | null = null): Promise<ChatHistory> {
     const page = parseHistory(await this.native.conversationHistory(this.id, project, design, thread, before === null ? null : String(before)));

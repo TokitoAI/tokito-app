@@ -182,8 +182,12 @@ class TokitoCompanionFfiModule : Module() {
     AsyncFunction("conversationThreads") { sessionId: String, project: String, design: String ->
       runFfi { conversation(sessionId).listThreads(project, design) }
     }
-    AsyncFunction("createConversation") { sessionId: String, project: String, design: String, title: String ->
-      runFfi { conversation(sessionId).createThread(project, design, title) }
+    Function("newConversationCommand") { UUID.randomUUID().toString() }
+    AsyncFunction("startConversation") { sessionId: String, command: String, project: String, design: String, content: String, version: String, kind: String, activeSheetId: String? ->
+      runFfi {
+        val title = content.substring(0, content.offsetByCodePoints(0, minOf(60, content.codePointCount(0, content.length))))
+        conversation(sessionId).startConversation(command, project, design, title, content, version.toULong(), kind, activeSheetId)
+      }
     }
     AsyncFunction("conversationHistory") { sessionId: String, project: String, design: String, thread: String, before: String? ->
       runFfi { conversation(sessionId).history(project, design, thread, before?.toULong()) }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TokitoCompanionFfiNative } from "../../modules/tokito-companion-ffi/src";
-import { ConversationClient } from "./conversationClient";
+import { ConversationClient, conversationTitle } from "./conversationClient";
 import { chatFailure, ConversationScope } from "./conversationState";
 
 test("explicit sheet context crosses the native boundary unchanged", async () => {
@@ -21,6 +21,48 @@ test("ordinary chat uses the planner for both empty and existing schematics", as
     ["p", "d", "t", "Explain LED current", "0", "planner", null],
     ["p", "d", "t", "Explain LED current", "9", "planner", "power"],
   ]);
+});
+
+test("atomic first message retains command identity after an uncertain bridge response", async () => {
+  const command = "85e67cda-1ca0-4848-9d43-c2509de069b5";
+  const scope = new ConversationScope(); let allocations = 0; let attempts = 0; const calls: unknown[][] = [];
+  const receipt = { thread: { id: "t", title: "First", project_id: "p", design_id: "d" }, message: { thread_id: "t", project_id: "p", design_id: "d", request: { message_id: "m", run_id: "r", content: "First", base_schematic_version: 4, kind: "planner", active_sheet_id: null } } };
+  const native = { startConversation: async (...args: unknown[]) => {
+    calls.push(args); if (++attempts === 1) throw new Error("bridge response interrupted after commit");
+    return JSON.stringify(receipt);
+  } } as unknown as TokitoCompanionFfiNative;
+  const client = new ConversationClient(native);
+  const allocate = () => { allocations++; return command; };
+  const key = JSON.stringify(["p", "d", "Draft", "First", 4, null]);
+  const first = scope.firstMessageCommand(key, allocate, 4);
+  await assert.rejects(client.startChat(first, "p", "d", "First", 4, null));
+  scope.next(); // Navigation does not turn an uncertain command into a new send.
+  const retry = scope.firstMessageCommand(key, allocate, 5);
+  assert.equal(first, retry); assert.equal(allocations, 1);
+  assert.equal(scope.firstMessageVersion(retry), 4, "background revision updates must not change an uncertain command");
+  assert.equal((await client.startChat(retry, "p", "d", "First", 4, null)).message.request !== undefined, true);
+  assert.deepEqual(calls[0], calls[1]); assert.equal(calls[0][1], command);
+  assert.equal(scope.finishFirstMessage(command), true);
+  const next = scope.firstMessageCommand(key, () => "next-command"); assert.equal(next, "next-command");
+  assert.equal(scope.finishFirstMessage(command), false);
+});
+
+test("atomic receipts reject foreign context and changed content without consuming the draft", async () => {
+  const message = { thread_id: "t", project_id: "p", design_id: "d", request: { message_id: "m", run_id: "r", content: "First", base_schematic_version: 4, kind: "planner", active_sheet_id: null } };
+  for (const replacement of [{ ...message, project_id: "foreign" }, { ...message, request: { ...message.request, content: "other" } }, { ...message, request: { ...message.request, active_sheet_id: "other" } }]) {
+    const native = { startConversation: async () => JSON.stringify({ thread: { id: "t", title: "First", project_id: "p", design_id: "d" }, message: replacement }) } as unknown as TokitoCompanionFfiNative;
+    await assert.rejects(new ConversationClient(native).startChat("command", "p", "d", "First", 4, null), /does not match/);
+  }
+  const scope = new ConversationScope(); scope.save(null, "First");
+  scope.firstMessageCommand("old", () => "old-command"); scope.firstMessageCommand("new", () => "new-command");
+  assert.equal(scope.finishFirstMessage("old-command"), false); assert.equal(scope.draft(null), "First");
+  scope.reset(); assert.equal(scope.firstMessageCommand("new", () => "after-account-change"), "after-account-change");
+});
+
+test("conversation titles fit native UTF-8 limits without splitting emoji", () => {
+  const title = conversationTitle("😀".repeat(100));
+  assert.equal(Array.from(title).length, 60); assert.equal(Buffer.byteLength(title, "utf8"), 240);
+  assert.equal(conversationTitle("Short title"), "Short title");
 });
 
 test("chat distinguishes missing deployment from connectivity and authentication", () => {

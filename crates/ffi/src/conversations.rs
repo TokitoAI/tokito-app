@@ -88,6 +88,58 @@ impl ConversationSession {
             Ok(())
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_message(
+        &self,
+        project: String,
+        design: String,
+        thread: String,
+        content: String,
+        base_version: u64,
+        kind: String,
+        active_sheet_id: Option<String>,
+    ) -> Result<PendingMessage, CompanionError> {
+        if content.trim().is_empty()
+            || content.len() > 64 * 1024
+            || project.trim().is_empty()
+            || project.len() > 128
+            || design.trim().is_empty()
+            || design.len() > 128
+            || thread.trim().is_empty()
+            || thread.len() > 128
+            || base_version > i64::MAX as u64
+            || active_sheet_id
+                .as_ref()
+                .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
+        {
+            return Err(CompanionError::Unexpected);
+        }
+        let kind = match kind.as_str() {
+            "planner" => RunKind::Planner,
+            "schematic" => RunKind::Schematic,
+            "bom" => RunKind::Bom,
+            _ => return Err(CompanionError::Unexpected),
+        };
+        Ok(PendingMessage {
+            project_id: project,
+            design_id: design,
+            thread_id: thread,
+            request: SendMessage {
+                message_id: uuid::Uuid::new_v4().to_string(),
+                run_id: uuid::Uuid::new_v4().to_string(),
+                device_id: self.device.clone(),
+                content,
+                base_schematic_version: base_version,
+                active_sheet_id,
+                kind,
+                snapshot: None,
+                references: vec![],
+                selection: None,
+                budget: serde_json::json!({"max_iterations":10,"max_llm_tokens":0,"max_scrapes":12,"max_catalog_reads":16,"max_wall_clock_ms":60000,"max_mcp_context_tokens":4000,"max_wall_clock_extensions":1,"wall_clock_extension_ms":45000}),
+            },
+        })
+    }
 }
 
 #[uniffi::export]
@@ -133,32 +185,54 @@ impl ConversationSession {
         serde_json::to_string(&threads).map_err(|_| CompanionError::Unexpected)
     }
 
-    pub fn create_thread(
+    /// The caller retains command_id until this durable receipt is delivered.
+    /// Retrying must use the identical intent; no transport call occurs here.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_conversation(
         &self,
+        command_id: String,
         project: String,
         design: String,
         title: String,
+        content: String,
+        base_version: u64,
+        kind: String,
+        active_sheet_id: Option<String>,
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        let id = uuid::Uuid::new_v4().to_string();
-        if title.trim().is_empty() || title.len() > 240 || project.is_empty() || design.is_empty() {
+        if title.trim().is_empty()
+            || title.len() > 240
+            || uuid::Uuid::parse_str(&command_id).is_err()
+        {
             return Err(CompanionError::Unexpected);
         }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
+            .map_err(|_| CompanionError::Unexpected)?
             .as_secs() as i64;
         let thread = api::Thread {
-            id,
-            project_id: project,
-            design_id: design,
+            id: uuid::Uuid::new_v4().to_string(),
+            project_id: project.clone(),
+            design_id: design.clone(),
             title,
             created_at: now,
             updated_at: now,
         };
-        self.store.enqueue_thread(&thread)?;
+        let message = self.prepare_message(
+            project,
+            design,
+            thread.id.clone(),
+            content,
+            base_version,
+            kind,
+            active_sheet_id,
+        )?;
+        let receipt = self
+            .store
+            .enqueue_first_message(&command_id, &thread, &message)?;
+        let serialized = serde_json::to_string(&receipt).map_err(|_| CompanionError::Unexpected)?;
         let _ = self.wake.try_send(());
-        serde_json::to_string(&thread).map_err(|_| CompanionError::Unexpected)
+        Ok(serialized)
     }
 
     pub fn history(
@@ -227,33 +301,15 @@ impl ConversationSession {
         active_sheet_id: Option<String>,
     ) -> Result<String, CompanionError> {
         self.ensure_open()?;
-        if content.trim().is_empty() || content.len() > 64 * 1024 {
-            return Err(CompanionError::Unexpected);
-        }
-        let kind = match kind.as_str() {
-            "planner" => RunKind::Planner,
-            "schematic" => RunKind::Schematic,
-            "bom" => RunKind::Bom,
-            _ => return Err(CompanionError::Unexpected),
-        };
-        let message = PendingMessage {
-            project_id: project,
-            design_id: design,
-            thread_id: thread,
-            request: SendMessage {
-                message_id: uuid::Uuid::new_v4().to_string(),
-                run_id: uuid::Uuid::new_v4().to_string(),
-                device_id: self.device.clone(),
-                content,
-                base_schematic_version: base_version,
-                active_sheet_id,
-                kind,
-                snapshot: None,
-                references: vec![],
-                selection: None,
-                budget: serde_json::json!({"max_iterations":10,"max_llm_tokens":0,"max_scrapes":12,"max_catalog_reads":16,"max_wall_clock_ms":60000,"max_mcp_context_tokens":4000,"max_wall_clock_extensions":1,"wall_clock_extension_ms":45000}),
-            },
-        };
+        let message = self.prepare_message(
+            project,
+            design,
+            thread,
+            content,
+            base_version,
+            kind,
+            active_sheet_id,
+        )?;
         self.store.enqueue(&message)?;
         let _ = self.wake.try_send(());
         serde_json::to_string(&message).map_err(|_| CompanionError::Unexpected)
@@ -565,6 +621,28 @@ async fn watch_run(
         if *stop.borrow() || *session_stop.borrow() {
             return;
         }
+        match store.queued_for_run(&run_id) {
+            Ok(Some(queued)) if queued.blocked => {
+                emit(
+                    listener.as_ref(),
+                    serde_json::json!({"type":"blocked","message":queued.message,"reason":"queued_message_rejected"}),
+                );
+                return;
+            }
+            Ok(Some(_)) => {
+                tokio::select! { _ = stop.changed() => return, _ = session_stop.changed() => return,
+                _ = tokio::time::sleep(Duration::from_millis(200)) => {} }
+                continue;
+            }
+            Ok(None) => {}
+            Err(_) => {
+                emit(
+                    listener.as_ref(),
+                    serde_json::json!({"type":"storage_error"}),
+                );
+                return;
+            }
+        }
         let stream_stop = stop.clone();
         let result = tokio::select! {
             _ = stop.changed() => return, _ = session_stop.changed() => return,
@@ -576,6 +654,7 @@ async fn watch_run(
                 }
                 let run = api::get_run(&base, &token, &run_id).await?;
                 store.acknowledge(&run)?;
+                emit(listener.as_ref(), serde_json::json!({"type":"run_snapshot","run":run}));
                 let mut cursor = store.cursor(&run_id)?;
                 api::stream_run(&base, &token, &run_id, &mut cursor, stream_stop, |event| {
                     store.apply_event(&run_id, &event)?;
@@ -641,6 +720,188 @@ mod tests {
                 .unwrap()
                 .push(serde_json::from_str(&payload_json).unwrap());
         }
+    }
+
+    #[tokio::test]
+    async fn atomic_first_message_is_durable_idempotent_and_waits_for_thread_ack() {
+        let server = MockServer::start().await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        let (stop, _) = watch::channel(false);
+        let (wake, wake_rx) = mpsc::channel(1);
+        let listener = Arc::new(Listener::default());
+        let session = ConversationSession {
+            base: server.uri(),
+            token: "token".into(),
+            device: "device".into(),
+            store: store.clone(),
+            stop: stop.clone(),
+            wake,
+            listener: listener.clone(),
+            identity_path: String::new(),
+        };
+        let command = uuid::Uuid::new_v4().to_string();
+        let enqueue = || {
+            session
+                .start_conversation(
+                    command.clone(),
+                    "p".into(),
+                    "d".into(),
+                    "Draft".into(),
+                    "Keep my first message".into(),
+                    4,
+                    "planner".into(),
+                    None,
+                )
+                .unwrap()
+        };
+        let saved = enqueue();
+        assert_eq!(
+            saved,
+            enqueue(),
+            "lost bridge response must not allocate new IDs"
+        );
+        let receipt: tokito_companion_core::conversation_store::FirstMessageReceipt =
+            serde_json::from_str(&saved).unwrap();
+        assert_eq!(store.pending_threads().unwrap().len(), 1);
+        assert_eq!(store.pending().unwrap().len(), 1);
+        assert!(session
+            .start_conversation(
+                command.clone(),
+                "p".into(),
+                "d".into(),
+                "Draft".into(),
+                "different intent".into(),
+                4,
+                "planner".into(),
+                None
+            )
+            .is_err());
+        Mock::given(method("POST")).and(path("/v1/companion/devices"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"device","label":"test","platform":"android","last_seen_at":1}))).mount(&server).await;
+        let thread_path = format!("/v1/projects/p/designs/d/threads/{}", receipt.thread.id);
+        Mock::given(method("PUT"))
+            .and(path(&thread_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&receipt.thread)
+                    .set_delay(Duration::from_millis(300)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let message_path = format!("{thread_path}/messages");
+        let expected_message = receipt.message.request.message_id.clone();
+        let expected_run = receipt.message.request.run_id.clone();
+        let expected_thread = receipt.thread.id.clone();
+        Mock::given(method("POST")).and(path(&message_path))
+            .respond_with(move |request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(body["message_id"], expected_message);
+                assert_eq!(body["run_id"], expected_run);
+                assert_eq!(body["content"], "Keep my first message");
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"run_id":body["run_id"],"message_id":body["message_id"],"project_id":"p","design_id":"d","thread_id":expected_thread,"status":"running","created_at":1,"updated_at":1}))
+            }).expect(1).mount(&server).await;
+        let worker = tokio::spawn(outbox(
+            server.uri(),
+            "token".into(),
+            ("device".into(), String::new()),
+            store.clone(),
+            stop.clone(),
+            wake_rx,
+            listener,
+        ));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if server
+                    .received_requests()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|request| request.url.path() == thread_path)
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(store.thread_pending(&receipt.thread.id).unwrap());
+        assert!(!server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|request| request.url.path() == message_path));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while store
+                .queued_for_thread(&receipt.thread.id)
+                .unwrap()
+                .is_some()
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        // A response can arrive after the outbox has already acknowledged both
+        // operations. Retrying the original UI command must not enqueue again.
+        assert_eq!(saved, enqueue());
+        assert!(store.pending().unwrap().is_empty());
+        stop.send_replace(true);
+        worker.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn queued_run_watch_waits_locally_and_quarantine_stops_it_without_http() {
+        let server = MockServer::start().await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        let (session_stop, _) = watch::channel(false);
+        let (stop, receiver) = watch::channel(false);
+        let listener = Arc::new(Listener::default());
+        let message = PendingMessage {
+            project_id: "p".into(),
+            design_id: "d".into(),
+            thread_id: "t".into(),
+            request: SendMessage {
+                message_id: "m".into(),
+                run_id: "r".into(),
+                device_id: "device".into(),
+                content: "Keep my draft".into(),
+                base_schematic_version: 0,
+                active_sheet_id: None,
+                kind: RunKind::Planner,
+                snapshot: None,
+                references: vec![],
+                selection: None,
+                budget: serde_json::json!({}),
+            },
+        };
+        store.enqueue(&message).unwrap();
+        let watcher = tokio::spawn(watch_run(
+            server.uri(),
+            "token".into(),
+            String::new(),
+            "r".into(),
+            0,
+            store.clone(),
+            session_stop,
+            receiver,
+            listener.clone(),
+        ));
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(server.received_requests().await.unwrap().is_empty());
+        store.block("m", "stale_revision").unwrap();
+        tokio::time::timeout(Duration::from_secs(2), watcher)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(server.received_requests().await.unwrap().is_empty());
+        let events = listener.0.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["type"], "blocked");
+        assert_eq!(events[0]["message"]["request"]["content"], "Keep my draft");
+        drop(stop);
     }
 
     #[tokio::test]
