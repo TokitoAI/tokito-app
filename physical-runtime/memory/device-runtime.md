@@ -246,6 +246,14 @@ responses still fail closed. Playback is not factual-quality qualification.
 Signed embedding bundles may include the validated SQLite reference corpus and
 its manifest. Bench reference questions use that admitted corpus and the same
 384-dimensional encoder; they do not require a GLB or camera registration.
+Every microphone and typed question searches the full admitted corpus through
+the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
+Quoted previous questions add separately retrieved follow-up context; they
+cannot displace the current question's ranked results. Source descriptions and
+other records share the bounded fact budget, retaining their original citations.
+**Why:** ASR spelling and unknown reference names must not bypass RAG and enter
+the older no-source path. Semantic reference retrieval is not physical board
+identification; it grants no AR targets or observed identity.
 Qwen selects zero to four existing fact IDs in a single `facts` array. Native
 code reconstructs speech from the cited source values. The selector cannot
 authorize component highlights or invent physical identity.

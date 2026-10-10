@@ -76,6 +76,11 @@ Natural-language confidence is never a substitute for a typed result.
     source/context revision and rejects ambiguous matches. Embedding artifacts
     undergo the same signed inventory admission as other local models; Qwen's
     generator and its backend are independent from the embedding encoder.
+15. Reference dialogue searches the complete admitted corpus for both final
+    microphone transcripts and typed questions. Board-name aliases cannot gate
+    retrieval. Results remain quoted, source-cited reference facts, never proof
+    of a physical board's identity. Qwen may select relevant source facts across
+    references but must not substitute an undocumented model or variant.
 
 ## 3. Runtime boundary
 

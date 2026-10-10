@@ -543,17 +543,11 @@ class MainActivity : AppCompatActivity() {
         val caller = coroutineContext
         val reference = boardReference
         val dataset = knowledgePackage
-        if (dataset?.mentionsUnsupportedVariant(utterance) == true) {
-            referenceScope = null
-            return "That board variant is not in the current reference library. I won't substitute a different model's specifications."
-        }
-        if (dataset != null && dataset.matchingScopes(utterance).size > 1) {
-            return "Which board reference should I use? Please name one board at a time."
-        }
-        val namedScope = dataset?.resolve(utterance)
-        if (namedScope != null) referenceScope = LocalBoardRag.Binding(namedScope.boardId,
-            dataset.store.corpusRevision, "reference:$epoch:${namedScope.boardId}", Long.MAX_VALUE)
-        if (referenceScope != null) {
+        if (dataset != null) {
+            // No name/alias allow-list gates microphone or typed questions.
+            // Semantic retrieval searches the admitted corpus, not camera identity.
+            referenceScope = LocalBoardRag.Binding(null,
+                dataset.store.corpusRevision, "reference-library:$epoch", Long.MAX_VALUE)
             val rag = requireNotNull(localRag) { "Local reference reasoning is not ready. Install the knowledge and conversation bundles." }
             val result = heavyWork.withLock { rag.answer(utterance) }
             caller.ensureActive()

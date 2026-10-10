@@ -65,14 +65,16 @@ class BoardKnowledgeStore(
         val similarity: Double,
     )
 
-    /** Board selection is required; ANN/global nearest-neighbour cannot choose a board. */
+    /** Reference search is not physical identification; null searches the complete admitted corpus. */
     @Synchronized
-    fun retrieve(boardId: String, query: FloatArray, limit: Int = 6): List<Evidence> {
-        require(boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl))
+    fun retrieve(boardId: String?, query: FloatArray, limit: Int = 6): List<Evidence> {
+        require(boardId == null || (boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl)))
         require(limit in 1..12)
         val normalized = SemanticDesignSearch.normalized(query, 384)
         val top = mutableListOf<Evidence>()
-        database.rawQuery("SELECT id,component_id,source_json,vector,vector_sha256 FROM records WHERE board_id=? ORDER BY id", arrayOf(boardId)).use { rows ->
+        val sql = "SELECT id,component_id,source_json,vector,vector_sha256,board_id FROM records" +
+            (if (boardId == null) "" else " WHERE board_id=?") + " ORDER BY id"
+        database.rawQuery(sql, boardId?.let { arrayOf(it) }).use { rows ->
             var count = 0
             while (rows.moveToNext()) {
                 require(++count <= 16384)
@@ -86,12 +88,13 @@ class BoardKnowledgeStore(
                 val source = rows.getString(2)
                 require(source.toByteArray(Charsets.UTF_8).size <= 128 * 1024)
                 val record = JSONObject(source)
-                require(record.getString("record_id") == rows.getString(0) && record.getString("board_id") == boardId)
+                val sourceBoard = rows.getString(5)
+                require(record.getString("record_id") == rows.getString(0) && record.getString("board_id") == sourceBoard)
                 require(record.getString("component_id") == rows.getString(1))
                 require(record.getString("authority") == "source_design_not_observed_component")
                 require(!record.getBoolean("physical_identity_proven") && record.isNull("ar_node_id"))
                 val score = vector.indices.sumOf { vector[it].toDouble() * normalized[it] }
-                top.add(Evidence(rows.getString(0), boardId, rows.getString(1), record.getString("reference_designator"), source, score))
+                top.add(Evidence(rows.getString(0), sourceBoard, rows.getString(1), record.getString("reference_designator"), source, score))
                 top.sortWith(compareByDescending<Evidence> { it.similarity }.thenBy { it.recordId })
                 if (top.size > limit) top.removeAt(top.lastIndex)
             }

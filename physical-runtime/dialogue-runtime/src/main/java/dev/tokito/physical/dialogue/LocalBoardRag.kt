@@ -24,14 +24,14 @@ class LocalBoardRag(
         }
     }
     data class Binding(
-        val boardId: String,
+        val boardId: String?,
         val corpusRevision: String,
         /** Revision of the selected reference scope, not an AR registration. */
         val scopeRevision: String,
         val expiresAtElapsedMs: Long,
     ) {
         init {
-            require(boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl))
+            require(boardId == null || (boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl)))
             require(corpusRevision.matches(Regex("[a-f0-9]{64}")))
             require(scopeRevision.isNotBlank() && scopeRevision.length <= 256 && scopeRevision.none(Char::isISOControl))
             require(expiresAtElapsedMs > 0)
@@ -55,7 +55,13 @@ class LocalBoardRag(
         val evidence = withContext(Dispatchers.IO) {
             coroutineContext.ensureActive()
             requireCurrent()
-            store.retrieve(binding.boardId, encoder.embed(utterance)).also {
+            // Retrieve across the library for every new question. Quoted prior
+            // questions provide follow-up context, never evidence or routing.
+            val current = store.retrieve(binding.boardId, encoder.embed(utterance))
+            val prior = history.lastOrNull { it.role == DialogueRole.USER }?.let {
+                store.retrieve(binding.boardId, encoder.embed(it.text), limit = 3)
+            }.orEmpty()
+            (current + prior).distinctBy { it.recordId }.take(12).also {
                 coroutineContext.ensureActive()
                 requireCurrent()
             }

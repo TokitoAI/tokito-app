@@ -5,27 +5,27 @@ import org.json.JSONObject
 
 /** Qwen selects cited source facts; generated text cannot become engineering evidence. */
 class KnowledgeSelectionRequest(
-    val boardId: String,
+    val boardId: String?,
     val corpusRevision: String,
     evidence: List<BoardKnowledgeStore.Evidence>,
     private val history: List<DialogueTurn> = emptyList(),
     private val repairAttempt: Boolean = false,
 ) {
     data class Fact(val id: String, val recordId: String, val componentId: String, val reference: String,
-                    val pointer: String, val value: String, val sourceCitation: String)
+                    val pointer: String, val value: String, val sourceCitation: String, val sourceBoardId: String)
     val facts: List<Fact>
 
     init {
         require(history.size <= 4 && history.all { it.text.length in 1..1024 && it.text.none { c -> c.isISOControl() && c !in "\n\r\t" } })
-        require(boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl))
+        require(boardId == null || (boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl)))
         require(corpusRevision.matches(Regex("[a-f0-9]{64}")))
-        require(evidence.size in 1..12 && evidence.all { it.boardId == boardId })
+        require(evidence.size in 1..12 && evidence.all { boardId == null || it.boardId == boardId })
         require(evidence.map { it.recordId }.distinct().size == evidence.size)
         val collected = mutableListOf<Fact>()
         evidence.forEach { item ->
             val source = JSONObject(item.sourceJson)
             require(source.getString("record_id") == item.recordId && source.getString("component_id") == item.componentId)
-            require(source.getString("board_id") == boardId && source.getString("authority") == "source_design_not_observed_component")
+            require(source.getString("board_id") == item.boardId && source.getString("authority") == "source_design_not_observed_component")
             val citation = source.getJSONObject("citation").toString()
             fun collect(value: Any?, pointer: String, depth: Int) {
                 require(depth <= 16)
@@ -39,7 +39,7 @@ class KnowledgeSelectionRequest(
                         if (value is Number) require(value.toDouble().isFinite())
                         val text = value.toString()
                         if (text.isNotBlank() && text.length <= 240 && text.none(Char::isISOControl)) {
-                            collected.add(Fact("f${collected.size}", item.recordId, item.componentId, item.reference, pointer, text, citation))
+                            collected.add(Fact("f${collected.size}", item.recordId, item.componentId, item.reference, pointer, text, citation, item.boardId))
                         }
                     }
                 }
@@ -48,19 +48,26 @@ class KnowledgeSelectionRequest(
             collect(source.getJSONObject("facts"), "/facts", 0)
         }
         require(collected.isNotEmpty())
-        // Bound by source order, preserving full fact pointers/citations. The
-        // excluded facts cannot be selected by the generator or claimed as read.
-        facts = collected.take(40)
+        // Each ranked source gets a share of the bounded context: a verbose
+        // BOM record must not evict every other retrieved source/description.
+        val groups = collected.groupBy { it.recordId }.values.map { group ->
+            group.sortedBy { if (it.pointer == "/facts/description") 0 else 1 }
+        }
+        facts = (0 until (groups.maxOfOrNull { it.size } ?: 0)).flatMap { index ->
+            groups.mapNotNull { it.getOrNull(index) }
+        }.take(40).mapIndexed { index, fact -> fact.copy(id = "f$index") }
     }
 
     internal fun prompt(utterance: String): String = JSONObject()
-        .put("question", utterance).put("board_id", boardId).put("corpus_revision", corpusRevision)
+        .put("question", utterance).put("board_id", boardId ?: JSONObject.NULL).put("corpus_revision", corpusRevision)
+        .put("reference_intent", "A name-only question asks for its definition. Spoken spacing in names is not a different reference. Never substitute a related model or variant absent from the sources.")
         .put("source_authority", "reference_design_not_verified_physical_identity")
         .put("response_format", "Return only {\"facts\":[\"f0\"]}, using zero to four supplied fact IDs. Empty facts means insufficient evidence. Do not copy fact objects or values.")
         .put("allowed_fact_ids", JSONArray(facts.map { it.id }))
         .put("correction", if (repairAttempt) "The previous selection failed validation. Select only exact IDs from allowed_fact_ids. Read the supplied descriptions; return one JSON object with only facts." else JSONObject.NULL)
         .put("history_not_evidence", JSONArray(history.map { JSONObject().put("role", it.role.name).put("text", it.text) }))
         .put("facts", JSONArray(facts.map { fact -> JSONObject().put("id", fact.id)
+            .put("source_board_id", fact.sourceBoardId).put("reference", fact.reference)
             .put("component_id", fact.componentId).put("field", fact.pointer).put("value", fact.value) })).toString()
 
     internal fun parse(raw: String): DialogueOutcome.Response {
@@ -113,6 +120,8 @@ class KnowledgeSelectionRequest(
             The supplied source facts are authoritative for this reference even if its name
             is unfamiliar. For a definition question, select the supplied description that
             defines the reference. Do not abstain because you do not recognize its name.
+            A bare name asks for a definition. References may be compared if both are supplied.
+            Do not substitute a family's description for an undocumented specific variant.
             Return exactly one JSON object: {"facts":["f0"]}.
             The facts array contains zero to four supplied fact ID strings, not fact objects,
             values or component IDs. If the evidence cannot answer, return {"facts":[]}.

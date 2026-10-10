@@ -10,22 +10,6 @@ class BoardKnowledgePackage private constructor(
 ) : AutoCloseable {
     data class Scope(val boardId: String, val aliases: List<String>)
 
-    fun resolve(question: String): Scope? {
-        return matchingScopes(question).singleOrNull()
-    }
-
-    fun matchingScopes(question: String): List<Scope> {
-        return matchingReferenceScopes(scopes, question)
-    }
-
-    fun mentionsUnsupportedVariant(question: String): Boolean = matchingScopes(question).isEmpty() && scopes.any { scope ->
-        scope.aliases.any { alias ->
-            val words = alias.lowercase(java.util.Locale.ROOT).split(Regex("[^a-z0-9]+")).filter(String::isNotEmpty)
-            val pattern = words.joinToString("[-_\\s]+") { Regex.escape(it) }
-            Regex("(?<![a-z0-9-])$pattern[-_][a-z0-9]+", RegexOption.IGNORE_CASE).containsMatchIn(question)
-        }
-    }
-
     override fun close() = store.close()
 
     companion object {
@@ -56,13 +40,4 @@ class BoardKnowledgePackage private constructor(
             return BoardKnowledgePackage(store, scopes)
         }
     }
-}
-
-internal fun matchingReferenceScopes(scopes: List<BoardKnowledgePackage.Scope>, question: String): List<BoardKnowledgePackage.Scope> {
-    val query = question.lowercase(java.util.Locale.ROOT)
-    return scopes.filter { scope -> scope.aliases.any { alias ->
-        val words = alias.lowercase(java.util.Locale.ROOT).split(Regex("[^a-z0-9]+")).filter(String::isNotEmpty)
-        val pattern = words.joinToString("[-_\\s]+") { Regex.escape(it) }
-        Regex("(?<![a-z0-9-])$pattern(?![a-z0-9-])").containsMatchIn(query)
-    } }
 }
