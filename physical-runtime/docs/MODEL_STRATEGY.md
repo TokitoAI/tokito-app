@@ -252,8 +252,13 @@ uses Android's document picker, so the app never gains broad storage access.
 Each ZIP carries `model.manifest.json`, `model.manifest.sig`, and the exact
 manifest inventory. The signature is ECDSA P-256/SHA-256 over the manifest
 bytes. The release public key is embedded in the runtime; its private key is
-kept outside Git. Dialogue and vision activate only from their verified
-`models/<capability>/active` slots. Direct files under `models/dialogue` or
+kept outside Git. All capabilities load only from repository-admitted
+`models/<capability>/active` slots. Admission checks signature, license and
+inventory again before native startup; an inner voice/vision loader checking
+its own files is not a substitute for that policy. Local models reports
+Checking during admission, Missing only for an absent slot, and Rejected for
+present-invalid bundles, with license and verification reasons distinguished.
+Direct files under `models/dialogue` or
 `models/vision` are deliberately ignored, and rollback swaps only the retained
 previous verified slot.
 
@@ -263,3 +268,32 @@ Raw logits/scores are not user confidence. Calibration is evaluated on held-out
 boards/sessions and versioned with the model. Identity-sensitive automation
 uses a precision-first threshold. Coverage/abstention is a reported product
 metric, not hidden missing data.
+
+### Initial neural retrieval coverage remains unqualified
+
+The reproducible host evaluation in
+[`tools/README.embedding.md`](../tools/README.embedding.md) uses the actual
+hash-pinned MiniLM FP32 model, not fabricated vectors. Its frozen
+`held-out-electronics-v1-2026-10-10` fixture contains four synthetic authored
+project corpora, 24 source-reviewed component-role records and 64 queries.
+References and connector wiring are synthetic authoring, not physical board
+observations. Manufacturer documents support component-role descriptions;
+the fixture is not an admitted production knowledge bundle.
+
+At the unchanged 0.60 similarity / 0.08 margin thresholds, the 44 semantic
+queries produced three correct selections, 21 positive abstentions and 20
+correct negative abstentions. There were no accepted wrong/false matches in
+this limited corpus, but accepted positive recall was only **12.5%**. Raw
+top-one ranking found 21 of 24 positives; that is not accepted-answer accuracy.
+Twenty reference/pin probes are reported separately; the host evaluator does
+not execute or qualify native identity guards. Host timings do not establish
+iQOO performance, and numerical export parity does not establish retrieval
+coverage or factual quality.
+
+Keep this held-out fixture and thresholds frozen. Any later calibration uses
+a separately versioned corpus, disjoint by project/entity families and query
+lineage, followed by evaluation against untouched and independently authored
+held-out sets. Compare production hybrid retrieval with semantic-only search
+on the same inputs. Do not weaken thresholds, insert test wording into runtime
+aliases, or claim that these results cure Qwen hallucinations. Full retrieval
+and exact-device qualification remain pending.

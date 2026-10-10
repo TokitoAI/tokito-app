@@ -140,6 +140,11 @@ class LocalModelsDeviceTest {
     }
 
     @Test fun localSpeechLoadsAndPlaysAudio() = runBlocking {
+        val admitted = requireNotNull(ModelBundleRepository(context).activeDirectory(ModelCapability.VOICE)) {
+            "Signed speech bundle is unavailable under this APK's license policy"
+        }
+        assertEquals(java.io.File(context.filesDir, "models/voice/active").canonicalFile, admitted.canonicalFile)
+        VoiceModelBundle.verify(admitted)
         val voice = TokitoVoiceRuntime(context)
         val played = AtomicBoolean(false)
         try {

@@ -1,6 +1,3 @@
-import java.security.MessageDigest
-import java.util.zip.ZipFile
-
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -18,48 +15,52 @@ val dialogueComputeUnit = providers.gradleProperty("tokito.dialogue.computeUnit"
 }
 
 // sherpa-onnx already owns the pinned ONNX Runtime 1.27.1 native core in the
-// unified APK. Add only the matching 1.27 Java/JNI binding; never replace that
-// core with pickFirst, which would silently alter the admitted voice runtime.
+// unified APK. Maven's 1.27.0 JNI requires VERS_1.27.0, which that core cannot
+// satisfy. Build official 1.27.1 JNI sources against the unchanged voice core;
+// keep the descriptor-verified official Java classes and package no second core.
 val embeddingOrtArtifact by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+val embeddingVoiceArtifact by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
 dependencies {
     embeddingOrtArtifact("com.microsoft.onnxruntime:onnxruntime-android:1.27.0@aar")
+    embeddingVoiceArtifact("com.k2fsa.sherpa.onnx:sherpa-onnx:1.13.6@aar")
 }
 val embeddingOrtDirectory = layout.buildDirectory.dir("generated/embedding-ort")
-val prepareEmbeddingOrtBindings by tasks.registering {
-    inputs.files(embeddingOrtArtifact)
-    outputs.dir(embeddingOrtDirectory)
-    doLast {
-        val aar = embeddingOrtArtifact.singleFile
-        val digest = MessageDigest.getInstance("SHA-256")
-        aar.inputStream().buffered().use { input ->
-            val buffer = ByteArray(65536)
-            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        check(actual == "077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb") {
-            "ONNX Runtime Java binding artifact integrity mismatch"
-        }
-        val output = embeddingOrtDirectory.get().asFile
-        ZipFile(aar).use { zip ->
-            val entries = zip.entries().asSequence().filter { entry ->
-                entry.name == "classes.jar" || entry.name.matches(Regex("jni/(arm64-v8a|armeabi-v7a|x86|x86_64)/libonnxruntime4j_jni\\.so"))
-            }.toList()
-            check(entries.count { it.name == "classes.jar" } == 1 && entries.size == 5)
-            entries.forEach { entry ->
-                val target = output.resolve(entry.name)
-                target.parentFile.mkdirs()
-                zip.getInputStream(entry).use { source -> target.outputStream().use(source::copyTo) }
-            }
-        }
+val embeddingJniTool = layout.projectDirectory.file("../tools/prepare_embedding_jni.py")
+val embeddingNdk = androidComponents.sdkComponents.sdkDirectory.map { it.dir("ndk/27.1.12297006") }
+val prepareEmbeddingOrtBindings by tasks.registering(Exec::class) {
+    inputs.files(embeddingOrtArtifact, embeddingVoiceArtifact, embeddingJniTool)
+    inputs.property("javaHome", System.getProperty("java.home"))
+    inputs.file(embeddingNdk.map { it.file("source.properties") })
+    outputs.file(embeddingOrtDirectory.map { it.file("classes.jar") })
+    outputs.file(embeddingOrtDirectory.map { it.file("embedding-jni.provenance.json") })
+    listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").forEach { abi ->
+        outputs.file(embeddingOrtDirectory.map { it.file("jni/$abi/libonnxruntime4j_jni.so") })
+    }
+    doFirst {
+        commandLine(
+            providers.gradleProperty("tokito.embedding.python").orElse(
+                if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3"
+            ).get(), embeddingJniTool.asFile.absolutePath,
+            "--java-aar", embeddingOrtArtifact.singleFile.absolutePath,
+            "--sherpa-aar", embeddingVoiceArtifact.singleFile.absolutePath,
+            "--ndk", embeddingNdk.get().asFile.absolutePath,
+            "--java-home", System.getProperty("java.home"),
+            "--cache", gradle.gradleUserHomeDir.resolve("caches/tokito-embedding-ort").absolutePath,
+            "--output", embeddingOrtDirectory.get().asFile.absolutePath
+        )
     }
 }
 
 android {
     namespace = "dev.tokito.physical.dialogue"
     compileSdk = 35
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         minSdk = 27
