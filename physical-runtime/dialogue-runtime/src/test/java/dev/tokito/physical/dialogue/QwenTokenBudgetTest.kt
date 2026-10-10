@@ -7,6 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QwenTokenBudgetTest {
+    @Test fun accountsForSignedBosWithoutDoubleInsertionOrMagicOffset() {
+        val context = QairtContextMetadata(4096, 17)
+        assertEquals(3, context.freshPromptTokenCount(intArrayOf(2, 3)))
+        assertEquals(2, context.freshPromptTokenCount(intArrayOf(17, 3)))
+        assertEquals(2, QairtContextMetadata(4096).freshPromptTokenCount(intArrayOf(2, 3)))
+        assertFailure { context.freshPromptTokenCount(intArrayOf()) }
+    }
     @Test fun reservesOutputAgainstCompletePromptTokens() {
         assertEquals(4096, QwenTokenBudget(3904, 192, 4096).capacity)
         assertFailure { QwenTokenBudget(3905, 192, 4096) }

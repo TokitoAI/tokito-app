@@ -231,8 +231,9 @@ class TokitoDialogueRuntime(
                     val tokenizer = qwenTokenizer ?: NativeQwenTokenizer.open(applicationContext, tokenizerFile).also {
                         qwenTokenizer = it
                     }
-                    QwenTokenBudget(tokenizer.encode(templated.formattedText).size, limits.maxPredictTokens,
-                        requireNotNull(qairtContext).capacity)
+                    val context = requireNotNull(qairtContext)
+                    QwenTokenBudget(context.freshPromptTokenCount(tokenizer.encode(templated.formattedText)),
+                        limits.maxPredictTokens, context.capacity)
                 } else null
                 Log.i(TAG, "Local template: chatmlSystem=${templated.formattedText.contains("<|im_start|>system")}, " +
                     "chatmlUser=${templated.formattedText.contains("<|im_start|>user")}, " +

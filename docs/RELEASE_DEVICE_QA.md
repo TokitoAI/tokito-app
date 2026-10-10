@@ -12,6 +12,12 @@ Complete-response probes explicitly request short answers. A separate eight-toke
 probe requires typed output-limit rejection after exact receipt validation; a
 truncated answer is never counted as a complete-response pass. Preserve failed
 earlier runs instead of replacing their evidence with a later concise-prompt run.
+Complete input counts also include the QAIRT backend's first-turn BOS insertion,
+derived from signed `genie_config.json`, only when the encoded prompt does not
+already start with that token. Tokito resets KV between requests, so each request
+uses this fresh-session rule. This is not an empirical one-token tolerance:
+native counts must still match exactly. See the pinned
+[Qualcomm pipeline implementation](https://github.com/qualcomm/geniex-qairt-plugin/blob/15d6e053a62d88b6f7b72c1d5eb9706b299d3012/core/src/pipeline/llm_pipeline.cpp).
 The paired DEX audit explicitly checks its five named reflective methods, with
 narrow release keeps rather than a new package-wide testing whitelist.
 Its separate test program also consumes the named Kotlin array/file multifile

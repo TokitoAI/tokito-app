@@ -5,7 +5,12 @@ import java.io.File
 import android.content.Context
 
 /** Context is an export/binary property, never Qwen's source positional maximum. */
-internal data class QairtContextMetadata(val capacity: Int) {
+internal data class QairtContextMetadata(val capacity: Int, val bosTokenId: Int = -1) {
+    /** Every request owns a fresh/reset KV session. Mirror the backend's signed BOS rule. */
+    fun freshPromptTokenCount(ids: IntArray): Int {
+        require(ids.isNotEmpty() && ids.all { it >= 0 })
+        return Math.addExact(ids.size, if (bosTokenId >= 0 && ids.first() != bosTokenId) 1 else 0)
+    }
     companion object {
         fun admit(context: Context, model: DialogueModel): QairtContextMetadata {
             require(model.runtime == DialogueRuntime.QAIRT)
@@ -27,7 +32,10 @@ internal data class QairtContextMetadata(val capacity: Int) {
         }
 
         fun admit(config: JSONObject, metadata: JSONObject, inventory: Map<String, List<String>>): QairtContextMetadata {
-            val configured = config.getJSONObject("dialog").getJSONObject("context").getInt("size")
+            val context = config.getJSONObject("dialog").getJSONObject("context")
+            val configured = context.getInt("size")
+            val bos = if (context.has("bos-token")) context.getInt("bos-token") else -1
+            require(bos >= -1 && (bos < 0 || bos < context.getInt("n-vocab"))) { "Invalid signed BOS token" }
             require(configured in 1..65536) { "Invalid QAIRT context declaration" }
             val supported = metadata.getJSONObject("genie").getJSONArray("context_lengths")
             require((0 until supported.length()).any { supported.getInt(it) == configured }) {
@@ -87,7 +95,7 @@ internal data class QairtContextMetadata(val capacity: Int) {
             require(compiled == declared && configured == compiled.maxOrNull() && capacities.all { it in compiled }) {
                 "Configured, declared, and actual compiled QNN context capacities disagree"
             }
-            return QairtContextMetadata(configured)
+            return QairtContextMetadata(configured, bos)
         }
     }
 }
