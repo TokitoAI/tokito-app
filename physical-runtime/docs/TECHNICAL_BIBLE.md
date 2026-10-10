@@ -55,6 +55,11 @@ Natural-language confidence is never a substitute for a typed result.
 13. Production local technical advice requires admitted source evidence. An
     unmatched question abstains, including explicit general educational intent;
     changing the wording cannot authorize an unverified model answer.
+14. Neural embeddings may rank admitted source records, but cannot authorize a
+    fact, invent a reference or repair missing pin evidence. Retrieval retains the
+    source/context revision and rejects ambiguous matches. Embedding artifacts
+    undergo the same signed inventory admission as other local models; Qwen's
+    generator and its backend are independent from the embedding encoder.
 
 ## 3. Runtime boundary
 

@@ -39,17 +39,27 @@ Buildkite artifact for deobfuscating that exact build's crash stack traces.
 
 ## Release flow
 
-An immutable `v*` tag uploads the release pipeline only after normal CI. A
-manual Buildkite block protects publication. The release step requires the
-four `ANDROID_UPLOAD_*` secrets, builds an upload-signed arm64 APK and AAB,
-rejects Android Debug certificates, uploads Buildkite artifacts, and creates
+An immutable `v*` tag uploads CI and publication steps into the same Buildkite
+build. Publication explicitly depends on both the manual approval block and
+`unified-android`, whose dependencies include all four preceding CI gates.
+Uploading a pipeline is not waiting for it: never remove that dependency.
+The release step requires the four signing `ANDROID_UPLOAD_*` secrets plus
+`ANDROID_UPLOAD_CERT_SHA256` (64 hex characters) and `GH_TOKEN`, builds an
+upload-signed arm64 APK and AAB, verifies their expected upload certificate,
+rejects Android Debug certificates, checks APK 16 KiB alignment, and creates
 the matching immutable GitHub release.
 
 The signed step targets the isolated `release` queue, not the PR-capable
 `linux` build queue. Only a trusted tag job after the manual block may receive
-the four variables. Release secrets are passed only to its release container.
-The decoded keystore is temporary and must never enter git, the image, logs,
-ordinary build workers, or artifacts.
+the signing variables and GitHub publication credential. Release secrets are
+passed only to its release container; GitHub authentication is checked before
+the expensive build. Signing material is written to a private temporary
+container directory with an EXIT cleanup trap, not the shared checkout or
+cache volumes. Gradle reads passwords from the release environment rather
+than generated properties. The decoded keystore must never enter git, the
+image, logs, ordinary build workers, or artifacts. Configure the expected
+certificate alongside the trusted upload key; absence fails closed rather
+than accepting whichever non-debug key happened to sign the output.
 
 Exact-device iQOO acceptance remains a separately recorded hardware gate. It
 cannot be replaced by CI, an emulator, or a successful package build.

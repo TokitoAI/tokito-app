@@ -5,3 +5,6 @@
 # identity. These SDK ABI types are not ordinary optimizable Kotlin objects.
 -keep,includedescriptorclasses class com.geniex.sdk.bean.** { *; }
 -keep,includedescriptorclasses class com.geniex.sdk.jni.** { *; }
+# ONNX Runtime's pinned Java binding is called by libonnxruntime4j_jni through
+# fixed class/member names. The shared native core remains owned by voice-runtime.
+-keep,includedescriptorclasses class ai.onnxruntime.** { *; }

@@ -10,14 +10,18 @@ import {
 } from "../../modules/tokito-physical/src";
 import { tokens } from "../theme";
 import { Card, ErrorText, GhostButton, Muted, PrimaryButton } from "../ui/primitives";
+import { modelBundleErrorMessage as message } from "../models/modelBundleCopy";
 
 export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Element {
   const [bundles, setBundles] = useState<ModelBundleStatus[]>([]);
   const [busy, setBusy] = useState<ModelCapability | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
 
   const refresh = useCallback(async () => {
-    setBundles(await TokitoPhysical.modelBundles());
+    setChecking(true);
+    try { setBundles(await TokitoPhysical.modelBundles()); }
+    finally { setChecking(false); }
   }, []);
 
   useEffect(() => {
@@ -80,10 +84,12 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
           Import a Tokito-signed bundle from this device. Verification finishes before the active model changes.
         </Text>
         {error === null ? null : <ErrorText>{error}</ErrorText>}
-        {(["dialogue", "voice", "vision"] as const).map((capability) => {
+        {(["dialogue", "voice", "vision", "embedding"] as const).map((capability) => {
           const bundle = bundles.find((candidate) => candidate.capability === capability);
-          const installed = bundle?.modelId !== null && bundle?.modelId !== undefined;
-          const label = { dialogue: "Conversation", voice: "Speech", vision: "Board vision" }[capability];
+          const installed = bundle?.state === "ready";
+          const rejected = bundle?.state === "rejected";
+          const stateLabel = checking ? "Checking" : installed ? "Installed" : rejected ? "Rejected" : "Missing";
+          const label = { dialogue: "Conversation", voice: "Speech", vision: "Board vision", embedding: "Knowledge search" }[capability];
           return (
             <Card key={capability}>
               <View style={styles.cardHeader}>
@@ -94,29 +100,31 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
                       {bundle.modelId} · {bundle.modelRevision}
                     </Text>
                   ) : (
-                    <Muted>No verified model installed</Muted>
+                    <Muted>{checking ? "Verifying the installed bundle…" : rejected
+                      ? bundle.rejection === "license" ? "This bundle’s license is not allowed in this build." : "The installed bundle failed verification."
+                      : "No verified model installed"}</Muted>
                   )}
                 </View>
                 <View
-                  accessibilityLabel={installed ? "Installed" : "Not installed"}
+                  accessibilityLabel={stateLabel}
                   style={[styles.status, installed ? styles.ready : styles.missing]}
                 >
                   <Text style={[styles.statusText, installed && styles.readyText]}>
-                    {installed ? "Installed" : "Missing"}
+                    {stateLabel}
                   </Text>
                 </View>
               </View>
               <PrimaryButton
                 label={installed ? "Replace bundle" : "Import bundle"}
                 busy={busy === capability}
-                disabled={busy !== null && busy !== capability}
+                disabled={checking || (busy !== null && busy !== capability)}
                 onPress={() => void importBundle(capability)}
                 icon={<DownloadSimple size={18} color={tokens.accentInk} />}
                 style={styles.primaryAction}
               />
               <GhostButton
                 label="Restore previous version"
-                disabled={busy !== null}
+                disabled={checking || busy !== null}
                 onPress={() => rollback(capability)}
                 icon={<Rewind size={17} color={tokens.accent} />}
               />
@@ -126,11 +134,6 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
       </ScrollView>
     </View>
   );
-}
-
-function message(cause: unknown): string {
-  if (cause instanceof Error && cause.message.trim().length > 0) return cause.message;
-  return "Tokito could not verify that model bundle. The current model was not changed.";
 }
 
 const styles = StyleSheet.create({

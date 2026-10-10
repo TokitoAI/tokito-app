@@ -66,13 +66,20 @@ class LocalDesignContextIndex(
     private val contextRevision: String,
     records: List<DesignContextRecord>,
     private val limits: DesignContextIndexLimits = DesignContextIndexLimits(),
+    private val semanticSearch: DesignSemanticSearch? = null,
 ) {
-    private val records = records.toList()
+    private val records = records.map { record -> record.copy(
+        exactKeys = record.exactKeys.toSet(), sourceIds = record.sourceIds.toSet(),
+        spokenAliases = record.spokenAliases.toSet(), rankingAliases = record.rankingAliases.toSet(),
+        detailAnswers = record.detailAnswers.map { it.copy(requiredTokens = it.requiredTokens.toSet()) },
+        evidenceLocators = record.evidenceLocators.toList(),
+    ) }
     private val indexedRecords: List<IndexedRecord>
     private val tokenPostings: Map<String, List<IndexedRecord>>
 
     init {
         requireCanonical(contextRevision, "context revision")
+        require(semanticSearch == null || semanticSearch.contextRevision == contextRevision) { "semantic context revision mismatch" }
         require(this.records.map { it.recordId }.distinct().size == this.records.size) {
             "record IDs must be unique"
         }
@@ -152,7 +159,7 @@ class LocalDesignContextIndex(
     /** Returns only text constructed from the admitted record, never generated prose. */
     fun answer(query: String): String? {
         requireCanonical(query, "query")
-        val queryTokens = tokenize(query)
+        val queryTokens = tokenize(canonicalReferences(query))
         val record = rank(query).firstOrNull()?.record ?: return null
         return record.detailAnswers
             .filter { answer -> answer.requiredTokens.all { it.lowercase() in queryTokens } }
@@ -163,7 +170,8 @@ class LocalDesignContextIndex(
 
     fun groundedAnswer(query: String): GroundedDesignAnswer? {
         requireCanonical(query, "query")
-        val queryTokens = tokenize(query)
+        val canonicalQuery = canonicalReferences(query)
+        val queryTokens = tokenize(canonicalQuery)
         val matchedRecords = rank(query).take(limits.maxRecords).map(RankedRecord::record)
         val record = matchedRecords.firstOrNull() ?: return null
         val selectedDetail = record.detailAnswers
@@ -190,24 +198,60 @@ class LocalDesignContextIndex(
             allowedNumbers = NUMBER.findAll(matchedRecords.joinToString(" ") { it.text } + " " + selected)
                 .map(MatchResult::value)
                 .toSet(),
-            boardTarget = record.boardTarget,
+            boardTarget = record.boardTarget.takeIf {
+                record.exactKeys.any { key -> key.lowercase() in queryTokens } ||
+                    record.rankingAliases.any { alias -> phraseScore(normalizedPhrase(canonicalQuery), normalizedPhrase(alias)) == 2 }
+            },
         )
     }
 
+    fun withEmbeddings(encoder: TextEmbeddingEncoder, cache: DesignVectorCache, checkpoint: () -> Unit = {}): LocalDesignContextIndex =
+        LocalDesignContextIndex(contextRevision, records, limits,
+            SemanticDesignSearch(contextRevision, records, encoder, cache, checkpoint = checkpoint))
+
     private fun rank(query: String): List<RankedRecord> {
+        val canonicalQuery = canonicalReferences(query)
+        val lexical = lexicalRank(canonicalQuery)
+        // Never turn an unknown reference/pin into a nearby semantic guess.
+        val references = REFERENCE_QUERY.findAll(canonicalQuery).map { it.value.uppercase() }.toSet()
+        if (references.isNotEmpty()) {
+            if (references.any { reference -> records.none { reference in it.exactKeys } }) return emptyList()
+            return lexical
+        }
+        if (PIN_INTENT.containsMatchIn(canonicalQuery)) {
+            val tokens = tokenize(canonicalQuery)
+            return lexical.filter { candidate -> candidate.exact || candidate.primaryPhrase == 2 ||
+                candidate.record.rankingAliases.any { alias ->
+                    val aliasTokens = tokenize(alias)
+                    aliasTokens.size >= 2 && tokens.containsAll(aliasTokens)
+                }
+            }
+        }
+        if (lexical.any { it.exact || it.primaryPhrase == 2 }) return lexical
+        val matches = semanticSearch?.search(query).orEmpty()
+        if (matches.isEmpty()) return lexical
+        val semantic = matches.map { match ->
+            val record = records.single { it.recordId == match.recordId }
+            RankedRecord(record.copy(boardTarget = null), false,
+                authorityScore(record.authority), false, 0, 0, 0, 0)
+        }
+        return semantic + lexical.filterNot { item -> semantic.any { it.record.recordId == item.record.recordId } }
+    }
+
+    private fun lexicalRank(query: String): List<RankedRecord> {
         val queryTokens = tokenize(query)
         if (queryTokens.isEmpty()) return emptyList()
 
-        val pinNumber = PIN_QUERY.find(query)?.groupValues?.get(1)
+        val pinNumber = PIN_QUERY.find(query)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }
         if (pinNumber != null) {
             val pinRecords = indexedRecords.filter { indexed ->
-                indexed.record.detailAnswers.any { pinNumber in it.requiredTokens }
+                indexed.record.detailAnswers.any { answer -> answer.requiredTokens.any { it.equals(pinNumber, ignoreCase = true) } }
             }
-            val connector = CONNECTOR_REFERENCE.find(query)?.groupValues?.get(1)?.let { "J$it" }
-            val selected = if (connector == null) {
+            val references = REFERENCE_QUERY.findAll(query).map { it.value.uppercase() }.toSet()
+            val selected = if (references.isEmpty()) {
                 pinRecords.singleOrNull()
             } else {
-                pinRecords.singleOrNull { connector in it.record.exactKeys }
+                pinRecords.singleOrNull { indexed -> references.all { it in indexed.record.exactKeys } }
             } ?: return emptyList()
             return listOf(
                 RankedRecord(
@@ -222,6 +266,9 @@ class LocalDesignContextIndex(
                 ),
             )
         }
+        // A pin/pad request without an exact admitted detail must not become a
+        // component summary through generic word overlap or vector similarity.
+        if (SINGULAR_PIN_INTENT.containsMatchIn(query)) return emptyList()
 
         val candidates = queryTokens.flatMap { tokenPostings[it].orEmpty() }.distinctBy { it.record.recordId }
         val queryPhrase = normalizedPhrase(query)
@@ -360,8 +407,11 @@ class LocalDesignContextIndex(
         val REFERENCE_QUERY = Regex(
             "(?i)(?<![A-Z0-9])(?:R|C|U|D|Q|L|J|SW|TP|F|FB|Y|X|CN|RN|RV|BT|BH|SJ)[0-9]{1,5}(?![A-Z0-9])",
         )
-        val PIN_QUERY = Regex("(?i)\\bpin\\s*([0-9]+)\\b")
-        val CONNECTOR_REFERENCE = Regex("(?i)\\bJ\\s*([0-9]+)\\b")
+        val PIN_QUERY = Regex("(?i)\\b(?:pin|pad)(?:\\s+([A-Z0-9][A-Z0-9_.-]{0,63})|([0-9]+))\\b")
+        val PIN_INTENT = Regex("(?i)\\b(?:pins?|pads?)\\b")
+        val SINGULAR_PIN_INTENT = Regex("(?i)\\b(?:pin|pad)\\b")
+        val SPACED_REFERENCE = Regex("(?i)(?<![A-Z0-9])((?:SW|TP|FB|CN|RN|RV|BT|BH|SJ|R|C|U|D|Q|L|J|F|Y|X))\\s+([0-9]{1,5})(?![A-Z0-9])")
+        fun canonicalReferences(query: String): String = SPACED_REFERENCE.replace(query) { it.groupValues[1].uppercase() + it.groupValues[2] }
         val LOCATION_INTENT = Regex("(?i)\\b(where|locate|show|highlight|point)\\b")
         val STOP_WORDS = setOf(
             "a", "about", "an", "and", "are", "board", "can", "component", "do", "does",

@@ -1,5 +1,15 @@
 # Installed release acceptance
 
+`LocalEmbeddingDeviceTest` is an additional installed-device gate for the signed
+Knowledge search bundle. Run it explicitly after importing that bundle into the
+same optimized target. It checks native tokenizer/numerical conformance, twenty
+real query encodings, revision-bound SQLite reload and missing-identity rejection.
+Its fixed metrics report encoder load/query latency, process PSS and native heap;
+those do not include all accelerator/system memory or prove sustained thermal
+performance. Synthetic fixture retrieval is not physical-board recognition.
+Preserve separate Qwen factual-quality failures and rerun voice tests because
+the Java embedding bindings use the existing shared ONNX core.
+
 Bench Start must be checked from both project-attached and projectless UI routes.
 `PhysicalSessionBridgeDeviceTest` additionally exercises a real React Native
 ReadableNativeMap through Expo conversion, including nullable/absent fields,
