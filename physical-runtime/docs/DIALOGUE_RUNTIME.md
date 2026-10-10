@@ -192,7 +192,7 @@ contradictions and unsupported claims before claiming local-model quality;
 passing three definitions or a JNI load gate is insufficient.
 
 The optimized e21f5e9 device evaluation completed 24 raw answers in 50.548
-seconds. All failed the spoken-format check, and independent review found
+seconds. All failed the spoken-format check, and manual semantic review found
 repeated fundamental factual contradictions in both rounds. Those raw results
 remain failed; production evidence-bound abstention is a separate safety test,
 not an accuracy improvement. No benchmark prompt, sampling profile, rubric or

@@ -12,6 +12,16 @@ const withTokitoPhysical = require("../plugins/withTokitoPhysical.js");
 const { optionalCamera, splitSplashStyles } = withTokitoPhysical;
 const { XML } = require("expo/config-plugins");
 
+test("physical session bridge uses explicit map decoding rather than reflective Record fields", async () => {
+  const module = await readFile(new URL("../modules/tokito-physical/android/src/main/java/dev/tokito/physical/bridge/TokitoPhysicalModule.kt", import.meta.url), "utf8");
+  assert.match(module, /sessionContext: Map<String, Any\?>\?/);
+  assert.doesNotMatch(module, /\bRecord\b|@Field/);
+  assert.ok(module.indexOf("PhysicalSessionInput.decode") < module.indexOf("val session = physicalRuntime.openSession()"));
+  const deviceTest = await readFile(new URL("../device-tests/dev/tokito/app/PhysicalSessionBridgeDeviceTest.kt", import.meta.url), "utf8");
+  assert.match(deviceTest, /Arguments::makeNativeMap/);
+  assert.match(deviceTest, /converter\.convert\(dynamic/);
+});
+
 test("paired release DEX linkage audit regression suite", () => {
   const result = spawnSync(process.platform === "win32" ? "python" : "python3",
     ["-B", "-m", "unittest", "scripts/test_release_test_abi.py"],

@@ -23,6 +23,13 @@
 -keep,includedescriptorclasses class dev.tokito.physical.LocalPoseVisionRuntime { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.LocalPoseVisionRuntime$Companion { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.session.PhysicalSessionContext { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.session.PhysicalSessionInput { public *; }
+
+# Optimized-device acceptance exercises the real Expo collection conversion ABI.
+-keep,includedescriptorclasses class expo.modules.kotlin.types.TypeConverterProviderImpl { public *; }
+-keep,includedescriptorclasses interface expo.modules.kotlin.types.TypeConverter { public *; }
+-keep,includedescriptorclasses class com.facebook.react.bridge.DynamicFromObject { public *; }
+-keep,includedescriptorclasses class com.facebook.react.bridge.Arguments { public *; }
 
 # Reviewed exports from release-test-abi.py's paired DEX audit, not a package
 # whitelist. Kotlin multifile facades inherit static API from their named
@@ -68,6 +75,7 @@
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.DialogueRuntime { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.DialogueRuntimeState$Ready { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalBenchDialoguePolicy$Answer { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalBenchDialoguePolicy$Authority { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalBenchDialoguePolicy { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalDesignContextIndex { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.TokitoDialogueRuntime { public *; }

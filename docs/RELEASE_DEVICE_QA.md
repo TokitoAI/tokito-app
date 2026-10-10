@@ -1,5 +1,14 @@
 # Installed release acceptance
 
+Bench Start must be checked from both project-attached and projectless UI routes.
+`PhysicalSessionBridgeDeviceTest` additionally exercises a real React Native
+ReadableNativeMap through Expo conversion, including nullable/absent fields,
+opaque identities, unknown keys, wrong types, invalid parent relationships and
+UTF-8 bounds. These device tests do not substitute for opening the actual bench.
+`LocalBenchPolicyDeviceTest` verifies production evidence/abstention against the
+same twelve electronics questions as the raw evaluation, without replacing its
+failed quality results or invoking the model.
+
 Device acceptance runs against the optimized unified `dev.tokito.app` release,
 not a separate debug application. `apps/mobile/proguard-release-abi.pro` keeps
 only the declared cross-APK runtime exports stable. Shrinking, resource

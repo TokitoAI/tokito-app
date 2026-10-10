@@ -138,9 +138,16 @@ if (project.findProperty('tokito.deviceTests') == 'true') {
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation project(':dialogue-runtime')
     androidTestImplementation project(':voice-runtime')
+    androidTestImplementation project(':expo-modules-core')
   }
 }
 `;
+    }
+    if (!result.modResults.contents.includes("androidTestImplementation project(':expo-modules-core')")) {
+      result.modResults.contents = result.modResults.contents.replace(
+        "androidTestImplementation project(':voice-runtime')",
+        "androidTestImplementation project(':voice-runtime')\n    androidTestImplementation project(':expo-modules-core')",
+      );
     }
     return result;
   });

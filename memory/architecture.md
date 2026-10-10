@@ -231,6 +231,17 @@ low-rate lifecycle state, typed observations, and failures. Frames, audio,
 tensors, and high-rate tracking stay native.
 
 Physical sessions are locally authoritative in `PhysicalSessionStore`.
+The Expo session-start input uses a nullable `Map<String, Any?>`, decoded by
+`PhysicalSessionInput` before allocating a session. Preserve absent/null fields,
+opaque identifier bytes and canonical parent constraints; reject unknown keys,
+non-string values, controls and values over 1024 UTF-8 bytes.
+**Why:** immutable annotated Expo Record properties fell back to reflection in
+the optimized APK and rejected conversion before opening the bench. That
+reflection path dereferences `javaField!!`; Record
+class keep rules alone do not supply missing Kotlin introspection metadata.
+The device gate exercises real ReadableNativeMap/Expo conversion, not only the
+decoder; keep production R8 enabled.
+
 Stable session, observation, and evidence IDs plus optimistic session revisions
 are persisted before the native bench opens. A record enters Cloud sync only
 after explicit per-record authorization. The Expo control plane merges complete
