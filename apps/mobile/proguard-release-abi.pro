@@ -40,10 +40,18 @@
 # delegate family; preserving only the facade leaves inherited methods unsafe.
 -keep,includedescriptorclasses class kotlin.LazyKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.collections.CollectionsKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.collections.ArraysKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.collections.SetsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.text.StringsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.coroutines.intrinsics.IntrinsicsKt** { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.jdk7.AutoCloseableKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.io.FilesKt** { public *; protected *; }
+-keep,includedescriptorclasses class kotlin.coroutines.jvm.internal.Boxing { public *; }
+# The target includes this JSON dependency as program classes. Preserve the
+# exact two classes consumed by the independently optimized tokenizer tests;
+# do not assume their renamed target copies are Android framework exports.
+-keep,includedescriptorclasses class org.json.JSONObject { public *; protected *; }
+-keep,includedescriptorclasses class org.json.JSONArray { public *; protected *; }
 -keep,includedescriptorclasses class kotlin.Lazy { public *; }
 -keep,includedescriptorclasses class kotlin.Result$Companion { public *; }
 -keep,includedescriptorclasses class kotlin.Result { public *; }

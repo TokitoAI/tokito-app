@@ -10,6 +10,10 @@ two independent prompts each. Success requires available exact prompt counts
 and bounded generated-token counts; stream callback counts are not receipts.
 The paired DEX audit explicitly checks its five named reflective methods, with
 narrow release keeps rather than a new package-wide testing whitelist.
+Its separate test program also consumes the named Kotlin array/file multifile
+facades, coroutine boxing helper, and two program-owned JSON classes. These
+exports retain their exact ABI; renamed copies are not treated as proof that a
+framework class can satisfy the test dependency.
 These are additional qualification checks, not replacements for the baseline
 or factual-quality review. Until the installed runner passes them, the draft
 token-budget slice is not device-qualified and must not be merged or shipped.
