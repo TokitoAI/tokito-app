@@ -75,7 +75,7 @@ class LocalBoardRag(
             try {
                 generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = selection))
             } catch (failure: DialogueFailure) {
-                if (failure.code != DialogueFailureCode.INVALID_MODEL_OUTPUT) throw failure
+                if (!canRepairEvidenceSelection(failure.code)) throw failure
                 coroutineContext.ensureActive()
                 requireCurrent()
                 val corrected = KnowledgeSelectionRequest(binding.boardId, binding.corpusRevision,
@@ -96,3 +96,7 @@ class LocalBoardRag(
         response
     }
 }
+
+/** One same-source repair only; never retry deadlines, backend faults or context admission. */
+internal fun canRepairEvidenceSelection(code: DialogueFailureCode): Boolean =
+    code == DialogueFailureCode.INVALID_MODEL_OUTPUT || code == DialogueFailureCode.OUTPUT_LIMIT

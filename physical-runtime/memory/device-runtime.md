@@ -264,10 +264,14 @@ are presentation wrappers only; unknown IDs and arbitrary prose still fail.
 **How to apply:** keep facts/aliases in the pinned dataset, not board-specific
 application branches. Test multiple references on the optimized installed APK,
 including local playback, and retain independent physical-identity gates.
-Evidence-ID selection uses deterministic top-1 decoding; the conversational
-Qwen sampler remains separate. Do not use creative sampling for authoritative
-ID classification: stochastic empty selections can incorrectly claim that an
-available reference has no evidence.
+Evidence-ID selection uses Qwen's recommended non-thinking sampling profile
+(0.7 temperature, 0.8 top-p, top-k 20, min-p 0), like conversation. Greedy
+top-1 selection repeatedly exhausted the 512-token device budget. Source-ID
+validation remains mandatory regardless of decoding. One malformed or
+token-limited selection may be repaired with the exact same admitted evidence
+inside the existing overall deadline; partial output is never accepted.
+**Why:** deterministic decoding is not a factual guardrail and can create
+repetition loops. Do not raise the context/output cap to hide that failure.
 
 Local Sherpa playback has a measured-audio-duration deadline separate from the
 synthesis deadline, and drains the hardware playback head before releasing the

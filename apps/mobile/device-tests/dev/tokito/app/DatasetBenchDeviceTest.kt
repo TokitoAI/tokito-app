@@ -22,6 +22,35 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Actual signed dataset -> production bench -> Qwen -> local audio, not fixture facts. */
 class DatasetBenchDeviceTest {
+    @Test fun repeatedReferenceTurnsFinishWithoutTokenExhaustion() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
+        val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        try {
+            withTimeout(150_000) {
+                while (withContext(Dispatchers.Main) { bench.localReasoningState } !is DialogueRuntimeState.Ready) delay(200)
+            }
+            val questions = listOf(
+                "ESP32" to "Espressif",
+                "What is ESP 32?" to "Espressif",
+                "What is ESP8266?" to "ESP8266",
+                "What is FRDM MCXN236?" to "NXP",
+                "What is Ultimainboard?" to "Ultimaker",
+            )
+            repeat(2) { round ->
+                for ((question, expected) in questions) {
+                    ForegroundDeviceQa.requireResumed(bench)
+                    val answer = withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(question) } }
+                    instrumentation.sendStatus(2, Bundle().apply {
+                        putInt("round", round); putString("question", question); putString("source_answer", answer)
+                    })
+                    assertTrue("Missing source definition for $question: $answer", answer.contains(expected, ignoreCase = true))
+                }
+            }
+        } finally { instrumentation.runOnMainSync { bench.finish() } }
+    }
     /** Requires real speech at the phone microphone; no transcript injection. */
     @Test fun liveMicrophoneTranscriptRetrievesSourcesAndSpeaks() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
