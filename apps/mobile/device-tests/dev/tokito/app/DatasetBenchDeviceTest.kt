@@ -12,6 +12,8 @@ import dev.tokito.physical.session.PhysicalSessionStore
 import dev.tokito.physical.voice.TokitoVoiceRuntime
 import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.voice.VoiceRuntimeState
+import dev.tokito.physical.voice.VoiceEvent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -20,6 +22,38 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Actual signed dataset -> production bench -> Qwen -> local audio, not fixture facts. */
 class DatasetBenchDeviceTest {
+    /** Requires real speech at the phone microphone; no transcript injection. */
+    @Test fun liveMicrophoneTranscriptRetrievesSourcesAndSpeaks() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
+        val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val voice = TokitoVoiceRuntime(context)
+        try {
+            withTimeout(150_000) {
+                while (withContext(Dispatchers.Main) { bench.localReasoningState } !is DialogueRuntimeState.Ready) delay(200)
+            }
+            voice.initialize()
+            val captured = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(90_000) { voice.events.first { it is VoiceEvent.Transcript && it.segment.isFinal && it.segment.text.isNotBlank() } as VoiceEvent.Transcript }
+            }
+            voice.startListening()
+            instrumentation.sendStatus(2, Bundle().apply { putString("microphone_state", "listening_for_live_esp32_question") })
+            val transcript = captured.await().segment.text
+            voice.stopListening()
+            val answer = withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(transcript) } }
+            instrumentation.sendStatus(2, Bundle().apply { putString("live_transcript", transcript); putString("source_answer", answer) })
+            assertTrue("Live microphone question was not source-answered: $answer", answer.contains("Espressif", ignoreCase = true))
+            val played = AtomicBoolean(false)
+            voice.speak(answer, SpeechQueuePolicy.REPLACE) { played.set(true) }
+            withTimeout(65_000) { while (!played.get()) delay(20) }
+            withTimeout(190_000) { while (voice.state.value !is VoiceRuntimeState.Ready) delay(50) }
+        } finally {
+            voice.close()
+            instrumentation.runOnMainSync { bench.finish() }
+        }
+    }
     @Test fun realBenchAnswersAllDatasetReferencesAndSpeaks() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -59,10 +93,10 @@ class DatasetBenchDeviceTest {
             assertTrue("Reference scope lost on follow-up: $followUp", followUp.contains("2.1.4"))
             val physical = withContext(Dispatchers.Main) { bench.respondLocally("Is this my board?") }
             assertTrue(physical.contains("verified board identification"))
-            val ambiguous = withContext(Dispatchers.Main) { bench.respondLocally("ESP32 versus ESP8266") }
-            assertTrue(ambiguous.contains("one board at a time"))
+            val comparison = withContext(Dispatchers.Main) { bench.respondLocally("ESP32 versus ESP8266") }
+            assertTrue("Comparison must cite both retrieved references: $comparison", comparison.contains("ESP32") && comparison.contains("ESP8266"))
             val variant = withContext(Dispatchers.Main) { bench.respondLocally("What is ESP32-S3?") }
-            assertTrue(variant.contains("won't substitute"))
+            assertTrue("An absent variant must abstain: $variant", variant.contains("does not establish"))
         } finally {
             voice.close()
             instrumentation.runOnMainSync { bench.finish() }

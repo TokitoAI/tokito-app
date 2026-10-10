@@ -283,6 +283,25 @@ authenticated-integrity, coordinate-frame, and source-license policies pass.
 
 ## Verification
 
+### Dataset reference conversation
+
+Final microphone transcripts and typed questions enter the same production
+responder. When the signed knowledge package is present, its actual 384-dimensional
+encoder searches all admitted SQLite vectors; there is no board-name/alias gate.
+Each current query gets its own ranked results. Up to three separately retrieved
+records from the preceding user question can supply follow-up context without
+displacing current results. This retrieval is documentation search, not physical
+board identification.
+
+The bounded Qwen context interleaves cited facts across retrieved records and
+prioritizes source descriptions within each record. Per-fact board/reference
+provenance remains visible. Qwen returns existing fact IDs only; native validation
+reconstructs speech from their original source values. Unsupported model variants
+must not borrow a related model's description. A name-only question requests a
+definition without any board-specific response branch. Microphone STT execution,
+reference selection and full local audio playback are independent device gates;
+injecting text proves neither microphone capture nor recognition.
+
 Qualcomm's [GenieX runtime guide](https://github.com/qualcomm/GenieX/blob/main/notes/run.md)
 distinguishes QAIRT bundles from GGUF/llama.cpp models. Its hybrid/thread/layer
 advice for llama.cpp is not an optimization recipe for this QAIRT NPU bundle.
