@@ -142,6 +142,17 @@ pub struct SendMessage {
     pub budget: Value,
 }
 
+/// Sheet IDs are opaque canonical document identifiers, not UUIDs or URL path
+/// segments. Preserve their exact bytes; the server verifies document membership.
+pub fn validate_active_sheet_id(id: Option<&str>) -> Result<(), CloudError> {
+    if id.is_some_and(|id| {
+        id.trim().is_empty() || id.len() > 128 || id.chars().any(char::is_control)
+    }) {
+        return Err(CloudError::Unexpected);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunKind {
@@ -325,6 +336,7 @@ pub async fn send_message(
     thread: &str,
     message: &SendMessage,
 ) -> Result<Run, CloudError> {
+    validate_active_sheet_id(message.active_sheet_id.as_deref())?;
     segment(&message.message_id)?;
     segment(&message.run_id)?;
     if message.content.trim().is_empty() {
@@ -473,6 +485,27 @@ mod tests {
         matchers::{header, method, path},
         Mock, MockServer, ResponseTemplate,
     };
+
+    #[test]
+    fn canonical_sheet_identifiers_are_opaque_bounded_and_not_uuid_only() {
+        assert!(validate_active_sheet_id(None).is_ok());
+        for id in [
+            "root",
+            "radio",
+            "power.subsheet",
+            "Power / RF",
+            "电源",
+            "d213a2ad-c8e8-4870-92b1-5a75492225ed",
+        ] {
+            assert!(validate_active_sheet_id(Some(id)).is_ok());
+        }
+        assert!(validate_active_sheet_id(Some(&"a".repeat(128))).is_ok());
+        for id in ["", "   ", "root\n", "radio\0", "power\t", "root\u{007f}"] {
+            assert!(validate_active_sheet_id(Some(id)).is_err());
+        }
+        assert!(validate_active_sheet_id(Some(&"a".repeat(129))).is_err());
+        assert!(validate_active_sheet_id(Some(&"电".repeat(43))).is_err());
+    }
 
     #[test]
     fn diagnostics_distinguish_requests_without_recording_path_identity() {

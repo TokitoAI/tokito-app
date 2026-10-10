@@ -97,6 +97,12 @@ Multi-sheet chat explicitly selects a canonical synchronized sheet. A single
 sheet can be inferred from the actual document; multiple sheets must never
 default to the first entry. The chosen sheet ID is persisted with the queued
 message, so retries cannot change its edit context.
+Sheet IDs are opaque canonical identifiers, not UUIDs. Preserve their exact
+UTF-8 bytes through ordinary sends, atomic first-message receipts and replay;
+validate nonblank content, the 128-byte bound and absence of control characters.
+The API remains authoritative for membership in the captured document.
+**Why:** valid synchronized IDs such as named root/subsheets were rejected before
+local enqueue by a UUID-only mobile check, despite successful history requests.
 
 The native conversation session persists message IDs and streamed events before
 delivery; closing a viewer does not cancel a run. Only the explicit cancel API

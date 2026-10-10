@@ -126,6 +126,7 @@ impl ConversationStore {
         tx: &rusqlite::Transaction<'_>,
         message: &PendingMessage,
     ) -> Result<(), CloudError> {
+        crate::conversations::validate_active_sheet_id(message.request.active_sheet_id.as_deref())?;
         let body = encode(message)?;
         let existing: Option<String> = tx
             .query_row(
@@ -238,11 +239,10 @@ impl ConversationStore {
             || message.request.content.trim().is_empty()
             || message.request.content.len() > 64 * 1024
             || message.request.base_schematic_version > i64::MAX as u64
-            || message
-                .request
-                .active_sheet_id
-                .as_ref()
-                .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
+            || crate::conversations::validate_active_sheet_id(
+                message.request.active_sheet_id.as_deref(),
+            )
+            .is_err()
         {
             return Err(CloudError::Unexpected);
         }
@@ -1047,7 +1047,7 @@ mod tests {
                 "scope" => message.design_id = "foreign".into(),
                 "content" => message.request.content = " ".into(),
                 "title" => thread.title = " ".into(),
-                "sheet" => message.request.active_sheet_id = Some("invalid".into()),
+                "sheet" => message.request.active_sheet_id = Some("invalid\n".into()),
                 "revision" => message.request.base_schematic_version = u64::MAX,
                 _ => message.request.device_id.clear(),
             }
@@ -1114,6 +1114,7 @@ mod tests {
                     message.thread_id = thread.id.clone();
                     message.request.message_id = format!("message-{index}");
                     message.request.run_id = format!("run-{index}");
+                    message.request.active_sheet_id = Some("root".into());
                     barrier.wait();
                     store
                         .enqueue_first_message(&command, &thread, &message)
@@ -1132,8 +1133,17 @@ mod tests {
             let store = ConversationStore::open(&path, "account").unwrap();
             assert_eq!(store.pending_threads().unwrap().len(), 1);
             assert_eq!(store.pending().unwrap().len(), 1);
+            assert_eq!(
+                store.pending().unwrap()[0]
+                    .request
+                    .active_sheet_id
+                    .as_deref(),
+                Some("root")
+            );
+            let mut replay_message = pending();
+            replay_message.request.active_sheet_id = Some("root".into());
             let replay = store
-                .enqueue_first_message(&command, &first_thread(), &pending())
+                .enqueue_first_message(&command, &first_thread(), &replay_message)
                 .unwrap();
             assert_eq!(encode(&replay).unwrap(), encode(&receipts[0]).unwrap());
             store

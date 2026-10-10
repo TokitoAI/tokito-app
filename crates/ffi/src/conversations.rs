@@ -113,15 +113,10 @@ impl ConversationSession {
         {
             return chat_boundary(ChatBoundary::Validation, Err(CompanionError::Unexpected));
         }
-        if active_sheet_id
-            .as_ref()
-            .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
-        {
-            return chat_boundary(
-                ChatBoundary::SheetValidation,
-                Err(CompanionError::Unexpected),
-            );
-        }
+        chat_boundary(
+            ChatBoundary::SheetValidation,
+            api::validate_active_sheet_id(active_sheet_id.as_deref()),
+        )?;
         let kind = match kind.as_str() {
             "planner" => RunKind::Planner,
             "schematic" => RunKind::Schematic,
@@ -733,6 +728,73 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(serde_json::from_str(&payload_json).unwrap());
+        }
+    }
+
+    #[test]
+    fn non_uuid_sheets_survive_existing_and_atomic_first_send_exactly() {
+        for sheet in ["root", "radio", "Power / RF", "电源"] {
+            let store =
+                Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+            let (stop, _) = watch::channel(false);
+            let (wake, _wake_rx) = mpsc::channel(1);
+            let session = ConversationSession {
+                base: "https://api.tokito.dev".into(),
+                token: "not-transmitted".into(),
+                device: "device".into(),
+                store: store.clone(),
+                stop,
+                wake,
+                listener: Arc::new(Listener::default()),
+                identity_path: String::new(),
+            };
+            let pending: serde_json::Value = serde_json::from_str(
+                &session
+                    .send(
+                        "p".into(),
+                        "d".into(),
+                        "existing".into(),
+                        "Explain Ohm's law".into(),
+                        5,
+                        "planner".into(),
+                        Some(sheet.into()),
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(pending["request"]["active_sheet_id"], sheet);
+            let command = uuid::Uuid::new_v4().to_string();
+            let start = || {
+                session.start_conversation(
+                    command.clone(),
+                    "p".into(),
+                    "d".into(),
+                    "New question".into(),
+                    "New question".into(),
+                    5,
+                    "planner".into(),
+                    Some(sheet.into()),
+                )
+            };
+            let first = start().unwrap();
+            assert_eq!(start().unwrap(), first);
+            let receipt: serde_json::Value = serde_json::from_str(&first).unwrap();
+            assert_eq!(receipt["message"]["request"]["active_sheet_id"], sheet);
+            assert_eq!(store.pending().unwrap().len(), 2);
+            for invalid in ["", " ", "root\n", "radio\0"] {
+                assert!(session
+                    .send(
+                        "p".into(),
+                        "d".into(),
+                        "bad".into(),
+                        "Question".into(),
+                        5,
+                        "planner".into(),
+                        Some(invalid.into())
+                    )
+                    .is_err());
+            }
+            assert_eq!(store.pending().unwrap().len(), 2);
         }
     }
 
