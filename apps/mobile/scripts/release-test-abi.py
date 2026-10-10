@@ -212,6 +212,9 @@ def main():
             print("-keep,includedescriptorclasses class " + name[1:-1].replace("/", ".") + " { public *; protected *; }")
         return
     _, target_defs, _, target_methods, target_parents = apk_types(args.target)
+    json_shadows = sorted(name for name in target_defs if name.startswith("Lorg/json/"))
+    if json_shadows:
+        raise SystemExit("Packaged desktop JSON shadows Android boot classes:\n" + "\n".join(json_shadows))
     missing = sorted(exports - target_defs)
     if missing:
         raise SystemExit("Unstable/missing shared class exports:\n" + "\n".join(missing))

@@ -70,9 +70,11 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("com.google.ai.edge.litert:litert:1.4.1")
-    implementation("org.json:json:20250517")
 
     testImplementation("junit:junit:4.13.2")
+    // Android owns org.json at runtime. Packaging the desktop implementation
+    // lets R8 rename methods that still resolve to boot-classpath classes.
+    testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16")

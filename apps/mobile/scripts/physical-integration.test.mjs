@@ -12,6 +12,12 @@ const withTokitoPhysical = require("../plugins/withTokitoPhysical.js");
 const { optionalCamera, splitSplashStyles } = withTokitoPhysical;
 const { XML } = require("expo/config-plugins");
 
+test("Android uses platform JSON rather than a packaged desktop boot-class shadow", async () => {
+  const gradle = await readFile(new URL("../../../physical-runtime/app/build.gradle.kts", import.meta.url), "utf8");
+  assert.doesNotMatch(gradle, /implementation\("org\.json:json:/);
+  assert.match(gradle, /testImplementation\("org\.json:json:/);
+});
+
 test("physical session bridge uses explicit map decoding rather than reflective Record fields", async () => {
   const module = await readFile(new URL("../modules/tokito-physical/android/src/main/java/dev/tokito/physical/bridge/TokitoPhysicalModule.kt", import.meta.url), "utf8");
   assert.match(module, /sessionContext: Map<String, Any\?>\?/);

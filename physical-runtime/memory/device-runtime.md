@@ -131,6 +131,13 @@ globally. Run the paired DEX class/method audit described in
 `docs/RELEASE_DEVICE_QA.md` before installing both outputs. This linkage check is
 not device execution or model-performance evidence.
 
+Android's boot classpath owns `org.json`. The desktop `org.json:json` artifact
+belongs only in host-test dependencies, never `implementation`. An installed
+optimized corpus-import run failed because R8 renamed desktop `JSONTokener.nextValue`
+to `e`, while Android resolved the class to its platform implementation. Removing
+the packaged shadow fixes the boundary; preserving one renamed method is not
+a substitute for removing the duplicate runtime class family.
+
 GenieX 0.3.1 has no AAR consumer keep rules. Its native LLM creation consumes
 private bean fields by original name. An optimized iQOO run crashed in native
 `strlen` during creation while its mapping renamed `model_path`/`model_name`
