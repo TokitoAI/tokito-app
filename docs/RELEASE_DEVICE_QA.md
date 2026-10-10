@@ -15,6 +15,10 @@ Likewise a shared target dependency can be removed by production R8 while the
 test APK excludes it as already supplied by the target. The runner's
 `androidx.tracing.Trace` entrypoints are kept narrowly for this reason; inspect
 `usage.txt` when startup reports `NoClassDefFoundError` before a test runs.
+The checked ABI also preserves the actual shared dialogue/voice consumer APIs
+and named Kotlin multifile facade/delegate families referenced by the test DEX.
+This is not a Kotlin/package-wide keep. AndroidTest excludes target libraries,
+so it cannot restore a target class or method R8 removed or signature-rewrote.
 
 After Rust/UniFFI generation and Expo Android prebuild, build the two APKs in
 one invocation from `apps/mobile/android`:
@@ -22,6 +26,18 @@ one invocation from `apps/mobile/android`:
 ```powershell
 .\gradlew.bat :app:lintRelease :app:assembleRelease :app:assembleReleaseAndroidTest -Ptokito.deviceTests=true
 ```
+
+Before installation, from `apps/mobile`, check the paired outputs:
+
+```powershell
+python scripts/release-test-abi.py --target android/app/build/outputs/apk/release/app-release.apk --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk --mapping android/app/build/outputs/mapping/release/mapping.txt --usage android/app/build/outputs/mapping/release/usage.txt
+```
+
+The DEX audit checks shared class identity and method resolution (including
+facade inheritance); it rejects missing exports and changed signatures. `--rules`
+prints exact referenced classes for review when acceptance APIs change. It does
+not replace installed runner acceptance, cover arbitrary reflective calls, or
+prove model quality. Do not install a pair that fails this preflight.
 
 Record the source commit, both APK SHA-256 values, signing identity and release
 `mapping.txt`. Install **both outputs from that invocation** with `adb install

@@ -12,6 +12,13 @@ const withTokitoPhysical = require("../plugins/withTokitoPhysical.js");
 const { optionalCamera, splitSplashStyles } = withTokitoPhysical;
 const { XML } = require("expo/config-plugins");
 
+test("paired release DEX linkage audit regression suite", () => {
+  const result = spawnSync(process.platform === "win32" ? "python" : "python3",
+    ["-B", "-m", "unittest", "scripts/test_release_test_abi.py"],
+    { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
 test("release signing script forces optimization and remains idempotent", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tokito-release-"));
   try {
@@ -78,6 +85,10 @@ test("release instrumentation keeps only its cross-APK ABI without disabling R8"
   assert.doesNotMatch(rules, /class\s+(?:kotlin|kotlinx|dev\.tokito)\.\*\*/);
   assert.match(rules, /-keep class kotlin\.jvm\.internal\.Intrinsics \{ \*; \}/);
   assert.match(rules, /-keep class androidx\.tracing\.Trace \{ \*; \}/);
+  for (const facade of ["LazyKt", "collections.CollectionsKt", "collections.SetsKt", "text.StringsKt", "coroutines.intrinsics.IntrinsicsKt"]) {
+    assert.ok(rules.includes(`class kotlin.${facade}** { public *; protected *; }`));
+  }
+  assert.match(rules, /class dev\.tokito\.physical\.dialogue\.LocalBenchDialoguePolicy \{ public \*; \}/);
   assert.match(rules, /java\.lang\.Object runBlocking\(\.\.\.\)/);
   assert.match(rules, /java\.lang\.Object withTimeout\(\.\.\.\)/);
   assert.match(rules, /ModelBundleRepository \{ public \*; \}/);

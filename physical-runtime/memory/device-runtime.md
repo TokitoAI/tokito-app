@@ -122,3 +122,11 @@ Deterministic electrical measurement parsing lives in `measurement-runtime`.
 unconfirmed draft, speaks prompts through local TTS, and requires confirmation
 before emitting `engineer_voice` evidence. Numeric, locale, unit, and
 relationship normalization must never be delegated to the local LLM.
+
+Release instrumentation is a separate R8 consumer: AndroidTest excludes target
+dependencies even when production optimization merges their classes or rewrites
+methods. Preserve reviewed cross-APK exports (including Kotlin multifile facade
+delegate families) in `apps/mobile/proguard-release-abi.pro`, never disable R8
+globally. Run the paired DEX class/method audit described in
+`docs/RELEASE_DEVICE_QA.md` before installing both outputs. This linkage check is
+not device execution or model-performance evidence.
