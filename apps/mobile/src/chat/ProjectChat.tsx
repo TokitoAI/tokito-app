@@ -156,7 +156,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
         id = created.id; selected.current = id; setThread(id); setThreads(items => [created, ...items]);
         scope.current.save(null, ""); scope.current.save(id, content);
       }
-      const pending = await client.send(project, design, id, content, version, version === 0 ? "planner" : "schematic", activeSheetId);
+      const pending = await client.sendChat(project, design, id, content, version, activeSheetId);
       // A successful durable enqueue owns this text, even if navigation finished
       // while it was pending. Do not leave a second sendable copy in its draft.
       if (scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(id).trim() === content) scope.current.save(id, "");

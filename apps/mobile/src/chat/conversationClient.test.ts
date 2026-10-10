@@ -11,6 +11,18 @@ test("explicit sheet context crosses the native boundary unchanged", async () =>
   assert.deepEqual(args.slice(1), ["p", "d", "t", "Move R1", "7", "schematic", "radio"]);
 });
 
+test("ordinary chat uses the planner for both empty and existing schematics", async () => {
+  const calls: unknown[][] = [];
+  const native = { sendConversationMessage: async (...values: unknown[]) => { calls.push(values); return "{}"; } } as unknown as TokitoCompanionFfiNative;
+  const client = new ConversationClient(native);
+  await client.sendChat("p", "d", "t", "Explain LED current", 0, null);
+  await client.sendChat("p", "d", "t", "Explain LED current", 9, "power");
+  assert.deepEqual(calls.map(values => values.slice(1)), [
+    ["p", "d", "t", "Explain LED current", "0", "planner", null],
+    ["p", "d", "t", "Explain LED current", "9", "planner", "power"],
+  ]);
+});
+
 test("chat distinguishes missing deployment from connectivity and authentication", () => {
   assert.match(chatFailure(new Error("this sign-in method is not available right now")), /unavailable on the server/);
   assert.match(chatFailure(new Error("session expired")), /Sign in again/);

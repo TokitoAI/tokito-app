@@ -46,6 +46,11 @@ export class ConversationClient {
     if (!Number.isSafeInteger(version) || version < 0) throw new Error("Refresh the design before sending");
     return object(parseJson(await this.native.sendConversationMessage(this.id, project, design, thread, content, String(version), kind, activeSheetId)));
   }
+  /** Ordinary chat remains conversational even when a schematic exists.
+   * Explicit prepared-edit flows may use send(..., "schematic" / "bom"). */
+  async sendChat(project: string, design: string, thread: string, content: string, version: number, activeSheetId: string | null): Promise<Record<string, unknown>> {
+    return this.send(project, design, thread, content, version, "planner", activeSheetId);
+  }
   async cancel(run: string): Promise<ChatRun> {
     return parseRun(parseJson(await this.native.cancelConversationRun(this.id, run)));
   }

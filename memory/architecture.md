@@ -26,6 +26,11 @@ is not a measured or visually verified fact. Keep this distinction in the dialog
 protocol and the native bench entry point.
 
 Shared Cloud conversation history and generation run journals are server-owned.
+Ordinary project chat uses the conversational planner regardless of schematic
+revision, matching desktop. Existing geometry does not turn a question into a
+prepared edit: the schematic/BOM editor agents are only for explicit edit flows.
+**Why:** selecting the edit-only agent from revision alone prevented normal
+circuit reasoning and estimates in phone conversations.
 Mobile review sends selected operation indices against the server-captured
 proposal, never a replacement schematic or a local suggestion-status mutation.
 Approval/rejection command IDs and bodies are persisted before transmission;
