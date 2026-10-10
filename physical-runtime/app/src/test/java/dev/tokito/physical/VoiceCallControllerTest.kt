@@ -14,6 +14,17 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceCallControllerTest {
+    @Test fun cancelledPreparationCannotLeaveCallActiveOrPrepared() = runTest {
+        val harness = Harness(this, prepareFailure = kotlinx.coroutines.CancellationException("stopped"))
+        repeat(2) {
+            try { harness.controller.start(); org.junit.Assert.fail("Cancellation was swallowed") }
+            catch (_: kotlinx.coroutines.CancellationException) { }
+            assertEquals(CallState.Idle, harness.controller.currentState())
+        }
+        assertEquals(2, harness.preparations)
+        assertEquals(0, harness.starts)
+    }
+
     @Test
     fun warmUpLoadsModelsBeforeFirstPress() = runTest {
         val harness = Harness(this)

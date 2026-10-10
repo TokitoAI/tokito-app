@@ -51,6 +51,7 @@ internal class VoiceCallController(
             ensurePrepared()
             if (!active) transition(CallState.Idle)
         } catch (failure: CancellationException) {
+            if (!active) transition(CallState.Idle)
             throw failure
         } catch (failure: Throwable) {
             if (!active) transition(CallState.Unavailable(failure.message ?: "Local voice call is unavailable"))
@@ -68,6 +69,8 @@ internal class VoiceCallController(
             startListening()
             transition(CallState.Listening)
         } catch (failure: CancellationException) {
+            active = false
+            transition(CallState.Idle)
             throw failure
         } catch (failure: Throwable) {
             active = false

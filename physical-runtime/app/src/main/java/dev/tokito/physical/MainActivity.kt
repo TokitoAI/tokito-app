@@ -342,7 +342,7 @@ class MainActivity : AppCompatActivity() {
             // General electronics conversation uses the local LLM. Reviewed
             // board answers are deterministic and need no generation, so an
             // unavailable dialogue bundle must not disable those or speech.
-            runCatching {
+            prepareOptionalDialogue(prepare = {
                 val model = withContext(Dispatchers.IO) {
                     DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
                         .requireInstalled()
@@ -352,12 +352,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
                 dialogue.initialize(model)
-            }.onFailure { failure ->
+            }, unavailable = { failure ->
                 android.util.Log.i(
                     "TokitoDialogue",
                     "local LLM bundle unavailable; responding with verified board data only: ${failure.message}",
                 )
-            }
+            })
         }
     }
 

@@ -21,6 +21,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
@@ -35,7 +37,8 @@ class TokitoDialogueRuntime(
     private val protocol = DialogueProtocol(limits)
     private val operation = Mutex()
     private val closed = AtomicBoolean(false)
-    private var engine: LlmWrapper? = null
+    private val lifecycleLock = Any()
+    private val initialization = InitializationWorker<LlmWrapper>()
     private var activeRuntime: DialogueRuntime? = null
     private val sessionMessages = ArrayList<ChatMessage>()
     private var sessionChars = 0
@@ -46,28 +49,38 @@ class TokitoDialogueRuntime(
     private val _state = MutableStateFlow<DialogueRuntimeState>(DialogueRuntimeState.Uninitialized)
     val state: StateFlow<DialogueRuntimeState> = _state.asStateFlow()
 
-    suspend fun initialize(model: DialogueModel) = operation.withLock {
+    suspend fun initialize(model: DialogueModel) = withTimeout(INITIALIZATION_DEADLINE_MS) {
+        operation.withLock { initializeOwned(model) }
+    }
+
+    private suspend fun initializeOwned(model: DialogueModel) {
         ensureOpen()
         ensureSupportedDevice()
         require(model.artifacts.isNotEmpty()) { "Expected a non-empty model inventory" }
         if (!model.path.exists()) throw DialogueFailure(DialogueFailureCode.MODEL_MISSING, "Model bundle is absent")
-        _state.value = DialogueRuntimeState.Loading
+        synchronized(lifecycleLock) {
+            ensureOpen()
+            _state.value = DialogueRuntimeState.Loading
+        }
+        val started = android.os.SystemClock.elapsedRealtime()
+        fun phase(name: String) { Log.i(TAG, "Initialization phase=$name elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}") }
         try {
-            val inventoryMatches = withContext(Dispatchers.IO) {
-                model.artifacts.all { artifact ->
+            initialization.load(INITIALIZATION_DEADLINE_MS) {
+                phase("inventory")
+                val inventoryMatches = model.artifacts.all { artifact ->
                     artifact.sha256.matches(Regex("[a-f0-9]{64}")) &&
                         artifact.file.isFile &&
                         artifact.file.length() == artifact.sizeBytes &&
                         sha256(artifact.file) == artifact.sha256
                 }
-            }
-            if (!inventoryMatches) {
-                throw DialogueFailure(DialogueFailureCode.MODEL_INTEGRITY, "Model bundle does not match its pinned inventory")
-            }
-            withContext(Dispatchers.IO) {
+                if (!inventoryMatches) {
+                    throw DialogueFailure(DialogueFailureCode.MODEL_INTEGRITY, "Model bundle does not match its pinned inventory")
+                }
+                phase("jni_abi")
                 requireGenieXJniAbi()
+                phase("sdk_init")
                 initializeGenieX()
-                engine?.close()
+                phase("model_create")
                 val modelConfig = when (model.runtime) {
                     DialogueRuntime.QAIRT -> ModelConfig(
                         nCtx = 0,
@@ -81,7 +94,7 @@ class TokitoDialogueRuntime(
                         enable_thinking = false,
                     )
                 }
-                engine = LlmWrapper.builder()
+                LlmWrapper.builder()
                     .llmCreateInput(
                         LlmCreateInput(
                             model_name = model.id,
@@ -93,16 +106,32 @@ class TokitoDialogueRuntime(
                     )
                     .build()
                     .getOrThrow()
+            }
+            coroutineContext.ensureActive()
+            synchronized(lifecycleLock) {
+                ensureOpen()
                 activeRuntime = model.runtime
                 clearSession()
+                _state.value = DialogueRuntimeState.Ready(model.id)
             }
-            _state.value = DialogueRuntimeState.Ready(model.id)
+            phase("ready")
+        } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
+            initialization.discardCurrent()
+            initializationFailure(DialogueFailure(DialogueFailureCode.MODEL_LOAD_TIMEOUT, "Local model initialization exceeded its deadline"))
+            phase("timeout")
+            throw failure
+        } catch (failure: CancellationException) {
+            initialization.discardCurrent()
+            initializationFailure(DialogueFailure(DialogueFailureCode.MODEL_LOAD_CANCELLED, "Local model initialization was cancelled"))
+            phase("cancelled")
+            throw failure
         } catch (failure: DialogueFailure) {
-            _state.value = DialogueRuntimeState.Failed(failure)
+            initializationFailure(failure)
             throw failure
         } catch (failure: Throwable) {
             val wrapped = DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Local dialogue model could not be loaded", failure)
-            _state.value = DialogueRuntimeState.Failed(wrapped)
+            initializationFailure(wrapped)
+            phase("failed")
             throw wrapped
         }
     }
@@ -116,7 +145,7 @@ class TokitoDialogueRuntime(
         val toolMode = request.capabilities.isNotEmpty()
         requireDialogueMode(activeRuntime, toolMode)
         val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
-        val activeEngine = engine
+        val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
         _state.value = DialogueRuntimeState.Generating
         try {
@@ -206,12 +235,17 @@ class TokitoDialogueRuntime(
     }
 
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
-        runCatching { engine?.close() }
-        engine = null
-        activeRuntime = null
-        clearSession()
-        _state.update { DialogueRuntimeState.Closed }
+        synchronized(lifecycleLock) {
+            if (!closed.compareAndSet(false, true)) return
+            initialization.close()
+            activeRuntime = null
+            clearSession()
+            _state.update { DialogueRuntimeState.Closed }
+        }
+    }
+
+    private fun initializationFailure(failure: DialogueFailure) = synchronized(lifecycleLock) {
+        if (!closed.get()) _state.value = DialogueRuntimeState.Failed(failure)
     }
 
     private fun ensureOpen() {
@@ -287,6 +321,7 @@ class TokitoDialogueRuntime(
     }
 
     private companion object {
+        const val INITIALIZATION_DEADLINE_MS = 120_000L
         const val TAG = "TokitoDialogue"
         const val SUPPORTED_ABI = "arm64-v8a"
     }

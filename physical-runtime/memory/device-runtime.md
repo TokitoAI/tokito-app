@@ -146,3 +146,12 @@ Do not restore zero-temperature/top-k-one sampling based on an assumption that
 determinism implies correctness. The installed electronics quality suite records
 raw repeated answers and independent semantic rubrics; format checks are not
 factual-accuracy evidence. Reviewed board facts still bypass generation.
+
+GenieX init and model creation enter blocking vendor JNI; a coroutine timeout
+around that child work cannot promise prompt completion. Initialization uses
+one process-wide native-load admission and an isolated worker. Cancellation or
+close revokes engine installation; a late result is disposed off the UI thread.
+**Why:** real release instrumentation exceeded its 120-second init deadline
+without producing a model answer. Screen lock was observed, but its causal role
+was not established. Report fixed phases/timing and timeout state, never infer
+that NPU execution succeeded or was physically interrupted.

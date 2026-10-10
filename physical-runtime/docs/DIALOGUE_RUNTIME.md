@@ -74,6 +74,20 @@ proposal object and rejects unknown keys, tools, versions, arguments, and
 deadlines. The deterministic measurement parser remains the only authority for
 normalizing spoken electrical measurements.
 
+Initialization has a 120-second end-to-end deadline, including serialization and
+inventory verification. Blocking vendor JNI runs on an isolated bounded worker,
+not a child coroutine which could prevent the deadline from returning. Timeout
+and caller cancellation revoke installation and preserve coroutine cancellation;
+state distinguishes model-load timeout/cancellation from model integrity failure.
+There is at most one native load in flight across runtime recreation. While an
+expired JNI call is still finishing, another load is rejected rather than queued.
+This does not claim to interrupt vendor JNI: any late engine is disposed on its
+worker and cannot replace a newer session or revive a closed runtime. Model
+creation, disposal and phase diagnostics never block the UI thread. Diagnostics
+contain only fixed phase names and elapsed milliseconds, not prompt/model text.
+Lock-screen conditions must be recorded separately; a timeout is not proof that
+the operating system suspended the NPU.
+
 ## Local design retrieval
 
 `LocalDesignContextIndex` accepts records only after an assembly-context bundle
