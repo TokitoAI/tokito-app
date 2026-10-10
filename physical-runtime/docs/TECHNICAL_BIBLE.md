@@ -9,6 +9,11 @@ generator token measurements. Context capacity comes from compatible signed
 compiled-export metadata and must be qualified against actual binary graph
 selection; source positional maxima cannot authorize larger runtime contexts.
 Unavailable/mismatched native token receipts and context exhaustion fail closed.
+Oldest quoted conversation may be evicted after exact token admission fails;
+the current question and verified evidence are never truncated to manufacture
+admission. Local speech receives only a complete validated final answer, not
+private reasoning. Successful generation or audio playback is not proof of
+source-grounded factual correctness.
 See [DIALOGUE_RUNTIME.md](DIALOGUE_RUNTIME.md#exact-qwen-token-admission).
 
 > **Unified-product note (2026-09-29):** This document specifies the native,

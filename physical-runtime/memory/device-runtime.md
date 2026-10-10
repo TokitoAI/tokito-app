@@ -220,3 +220,16 @@ Qualify actual QNN graph selection before release. Do not reinterpret a source
 positional maximum as compiled capacity or scan binary strings for admission.
 Run the host exact-ID reference check and real Android JNI conformance tests;
 host reference parity alone is not a device or generation-cap pass.
+
+Conversation admission uses the actual 4,096-token signed graph capacity and
+reserves 512 output tokens. The evidence character preflight permits up to
+12,000 characters; it is not a tokenizer estimate or an authorization to exceed
+the compiled context. If the complete formatted prompt overflows, oldest quoted
+history is evicted and the candidate is re-tokenized. Current question, verified
+evidence and output reservation are never silently reduced.
+**Why:** low 64/128-token evaluation caps and the former 35-word speech rejection
+could reject a complete native answer independently of available model context.
+Final-answer extraction follows Qwen's last closing delimiter and keeps the
+reasoning prelude out of speech and retained assistant history; unfinished
+final-answer tags and incomplete native
+responses still fail closed. Playback is not factual-quality qualification.

@@ -2,6 +2,8 @@ package dev.tokito.app
 
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.tokito.physical.dialogue.*
+import dev.tokito.physical.voice.TokitoVoiceRuntime
+import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.model.ModelBundleRepository
 import dev.tokito.physical.model.ModelCapability
 import kotlinx.coroutines.runBlocking
@@ -13,17 +15,19 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Real unified app sandbox; signed models must be UI-imported first. */
 class LocalQwenTokensDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+
     @Test fun exactNativeQwenIdsAndActualQnnInventory() {
         val repository = ModelBundleRepository(context)
         val directory = requireNotNull(repository.activeDirectory(ModelCapability.DIALOGUE))
         val model = DialogueModelProvisioner.fromAdmittedBundle(directory).requireInstalled()
-        val root = model.path.canonicalFile.parentFile
+        val root = requireNotNull(model.path.canonicalFile.parentFile)
         // Inspect release-preserved internal ABI without adding a public testing
         // API or bypassing the production signed-model/hash checks.
         val metadataType = Class.forName("dev.tokito.physical.dialogue.QairtContextMetadata")
@@ -58,7 +62,12 @@ class LocalQwenTokensDeviceTest {
         // The production completion boundary must compare actual native prompt
         // and generated token receipts. Response success proves that boundary;
         // stream chunks or re-tokenized answer strings cannot substitute for it.
-        for (cap in listOf(64, 128, 192)) {
+        // Completion tests use the real conversational allowance. Tiny caps
+        // belong in the separate truncation test, not a success prerequisite.
+        val voice = TokitoVoiceRuntime(context)
+        try {
+        withTimeout(90_000) { voice.initialize() }
+        for (cap in listOf(512, 768)) {
             val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits(maxPredictTokens = cap))
             try {
                 withTimeout(120_000) { runtime.initialize(model) }
@@ -66,13 +75,20 @@ class LocalQwenTokensDeviceTest {
                     ForegroundDeviceQa.requireResumed(foreground)
                     val response = withTimeout(65_000) { runtime.respond(DialogueRequest(prompt, deadlineMs = 60_000)) }
                     assertTrue("Cap $cap failed actual native receipt validation: $response", response is DialogueOutcome.Response)
+                    val answer = (response as DialogueOutcome.Response).text
+                    assertFalse("Private reasoning must never reach speech", answer.contains("think>"))
+                    val played = AtomicBoolean(false)
+                    withTimeout(45_000) { voice.speak(answer, SpeechQueuePolicy.REPLACE) { played.set(true) } }
+                    assertTrue("Generated answer did not complete local audio playback", played.get())
                     instrumentation.sendStatus(2, android.os.Bundle().apply {
                         putInt("tokito_qwen_output_cap", cap)
-                        putString("tokito_qwen_receipt_validated_response", (response as DialogueOutcome.Response).text)
+                        putString("tokito_qwen_receipt_validated_response", answer)
+                        putBoolean("tokito_qwen_audio_played", played.get())
                     })
                 }
             } finally { runtime.close() }
         }
+        } finally { voice.close() }
     }
 
     @Test fun actualTruncatedOutputIsRejectedAfterExactReceiptValidation() = runBlocking {
@@ -92,6 +108,36 @@ class LocalQwenTokensDeviceTest {
                 assertEquals(DialogueFailureCode.OUTPUT_LIMIT, failure.code)
             }
         } finally { runtime.close() }
+    }
+
+    /** Authored test evidence, not a claim about any physical board or dataset. */
+    @Test fun currentEvidenceOverridesStaleDialogueAndPlaysAudio() = runBlocking {
+        val foreground = ForegroundDeviceQa.launch()
+        val model = DialogueModelProvisioner.fromAdmittedBundle(requireNotNull(
+            ModelBundleRepository(context).activeDirectory(ModelCapability.DIALOGUE))).requireInstalled()
+        val evidence = LocalDesignContextIndex("authored-qa-current", listOf(DesignContextRecord(
+            "qa-r3", DesignFactAuthority.AUTHORED_PLACEMENT, setOf("R3"), "R3 is a 6.8 kiloohm resistor.",
+            setOf("authored-test-design")))).retrieve("R3")!!
+        val runtime = ForegroundDeviceQa.runtime(foreground, DialogueLimits())
+        val voice = TokitoVoiceRuntime(context)
+        try {
+            withTimeout(120_000) { runtime.initialize(model) }
+            withTimeout(90_000) { voice.initialize() }
+            val result = withTimeout(65_000) { runtime.respond(DialogueRequest(
+                "What is the resistor value in the current verified design?",
+                history = listOf(DialogueTurn(DialogueRole.USER, "What is R3?"),
+                    DialogueTurn(DialogueRole.ASSISTANT, "R3 is 100 ohms.")),
+                designContext = evidence, deadlineMs = 60_000)) } as DialogueOutcome.Response
+            assertTrue("Current source value was not preserved: ${result.text}", result.text.contains("6.8"))
+            assertFalse("Stale assistant value became evidence: ${result.text}", result.text.contains("100"))
+            val played = AtomicBoolean(false)
+            withTimeout(45_000) { voice.speak(result.text, SpeechQueuePolicy.REPLACE) { played.set(true) } }
+            assertTrue(played.get())
+            instrumentation.sendStatus(2, android.os.Bundle().apply {
+                putString("tokito_authored_context_response", result.text)
+                putBoolean("tokito_context_audio_played", played.get())
+            })
+        } finally { runtime.close(); voice.close() }
     }
 
     private companion object {

@@ -15,9 +15,10 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         answers can be wrong or stale. Use history only to understand the question;
         current verified evidence supersedes every previous answer.
         If evidence needed for a board-specific answer is missing, ask one concise question.
-        Answer directly in exactly one short sentence, using at most 35 words.
+        Answer directly and concisely, using at most ${limits.maxSpokenWords} words.
         Use plain text suitable for speech: no lists, markdown, preamble, repeated
         question, hidden reasoning, or thinking tags. Be precise rather than exhaustive.
+        /no_think
     """.trimIndent()
 
     fun systemPrompt(): String = """
@@ -87,7 +88,7 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
             evidenceCount += 1
         }
         if (evidenceCount == 0) appendLine("- No verified evidence was supplied.")
-        append("Answer directly in one sentence of at most 35 words. For general electronics, explain the concept; for this board, use only verified evidence. Do not repeat the question.")
+        append("Answer directly in at most ${limits.maxSpokenWords} words. For general electronics, explain the concept; for this board, use only verified evidence. Do not repeat the question. /no_think")
     }.also {
         if (it.length > limits.maxPromptChars) fail("Serialized request exceeds prompt limit")
     }
@@ -142,7 +143,7 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         if (raw.length > limits.maxOutputChars) {
             throw DialogueFailure(DialogueFailureCode.OUTPUT_LIMIT, "Model output exceeds limit")
         }
-        val text = raw.trim().removePrefix("</think>").trim()
+        val text = spokenFinalAnswer(raw)
         if (text.isEmpty() || text.length > limits.maxTurnChars) invalid("Conversational output is empty or oversized")
         if (text.any { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' }) {
             invalid("Conversational output contains control characters")
@@ -150,12 +151,23 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
         if (text.startsWith('{') || text.startsWith('[') || text.contains("```") || CONTROL_TAG.containsMatchIn(text)) {
             invalid("Conversational output contains a control payload")
         }
-        if (text.split(Regex("\\s+")).size > 35) invalid("Conversational output exceeds spoken word budget")
-        if ('\n' in text || '\r' in text || text.startsWith("- ") || text.startsWith("* ") ||
+        if (text.split(Regex("\\s+")).size > limits.maxSpokenWords) invalid("Conversational output exceeds spoken word budget")
+        if (text.lineSequence().any { it.trimStart().startsWith("- ") || it.trimStart().startsWith("* ") } ||
             text.contains("**") || text.contains("`")) {
             invalid("Conversational output is not plain spoken text")
         }
         return DialogueOutcome.Response(text)
+    }
+
+    /** Match Qwen's official last-</think> final-answer boundary. Everything
+     * before that boundary is untrusted reasoning, never spoken or retained.
+     * Unclosed/reopened tags in the final answer still fail the content guards.
+     */
+    private fun spokenFinalAnswer(raw: String): String {
+        val value = raw.trim()
+        val close = value.lastIndexOf("</think>")
+        if (close < 0) return value // Unclosed tags are rejected by CONTROL_TAG.
+        return value.substring(close + 8).trim()
     }
 
     private fun parseTool(value: JSONObject, request: DialogueRequest): DialogueOutcome.ToolProposal {

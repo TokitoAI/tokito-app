@@ -115,8 +115,14 @@ min-p 0), following the [official model guidance](https://huggingface.co/Qwen/Qw
 It is not deterministic greedy generation. Thinking is disabled in model
 configuration and the SDK chat-template call; use the admitted template rather
 than hand-building ChatML. Boolean diagnostics expose template markers without
-logging conversation content. Both spoken prompts request one sentence of at
-most 35 words; output limits are fail-safes, not automatic summarization.
+logging conversation content. Both spoken prompts use the same configurable
+160-word ceiling and `/no_think` soft instruction. A complete Qwen reasoning
+prelude is separated at the last closing delimiter, matching the
+[official Qwen final-answer extraction](https://huggingface.co/Qwen/Qwen3-1.7B),
+before speech or history retention. Unfinished/reopened tags in the final answer
+are rejected. The final answer still
+passes all plain-text, control-payload and size guards. Output limits are
+fail-safes, not automatic summarization.
 Never truncate a long answer and claim it is a complete factual response.
 
 Conversation output is limited to plain spoken text. Control payloads, JSON

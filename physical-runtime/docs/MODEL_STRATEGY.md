@@ -101,8 +101,10 @@ restricted to bounded plain-text conversation with no tool capabilities. The
 strict typed proposal parser remains available for a separately validated
 schema-constrained backend; it is not bypassed or weakened for QAIRT.
 
-The camera-call profile caps generated dialogue at 128 tokens. Conversational
-prompts consistently request one spoken sentence of at most 35 words. Qwen3
+The conversational profile reserves 512 generated tokens within the signed
+4,096-token compiled context. Spoken answers have a configurable 160-word
+ceiling; plain-text paragraphs are allowed. This is not a 512-token context.
+Qwen3
 non-thinking sampling follows its official profile, not greedy decoding. Format
 adherence and semantic quality require installed-device response review;
 token limits alone cannot enforce concise, correct speech.
