@@ -114,8 +114,10 @@ def method_exists(method, definitions, parents, visited=None):
             ("wait", "V", ()), ("wait", "V", ("J",)), ("wait", "V", ("J", "I")),
         }
     if owner.startswith(("Ljava/", "Landroid/")):
-        # Framework inherited methods are not supplied by either APK.
-        return True
+        # A framework superclass/interface is not proof that an arbitrary method
+        # exists. In particular Serializable cannot supply a removed Regex.split.
+        # Unknown inherited platform exports fail closed for explicit review.
+        return method_exists(("Ljava/lang/Object;", name, result, args), definitions, parents, visited)
     return any(method_exists((parent, name, result, args), definitions, parents, visited)
                for parent in parents.get(owner, []))
 

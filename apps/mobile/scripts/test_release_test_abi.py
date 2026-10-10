@@ -44,6 +44,12 @@ class ReleaseAbiTest(unittest.TestCase):
         self.assertFalse(abi.method_exists(method, {("Lparent;", "<init>", "V", ())},
                                           {"Lchild;": ["Lparent;"]}))
 
+    def test_serializable_cannot_hide_optimized_regex_signature(self):
+        requested = ("Lkotlin/text/Regex;", "g", "Ljava/util/List;", ("Ljava/lang/CharSequence;", "I"))
+        rewritten = (requested[0], "g", "Ljava/util/List;", ("Ljava/lang/String;",))
+        self.assertFalse(abi.method_exists(requested, {rewritten}, {
+            requested[0]: ["Ljava/lang/Object;", "Ljava/io/Serializable;"]}))
+
     def test_uleb_boundary(self):
         self.assertEqual((128, 2), abi.uleb(b"\x80\x01", 0))
         with self.assertRaises(ValueError):

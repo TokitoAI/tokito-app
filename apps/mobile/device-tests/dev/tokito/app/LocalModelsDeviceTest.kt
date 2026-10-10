@@ -104,7 +104,7 @@ class LocalModelsDeviceTest {
                     val start = android.os.SystemClock.elapsedRealtime()
                     val outcome = withTimeout(65_000) { runtime.respond(DialogueRequest(prompt, deadlineMs = 60_000)) }
                     val answer = (outcome as? DialogueOutcome.Response)?.text.orEmpty()
-                    val words = answer.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
+                    val words = java.util.StringTokenizer(answer).countTokens()
                     val sentences = BreakIterator.getSentenceInstance(Locale.US).let { iterator ->
                         iterator.setText(answer)
                         var count = 0

@@ -19,6 +19,11 @@ R8-reordered method parameters or narrowed constructor types. Intrinsics and
 the explicitly exercised runtime exports must keep their original signatures.
 Build the target and test APK together, install both exact outputs with `-r`,
 and run the installed runner directly to preserve admitted app-private models.
+The cross-APK method audit must not accept an unknown method merely because
+a class implements a platform interface. `Serializable` supplies no Regex split
+method; that shortcut hid a real R8-narrowed signature. Unknown inherited
+platform exports require explicit review. Test-only corpus parsing uses
+framework `StringTokenizer`, not extra production keep rules for Kotlin Regex.
 
 GenieX resolves plugins from `ApplicationInfo.nativeLibraryDir`, so the unified
 APK needs `expo.useLegacyPackaging=true` (native library extraction). A library
@@ -44,6 +49,12 @@ than FlatList's estimated last-row geometry. Preserve visible-item anchors
 only while reading older messages: keeping that anchor during hydration can
 override the initial latest-message scroll. Footer-only streamed output must
 also follow even when there are no saved rows yet.
+Native follow commands are coalesced to the layout frame and re-read current
+content/viewport measurements. Saved-row layout and native scroll metrics must
+correct a scroll clamped during the streamed-footer-to-history transition.
+Never treat the old footer height as the final saved Markdown height or steal
+a reader drag to force the last answer visible. The Latest action is an
+immediate follow, not a synthetic reader momentum gesture.
 Streamed output belongs to its exact run ID: stop the previous watch before
 queueing a new user message, and ignore
 late events for older runs. Tool-separated response rounds preserve completed

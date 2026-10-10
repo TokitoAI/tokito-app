@@ -9,7 +9,7 @@ import { tokens } from "../theme";
 import { ErrorText, PrimaryButton } from "../ui/primitives";
 import { selectedSheet, type ChatSheet } from "./sheetContext";
 import { ChatMarkdown } from "./ChatMarkdownView";
-import { ChatScrollIntent } from "./chatScroll";
+import { ChatFollowFrame, ChatScrollIntent } from "./chatScroll";
 import { chatCardLayout } from "./chatLayout";
 import { sendBlockReason } from "./sendReadiness";
 import { chatSendFailure, chatSendStep, type ChatSendStage } from "./sendDiagnostics";
@@ -25,6 +25,12 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const selected = useRef<string | null>(null);
   const list = useRef<FlatList<ChatRow>>(null);
   const scrollIntent = useRef(new ChatScrollIntent());
+  const followFrame = useRef<ChatFollowFrame | null>(null);
+  if (followFrame.current === null) followFrame.current = new ChatFollowFrame(
+    scrollIntent.current, requestAnimationFrame, cancelAnimationFrame,
+    (offset, animated) => list.current?.scrollToOffset({ offset, animated }),
+  );
+  useEffect(() => () => followFrame.current?.cancel(), []);
   const [showLatest, setShowLatest] = useState(false);
   const displayedRun = useRef<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -50,8 +56,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const [ready, setReady] = useState(false);
   function updateDraft(text: string): void { scope.current.save(selected.current, text); setDraft(text); }
   function followLatest(animated = false): void {
-    const offset = scrollIntent.current.target();
-    if (offset !== null) list.current?.scrollToOffset({ offset, animated });
+    followFrame.current?.request(animated);
   }
 
   async function load(client: ConversationClient, id: string, before: number | null = null): Promise<void> {
@@ -236,6 +241,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   // While replaying an active run, its durable prefaces belong to the single
   // live card. Once settled, the saved server messages replace that card.
   const { rows: displayedRows, hasSavedAnswer } = chatHistoryProjection(rows, run, savedRun);
+  useEffect(() => { followFrame.current?.request(); }, [displayedRows, hasSavedAnswer, view.text, active]);
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     {sheets.length > 1 ? <View style={styles.toolbar}><Text style={styles.muted}>Work on sheet</Text><ScrollView horizontal contentContainerStyle={styles.threadList}>{sheets.map(sheet => <Pressable key={sheet.id} accessibilityRole="radio" accessibilityState={{ selected: activeSheetId === sheet.id }} disabled={active} onPress={() => setSheetChoice(sheet.id)} style={[styles.thread, activeSheetId === sheet.id && styles.selected]}><Text style={styles.threadText}>{sheet.name}</Text></Pressable>)}</ScrollView></View> : null}
     {needsSheet && sheets.length === 0 ? <Text style={styles.muted}>Waiting for the design’s sheets to sync before editing.</Text> : null}
@@ -259,19 +265,19 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     }} /></View> : null}
     <FlatList ref={list} data={displayedRows} keyExtractor={r => r.id} style={styles.history} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}
       onScrollBeginDrag={() => scrollIntent.current.drag()}
-      onScrollEndDrag={() => scrollIntent.current.end()}
+      onScrollEndDrag={() => { scrollIntent.current.end(); followLatest(); }}
       onMomentumScrollBegin={() => scrollIntent.current.drag()}
-      onMomentumScrollEnd={() => scrollIntent.current.end()}
-      onScroll={e => { const n = e.nativeEvent; scrollIntent.current.scroll(n.contentSize.height, n.layoutMeasurement.height, n.contentOffset.y); setShowLatest(!scrollIntent.current.following); }} scrollEventThrottle={100}
+      onMomentumScrollEnd={() => { scrollIntent.current.end(); followLatest(); }}
+      onScroll={e => { const n = e.nativeEvent; scrollIntent.current.scroll(n.contentSize.height, n.layoutMeasurement.height, n.contentOffset.y); setShowLatest(!scrollIntent.current.following); if (scrollIntent.current.needsFollow(n.contentOffset.y)) followLatest(); }} scrollEventThrottle={100}
       onLayout={event => { scrollIntent.current.layout(event.nativeEvent.layout.height); followLatest(); }}
       onContentSizeChange={(_width, height) => { scrollIntent.current.content(height); followLatest(); }}
       maintainVisibleContentPosition={showLatest ? { minIndexForVisible: 0 } : undefined}
       ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { scrollIntent.current.earlier(); setShowLatest(true); const client = connection.current; const ticket = scope.current.ticket(); if (client && thread) void load(client, thread, older).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
       ListEmptyComponent={busy ? <ActivityIndicator color={tokens.accent} style={styles.empty} /> : <View style={styles.empty}><Text style={styles.emptyTitle}>What would you like to build?</Text><Text style={styles.muted}>Ask about this design or describe a change. You review changes before they are applied.</Text></View>}
-      renderItem={({ item }) => <View style={[styles.bubble, chatCardLayout.assistant, item.role === "user" && styles.user, item.role === "user" && chatCardLayout.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text>{item.role === "assistant" ? <ChatMarkdown content={item.content} /> : <Text selectable style={styles.body}>{item.content}</Text>}</View>}
+      renderItem={({ item }) => <View onLayout={() => followLatest()} style={[styles.bubble, chatCardLayout.assistant, item.role === "user" && styles.user, item.role === "user" && chatCardLayout.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text>{item.role === "assistant" ? <ChatMarkdown content={item.content} /> : <Text selectable style={styles.body}>{item.content}</Text>}</View>}
       ListFooterComponent={<View style={styles.footer}>{!hasSavedAnswer && (view.text || active) ? <View style={[styles.bubble, chatCardLayout.assistant]}><Text style={styles.author}>Tokito</Text>{view.text ? <ChatMarkdown content={view.text} /> : <Text style={styles.muted}>{view.activity || (sending ? "Waiting to send…" : "Working on your design…")}</Text>}{view.text && active && view.activity ? <View style={styles.activity}><ActivityIndicator size="small" color={tokens.accent} /><Text style={styles.muted}>{view.activity}</Text></View> : null}</View> : null}{view.proposals.map(proposal => <View key={proposal.turnId} style={styles.proposal}><Text style={styles.proposalTitle}>Changes prepared</Text><Text style={styles.muted}>{Array.isArray(proposal.payload.ops) ? `${proposal.payload.ops.length} proposed changes. ` : ""}Review before applying to this design.</Text><PrimaryButton label="Review changes" onPress={onReview} /></View>)}{view.error ? <View style={styles.feedback}><ErrorText>{view.error}</ErrorText></View> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
-    {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); followLatest(true); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
+    {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); followLatest(); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
     {error ? <View accessibilityLiveRegion="polite" style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Try again</Text></Pressable></View> : null}
     {needsSheet ? <View style={styles.feedback}><Text style={styles.muted}>Choose a synchronized sheet before sending. Your draft is kept.</Text></View> : null}
     <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
