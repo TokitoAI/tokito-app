@@ -55,8 +55,14 @@ class DatasetBenchDeviceTest {
                 withTimeout(45_000) { while (voice.state.value !is VoiceRuntimeState.Ready) delay(50) }
                 instrumentation.sendStatus(2, Bundle().apply { putString("reference_question", question); putString("source_answer", answer) })
             }
+            val followUp = withContext(Dispatchers.Main) { bench.respondLocally("Which revision does that reference cover?") }
+            assertTrue("Reference scope lost on follow-up: $followUp", followUp.contains("2.1.4"))
+            val physical = withContext(Dispatchers.Main) { bench.respondLocally("Is this my board?") }
+            assertTrue(physical.contains("verified board identification"))
             val ambiguous = withContext(Dispatchers.Main) { bench.respondLocally("ESP32 versus ESP8266") }
             assertTrue(ambiguous.contains("one board at a time"))
+            val variant = withContext(Dispatchers.Main) { bench.respondLocally("What is ESP32-S3?") }
+            assertTrue(variant.contains("won't substitute"))
         } finally {
             voice.close()
             instrumentation.runOnMainSync { bench.finish() }

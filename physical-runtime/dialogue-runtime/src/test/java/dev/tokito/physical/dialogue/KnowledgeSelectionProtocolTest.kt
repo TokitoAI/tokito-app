@@ -62,6 +62,14 @@ class KnowledgeSelectionProtocolTest {
         }
     }
 
+    @Test fun modelReceivesAnExplicitCompleteAllowedIdList() {
+        val selection = request(true)
+        val prompt = JSONObject(selection.prompt("What is this reference?"))
+        val ids = prompt.getJSONArray("allowed_fact_ids")
+        assertEquals(selection.facts.map { it.id }, (0 until ids.length()).map { ids.getString(it) })
+        assertTrue(prompt.isNull("correction"))
+    }
+
     @Test fun noMixedToolAuthorityOrHistoryForRag() {
         val protocol = DialogueProtocol(DialogueLimits())
         val valid = DialogueRequest("Where is the MCU?", knowledgeSelection = request())

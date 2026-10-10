@@ -49,6 +49,10 @@ Qwen returns only a `facts` array of existing source fact IDs. Every ID is
 validated, including selections beyond the four-fact spoken-answer budget.
 Native validation rejects invented IDs, duplicates, extra keys/prose and
 malformed output. Spoken values/citations are reconstructed from source records.
+The prompt carries the complete allowed-ID list. A malformed selection may be
+regenerated once with the same admitted evidence, within one 60-second turn
+deadline. Neither failure nor correction enters conversation memory. This is
+not a free-form or remote-model fallback.
 The selector has no component-target or rendering authority; physical targeting
 requires the independently admitted detector and assembly context.
 The bounded prompt exposes at most 40 scalar facts, at most 240 characters each;

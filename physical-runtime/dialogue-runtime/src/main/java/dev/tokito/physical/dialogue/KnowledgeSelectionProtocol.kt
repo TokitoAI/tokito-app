@@ -9,6 +9,7 @@ class KnowledgeSelectionRequest(
     val corpusRevision: String,
     evidence: List<BoardKnowledgeStore.Evidence>,
     private val history: List<DialogueTurn> = emptyList(),
+    private val repairAttempt: Boolean = false,
 ) {
     data class Fact(val id: String, val recordId: String, val componentId: String, val reference: String,
                     val pointer: String, val value: String, val sourceCitation: String)
@@ -56,6 +57,8 @@ class KnowledgeSelectionRequest(
         .put("question", utterance).put("board_id", boardId).put("corpus_revision", corpusRevision)
         .put("source_authority", "reference_design_not_verified_physical_identity")
         .put("response_format", "Return only {\"facts\":[\"f0\"]}, using zero to four supplied fact IDs. Empty facts means insufficient evidence. Do not copy fact objects or values.")
+        .put("allowed_fact_ids", JSONArray(facts.map { it.id }))
+        .put("correction", if (repairAttempt) "The previous selection failed validation. Select only exact IDs from allowed_fact_ids. Read the supplied descriptions; return one JSON object with only facts." else JSONObject.NULL)
         .put("history_not_evidence", JSONArray(history.map { JSONObject().put("role", it.role.name).put("text", it.text) }))
         .put("facts", JSONArray(facts.map { fact -> JSONObject().put("id", fact.id)
             .put("component_id", fact.componentId).put("field", fact.pointer).put("value", fact.value) })).toString()

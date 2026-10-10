@@ -63,7 +63,20 @@ class LocalBoardRag(
         if (evidence.isEmpty()) return@withLock DialogueOutcome.Response("No reference records are available for the selected board.")
         val selection = KnowledgeSelectionRequest(binding.boardId, binding.corpusRevision, evidence, history.toList())
         android.util.Log.i("TokitoDialogue", "Reference retrieval records=${evidence.size} facts=${selection.facts.size} descriptionPresent=${selection.facts.any { it.pointer == "/facts/description" }}")
-        val answer = generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = selection))
+        // One bounded regeneration of a malformed selection uses the same
+        // admitted evidence, never unchecked prose or a different model.
+        val answer = kotlinx.coroutines.withTimeout(60_000) {
+            try {
+                generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = selection))
+            } catch (failure: DialogueFailure) {
+                if (failure.code != DialogueFailureCode.INVALID_MODEL_OUTPUT) throw failure
+                coroutineContext.ensureActive()
+                requireCurrent()
+                val corrected = KnowledgeSelectionRequest(binding.boardId, binding.corpusRevision,
+                    evidence, history.toList(), repairAttempt = true)
+                generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = corrected))
+            }
+        }
         coroutineContext.ensureActive()
         requireCurrent()
         val response = answer as? DialogueOutcome.Response
