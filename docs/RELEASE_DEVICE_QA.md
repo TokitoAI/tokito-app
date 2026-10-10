@@ -5,6 +5,9 @@ Bench Start must be checked from both project-attached and projectless UI routes
 ReadableNativeMap through Expo conversion, including nullable/absent fields,
 opaque identities, unknown keys, wrong types, invalid parent relationships and
 UTF-8 bounds. These device tests do not substitute for opening the actual bench.
+The converter harness constructs the exact nullable Map/String/nullable-Any
+SDK descriptors explicitly. This removes test-only Pika/reflection setup, not
+the real Expo conversion; strict paired DEX validation remains mandatory.
 `LocalBenchPolicyDeviceTest` verifies production evidence/abstention against the
 same twelve electronics questions as the raw evaluation, without replacing its
 failed quality results or invoking the model.

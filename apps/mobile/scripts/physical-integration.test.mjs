@@ -20,6 +20,8 @@ test("physical session bridge uses explicit map decoding rather than reflective 
   const deviceTest = await readFile(new URL("../device-tests/dev/tokito/app/PhysicalSessionBridgeDeviceTest.kt", import.meta.url), "utf8");
   assert.match(deviceTest, /Arguments::makeNativeMap/);
   assert.match(deviceTest, /converter\.convert\(dynamic/);
+  assert.match(deviceTest, /RawTypeDescriptor\.Parameterized\(Map::class\.java, true, null, parameters\)/);
+  assert.doesNotMatch(deviceTest, /typeDescriptorOf|\bmapOf\(|\bto\b/);
 });
 
 test("paired release DEX linkage audit regression suite", () => {

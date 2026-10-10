@@ -139,6 +139,7 @@ if (project.findProperty('tokito.deviceTests') == 'true') {
     androidTestImplementation project(':dialogue-runtime')
     androidTestImplementation project(':voice-runtime')
     androidTestImplementation project(':expo-modules-core')
+    androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'
   }
 }
 `;
@@ -147,6 +148,12 @@ if (project.findProperty('tokito.deviceTests') == 'true') {
       result.modResults.contents = result.modResults.contents.replace(
         "androidTestImplementation project(':voice-runtime')",
         "androidTestImplementation project(':voice-runtime')\n    androidTestImplementation project(':expo-modules-core')",
+      );
+    }
+    if (!result.modResults.contents.includes("androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'")) {
+      result.modResults.contents = result.modResults.contents.replace(
+        "androidTestImplementation project(':expo-modules-core')",
+        "androidTestImplementation project(':expo-modules-core')\n    androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'",
       );
     }
     return result;

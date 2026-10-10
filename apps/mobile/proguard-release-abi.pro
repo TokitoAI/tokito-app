@@ -28,6 +28,10 @@
 # Optimized-device acceptance exercises the real Expo collection conversion ABI.
 -keep,includedescriptorclasses class expo.modules.kotlin.types.TypeConverterProviderImpl { public *; }
 -keep,includedescriptorclasses interface expo.modules.kotlin.types.TypeConverter { public *; }
+-keep,includedescriptorclasses interface expo.modules.kotlin.types.descriptors.RawTypeDescriptor { public *; }
+-keep,includedescriptorclasses class expo.modules.kotlin.types.descriptors.RawTypeDescriptor$Simple { public *; }
+-keep,includedescriptorclasses class expo.modules.kotlin.types.descriptors.RawTypeDescriptor$Parameterized { public *; }
+-keep,includedescriptorclasses class expo.modules.kotlin.types.descriptors.TypeDescriptor { public *; }
 -keep,includedescriptorclasses class com.facebook.react.bridge.DynamicFromObject { public *; }
 -keep,includedescriptorclasses class com.facebook.react.bridge.Arguments { public *; }
 
