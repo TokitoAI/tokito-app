@@ -35,12 +35,11 @@ class DatasetBenchDeviceTest {
                 while (withContext(Dispatchers.Main) { bench.localReasoningState } !is DialogueRuntimeState.Ready) delay(200)
             }
             voice.initialize()
-            val captured = async(start = CoroutineStart.UNDISPATCHED) {
-                withTimeout(90_000) { voice.events.first { it is VoiceEvent.Transcript && it.segment.isFinal && it.segment.text.isNotBlank() } as VoiceEvent.Transcript }
-            }
             voice.startListening()
             instrumentation.sendStatus(2, Bundle().apply { putString("microphone_state", "listening_for_live_esp32_question") })
-            val transcript = captured.await().segment.text
+            val transcript = withTimeout(90_000) {
+                (voice.events.first { it is VoiceEvent.Transcript && it.segment.isFinal && it.segment.text.isNotBlank() } as VoiceEvent.Transcript).segment.text
+            }
             voice.stopListening()
             val answer = withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(transcript) } }
             instrumentation.sendStatus(2, Bundle().apply { putString("live_transcript", transcript); putString("source_answer", answer) })

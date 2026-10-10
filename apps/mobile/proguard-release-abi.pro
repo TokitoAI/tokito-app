@@ -67,6 +67,10 @@
 -keep,includedescriptorclasses class kotlin.jvm.internal.Lambda { public *; protected *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.CoroutineScope { public *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.flow.StateFlow { public *; }
+# Real microphone acceptance consumes final events across the paired test APK.
+# Keep the Flow interface and its Kotlin facade/delegate ABI, not all coroutines.
+-keep,includedescriptorclasses interface kotlinx.coroutines.flow.Flow { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.flow.FlowKt** { public *; }
 
 # Installed acceptance exercises these APIs as a separate consumer program.
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.Capability { public *; }
