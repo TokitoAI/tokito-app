@@ -77,6 +77,7 @@ test("release instrumentation keeps only its cross-APK ABI without disabling R8"
   assert.doesNotMatch(rules, /^\s*-(?:dontoptimize|dontshrink|dontobfuscate)/m);
   assert.doesNotMatch(rules, /class\s+(?:kotlin|kotlinx|dev\.tokito)\.\*\*/);
   assert.match(rules, /-keep class kotlin\.jvm\.internal\.Intrinsics \{ \*; \}/);
+  assert.match(rules, /-keep class androidx\.tracing\.Trace \{ \*; \}/);
   assert.match(rules, /java\.lang\.Object runBlocking\(\.\.\.\)/);
   assert.match(rules, /java\.lang\.Object withTimeout\(\.\.\.\)/);
   assert.match(rules, /ModelBundleRepository \{ public \*; \}/);

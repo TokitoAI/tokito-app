@@ -11,6 +11,10 @@ not reconstruct optimized parameter order or narrower argument types. A
 `NoSuchMethodError` before the runner starts is a failed acceptance run, not
 evidence about the local model. Inspect both mapping/configuration outputs and
 fix the explicit binary boundary instead of disabling R8 globally.
+Likewise a shared target dependency can be removed by production R8 while the
+test APK excludes it as already supplied by the target. The runner's
+`androidx.tracing.Trace` entrypoints are kept narrowly for this reason; inspect
+`usage.txt` when startup reports `NoClassDefFoundError` before a test runs.
 
 After Rust/UniFFI generation and Expo Android prebuild, build the two APKs in
 one invocation from `apps/mobile/android`:

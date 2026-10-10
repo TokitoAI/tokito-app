@@ -4,6 +4,9 @@
 # Keep only the runtime exports exercised by the shipping device acceptance
 # suite. Production shrinking/optimization stays enabled for everything else.
 -keep class kotlin.jvm.internal.Intrinsics { *; }
+# AndroidJUnitRunner calls this shared production dependency before any test.
+# The test APK excludes target dependencies even when target R8 removes them.
+-keep class androidx.tracing.Trace { *; }
 
 -keep,includedescriptorclasses class kotlinx.coroutines.BuildersKt {
     public static java.lang.Object runBlocking(...);
