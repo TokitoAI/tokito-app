@@ -107,6 +107,20 @@ layer; the GLB follows that quad and clears after tracking expiry. Its manifest
 explicitly marks the smoke evidence as not release-eligible, so it is an
 experimental FRDM product path rather than proof of the general vision gate.
 
+An explicitly provisioned vision bundle may instead contain `segmentation.json`
+and `segment.onnx`. This path uses the already packaged ONNX Runtime 1.27.1 CPU
+core (shared with speech/embedding), not a second native core. Its instance masks
+are generic image-frame experimental predictions, not four-corner registration
+or source-verified component identity. Never adapt segmentation output to the
+pose tensor contract or promote class labels into refdes/pin evidence.
+Presentation includes the instance mask, bounding box, raw dataset class name,
+and confidence together. Predictions replace the previous overlay atomically;
+the minimum inference interval is 500 ms and overlays expire at three seconds
+of source-frame age. Pause, zoom/geometry revision and disable clear immediately.
+**Why:** an earlier 1.8-second overlay lifetime with a two-second inference
+interval guaranteed a blank gap. Retaining masks forever would instead show
+stale geometry; this bounded hold is not motion tracking or identity evidence.
+
 Q8_0 and Q4_K_M llama.cpp profiles were rejected for target-device packing
 memory, startup, and ANR behavior. Q4_0 loaded but grammar generation failed and
 unconstrained output could abort JNI through invalid UTF-8. These local

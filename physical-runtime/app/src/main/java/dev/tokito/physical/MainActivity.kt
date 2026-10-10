@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var destroyed = false
     private var digitalTwinAttempted = false
     private var vision: LocalPoseVisionRuntime? = null
+    private var segmentation: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
     private var cameraPermissionRequested = false
     private var microphonePermissionRequested = false
     private lateinit var sessionStore: PhysicalSessionStore
@@ -240,7 +241,7 @@ class MainActivity : AppCompatActivity() {
         foregroundEpoch++
         if (::ar.isInitialized && hasPermission(Manifest.permission.CAMERA)) ar.start()
         if (::call.isInitialized) preparationJob = lifecycleScope.launch { call.warmUp() }
-        if (vision == null) visionPreparationJob = lifecycleScope.launch { prepareLocalVision() }
+        if (vision == null && segmentation == null) visionPreparationJob = lifecycleScope.launch { prepareLocalVision() }
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -314,6 +315,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindActions() {
+        binding.segmentationButton.setOnClickListener {
+            val enabled = ar.toggleMasks()
+            binding.segmentationButton.text = getString(if (enabled) R.string.hide_component_masks else R.string.show_component_masks)
+        }
         binding.callButton.setOnClickListener {
             if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
                 requestMicrophonePermission()
@@ -509,6 +514,7 @@ class MainActivity : AppCompatActivity() {
         val epoch = foregroundEpoch
         val caller = coroutineContext
         var created: LocalPoseVisionRuntime? = null
+        var createdSegment: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
         val runtime = try {
             withContext(Dispatchers.IO) { heavyWork.withLock {
                 caller.ensureActive()
@@ -522,22 +528,39 @@ class MainActivity : AppCompatActivity() {
                     Math.addExact(total, file.length())
                 }
                 requireHeavyWork("Local vision", Math.multiplyExact(installedBytes, 2))
-                LocalPoseVisionRuntime.load(modelRoot).also { created = it }
+                if (dev.tokito.physical.dialogue.LocalSegmentationRuntime.isBundle(modelRoot)) {
+                    createdSegment = dev.tokito.physical.dialogue.LocalSegmentationRuntime.open(modelRoot)
+                    null
+                } else LocalPoseVisionRuntime.load(modelRoot).also { created = it }
             } }
         } catch (failure: CancellationException) {
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { created?.close() }
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { createdSegment?.close() }
             throw failure
         } catch (failure: Throwable) {
             android.util.Log.e("TokitoPoseVision", "Local vision bundle was rejected", failure)
             return
         }
         if (!caller[Job]!!.isActive || !foregroundActive || epoch != foregroundEpoch || destroyed) {
-            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { runtime.close() }
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { runtime?.close(); createdSegment?.close() }
             throw CancellationException("Vision preparation retired")
+        }
+        createdSegment?.let { model ->
+            segmentation = model
+            binding.segmentationButton.visibility = View.VISIBLE
+            ar.enableSegmentation(model) { work ->
+                if (!heavyWork.tryLock()) false else try {
+                    requireHeavyWork("Component masks", 256L * 1024 * 1024)
+                    work()
+                    true
+                } finally { heavyWork.unlock() }
+            }
+            android.util.Log.i("TokitoSegmentation", "Local segmentation runtime admitted classes=${model.labels.size}")
+            return
         }
         android.util.Log.i("TokitoPoseVision", "Local pose runtime admitted")
         vision = runtime
-        ar.enableAutomaticRegistration(runtime)
+        ar.enableAutomaticRegistration(requireNotNull(runtime))
     }
 
     private fun requireHeavyWork(capability: String, requiredBytes: Long) {

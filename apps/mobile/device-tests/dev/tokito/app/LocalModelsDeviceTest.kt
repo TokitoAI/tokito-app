@@ -34,7 +34,9 @@ class LocalModelsDeviceTest {
         ModelCapability.entries.forEach { capability ->
             assertNotNull("Missing ${capability.wireValue}", repository.activeBundle(capability))
         }
-        LocalPoseVisionRuntime.load(repository.activeDirectory(ModelCapability.VISION)!!).use { }
+        val visionRoot = repository.activeDirectory(ModelCapability.VISION)!!
+        if (LocalSegmentationRuntime.isBundle(visionRoot)) LocalSegmentationRuntime.open(visionRoot).use { }
+        else LocalPoseVisionRuntime.load(visionRoot).use { }
         VoiceModelBundle.verify(repository.activeDirectory(ModelCapability.VOICE)!!)
     }
 

@@ -82,7 +82,9 @@ class ModelBundleRepository(private val context: Context) {
                     true
                 }
                 ModelCapability.VISION -> {
-                    LocalPoseVisionRuntime.load(bundle).use { }
+                    if (dev.tokito.physical.dialogue.LocalSegmentationRuntime.isBundle(bundle)) {
+                        dev.tokito.physical.dialogue.LocalSegmentationRuntime.open(bundle).use { }
+                    } else LocalPoseVisionRuntime.load(bundle).use { }
                     true
                 }
                 ModelCapability.VOICE -> {

@@ -34,4 +34,6 @@
     <string name="measurement_between">between %1$s and %2$s</string>
     <string name="measurement_across">across %1$s</string>
     <string name="measurement_at">at %1$s</string>
+    <string name="hide_component_masks">Hide detections</string>
+    <string name="show_component_masks">Show detections</string>
 </resources>

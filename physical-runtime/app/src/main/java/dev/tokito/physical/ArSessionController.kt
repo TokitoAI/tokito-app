@@ -41,12 +41,18 @@ class ArSessionController(
     private var registrationRevision: Long? = null
     private var sequence = 0L
     private var vision: LocalPoseVisionRuntime? = null
+    private var segmentation: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
+    private val masks = SegmentMaskView(surface.context)
+    @Volatile private var masksEnabled = true
+    @Volatile private var maskEpoch = 0L
+    private var lastMaskFrame = 0L
     private var manualRegistration = false
     private var lastAutomaticRegistrationNanos = 0L
     private var automaticRegistrationActive = false
     private var lastAutomaticObservationNanos = 0L
 
     init {
+        surface.addView(masks, android.widget.FrameLayout.LayoutParams(-1, -1))
         ArPresenter(runtime, surface.overlay) { reason ->
             onState(
                 if (hasRegistration) State("Registration lost", reason)
@@ -72,6 +78,8 @@ class ArSessionController(
     }
 
     fun stop() {
+        maskEpoch++
+        masks.clear()
         automaticRegistrationActive = false
         runtime.suspend()
         corners.clear()
@@ -85,9 +93,56 @@ class ArSessionController(
 
     fun destroy() {
         surface.setFrameListener(null)
+        segmentation?.let { old -> Thread({ old.close() }, "tokito-segmentation-close").start() }
+        segmentation = null
         vision?.close()
         vision = null
         surface.destroy()
+    }
+
+    fun toggleMasks(): Boolean {
+        masksEnabled = !masksEnabled
+        maskEpoch++
+        masks.clear()
+        return masksEnabled
+    }
+
+    fun enableSegmentation(
+        model: dev.tokito.physical.dialogue.LocalSegmentationRuntime,
+        admittedWork: (() -> Unit) -> Boolean,
+    ) {
+        segmentation = model
+        surface.setFrameListener { frame ->
+            val epoch = maskEpoch
+            if (!masksEnabled || frame.timestampNanos - lastMaskFrame < 500_000_000L || frame.analysisToPreview == null) {
+                frame.bitmap.recycle()
+            } else {
+                lastMaskFrame = frame.timestampNanos
+                var prediction: dev.tokito.physical.dialogue.LocalSegmentationRuntime.Result? = null
+                var failed = false
+                try {
+                    admittedWork { prediction = model.analyze(frame.bitmap) }
+                } catch (failure: Exception) {
+                    failed = true
+                    android.util.Log.e("TokitoSegmentation", "Inference failed", failure)
+                } finally { frame.bitmap.recycle() }
+                val result = prediction
+                surface.post {
+                    if (epoch != maskEpoch || !masksEnabled || frame.geometryRevision != surface.geometryRevision ||
+                        !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                        System.nanoTime() - frame.timestampNanos > 3_000_000_000L) {
+                        result?.bitmap?.recycle()
+                    } else if (result != null) {
+                        masks.show(result, requireNotNull(frame.analysisToPreview), frame.timestampNanos)
+                        onState(State("Component predictions · ${result.count}",
+                            if (result.count == 0) "No new detections; previous overlay expires within three seconds. This is not proof of absence"
+                            else "Experimental · " + result.labels.joinToString(", ")))
+                        android.util.Log.i("TokitoSegmentation", "predictionCount=${result.count} elapsedMs=${(System.nanoTime()-frame.timestampNanos)/1_000_000}")
+                    } else if (failed) { masks.clear(); onState(State("Detection unavailable", "Retry after reopening the bench")) }
+                }
+            }
+        }
+        onState(State("Component detection", "Experimental masks, labels and boxes; not verified part identity"))
     }
 
     fun enableAutomaticRegistration(runtime: LocalPoseVisionRuntime) {
@@ -108,6 +163,8 @@ class ArSessionController(
     }
 
     fun reset() {
+        maskEpoch++
+        masks.clear()
         manualRegistration = false
         corners.clear()
         hasRegistration = false

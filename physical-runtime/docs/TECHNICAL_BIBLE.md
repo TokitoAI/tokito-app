@@ -174,6 +174,14 @@ Camera configuration is selected from measured device profiles. The baseline
 target is a stable 30 fps preview. Higher resolution still capture is allowed
 for explicit ROI requests. Lens switching is a calibration boundary.
 
+Explicit private detector evaluation may display generic instance masks with
+bounding boxes, raw class names and confidence on the image-frame preview.
+These are experimental predictions, not board/component identity or registered
+AR guidance. Presentation is atomically replaced and source-age bounded;
+transient misses never extend expiry. Geometry changes and lifecycle suspension
+clear it immediately. The admitted bundle and scheduling policy are specified
+in [Model strategy](MODEL_STRATEGY.md#detector-candidate-status).
+
 ## 6. Registration and coordinate integrity
 
 The runtime must distinguish:
