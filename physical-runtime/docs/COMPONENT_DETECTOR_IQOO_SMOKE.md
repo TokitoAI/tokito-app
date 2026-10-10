@@ -59,6 +59,15 @@ at finite probabilities in [0, 1]. Rejected tensor contracts close their native
 interpreter. Host contract tests cover malformed scores and allocation bounds;
 they do not qualify live-camera lifecycle or detector accuracy.
 
+Camera ownership is foreground-scoped. Stop and preview-surface destruction
+close the capture session/device and release the Surface. Camera callbacks and
+UI state are serialized on the main thread; an epoch rejects late opens,
+configuration callbacks and inference results. Only one camera open and one
+analysis are admitted at a time. Detector destruction is queued behind active
+inference, including a model load that finishes after Activity destruction.
+These ownership rules require an exact-device pause/resume/destruction rerun;
+assembly and lint alone do not establish camera lifecycle qualification.
+
 ## Build and run
 
 Build the isolated camera smoke APK. Point `tokito.smokeAssetsDir` at the local
