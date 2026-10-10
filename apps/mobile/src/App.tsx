@@ -32,14 +32,9 @@ import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
 import { retryableStartup } from "./sync/startupRetry";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
+import { parentRoute, parentSignedOutView, type Route } from "./navigation/backNavigation";
+import { useAndroidBack } from "./navigation/useAndroidBack";
 import { BrandTile } from "./ui/primitives";
-
-type Route =
-  | { name: "projects" }
-  | { name: "models" }
-  | { name: "project"; id: string }
-  | { name: "live_schematic"; projectId: string; designId: string }
-  | { name: "svg"; projectId: string; artifact: string };
 
 export type AppProps = {
   cloudBaseUrl?: string;
@@ -105,6 +100,18 @@ function AppContent({
   const restoreInFlight = useRef(false);
   const restoreRequested = useRef(false);
   const [restoreRequest, setRestoreRequest] = useState(0);
+  useAndroidBack(() => {
+    if (state.status === "signed_out") {
+      const parent = parentSignedOutView(signedOutView);
+      if (parent === null) return false;
+      setSignedOutView(parent);
+    } else {
+      const parent = parentRoute(route);
+      if (parent === null) return false;
+      setRoute(parent);
+    }
+    return true;
+  });
   const handleAuthorizationRevoked = useCallback(() => {
       restoreRequested.current = false;
       setState({ status: "signed_out" }); setSignedOutView("sign_in");

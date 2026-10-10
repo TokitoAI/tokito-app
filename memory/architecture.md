@@ -177,6 +177,13 @@ management; navigation must not stop project synchronization. Cold start restore
 the verified session automatically. Transient identity/startup failures retry on
 foreground and a bounded timer; authentication and malformed-protocol failures do
 not retry indefinitely. Native SSE/outbox workers own online recovery after startup.
+Android Back uses one shell listener with explicit section-before-route priority:
+Chat/Review return to Design, viewers return to their project, and projects/models
+return to their parent list; signed-out setup returns Home. Only root screens
+delegate exit to Android. Listener cleanup and current committed callbacks prevent
+stale navigation, without altering the native bench Activity's Back behavior.
+Connection badges distinguish connecting/reconnecting/unavailable/offline from
+connected; a cached bootstrap is not proof that the event stream is live.
 HTTP 429 and 5xx responses are transient, not malformed protocol;
 retry registration/bootstrap cancellably without changing queued command IDs.
 Successful responses with invalid schemas remain terminal protocol failures.

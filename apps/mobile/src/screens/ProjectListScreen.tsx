@@ -21,6 +21,7 @@ import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { formatProjectUpdatedAt, mergeProjectList } from "../sync/projectList";
+import { projectUpdatesLabel } from "../sync/statusLabel";
 import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
@@ -97,7 +98,7 @@ export function ProjectListScreen({
             <View style={styles.accountMeta}>
               <View style={styles.planPill}><Text style={styles.planText}>{accountPlan}</Text></View>
               <View style={[styles.syncDot, realtime.status === "live" && styles.syncDotLive]} />
-              <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>{realtime.status === "live" ? "Project updates connected" : "Project updates offline"}</Text>
+              <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>{projectUpdatesLabel(realtime.status)}</Text>
             </View>
           </View>
         </View>

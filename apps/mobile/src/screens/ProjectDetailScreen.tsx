@@ -12,8 +12,10 @@ import { ProjectChat } from "../chat/ProjectChat";
 import { ProjectReview } from "../review/ProjectReview";
 import { chatSheets } from "../chat/sheetContext";
 import { canonicalBom } from "../sync/canonicalBom";
+import { parentProjectSection, type ProjectSection } from "../navigation/backNavigation";
+import { useAndroidBack } from "../navigation/useAndroidBack";
+import { projectUpdatesLabel } from "../sync/statusLabel";
 
-type Section = "design" | "chat" | "review";
 
 export interface ProjectDetailScreenProps {
   client: CloudClient;
@@ -35,7 +37,13 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
-  const [section, setSection] = useState<Section>("design");
+  const [section, setSection] = useState<ProjectSection>("design");
+  useAndroidBack(() => {
+    const parent = parentProjectSection(section);
+    if (parent === null) return false;
+    setSection(parent);
+    return true;
+  }, 10);
   const request = useRef(0);
 
   const liveProject = realtime.getResource(projectId, null, "project")?.payload as Record<string, unknown> | undefined;
@@ -81,7 +89,7 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
       <View style={styles.header}>
         {showBack ? <Pressable accessibilityRole="button" accessibilityLabel="Back to projects" onPress={onBack} style={styles.back}><ArrowLeft size={21} color={tokens.text} /></Pressable> : null}
         <View style={styles.identity}><Text style={styles.eyebrow}>PROJECT</Text><Text style={styles.title} numberOfLines={1}>{projectName}</Text><Text style={styles.subtitle} numberOfLines={1}>{activeDesignName}</Text></View>
-        <View accessibilityLabel={`Project updates ${realtime.status}`} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{realtime.status === "live" ? "Updates connected" : "Updates offline"}</Text></View>
+        <View accessibilityLabel={projectUpdatesLabel(realtime.status)} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{projectUpdatesLabel(realtime.status, true)}</Text></View>
       </View>
       {designs.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.designRail} contentContainerStyle={styles.designTabs}>{designs.map((design) => <Pressable key={design.id} accessibilityRole="tab" accessibilityState={{ selected: activeDesignId === design.id }} onPress={() => setSelectedDesignId(design.id)} style={[styles.designTab, activeDesignId === design.id && styles.designTabActive]}><Text style={[styles.designTabText, activeDesignId === design.id && styles.designTabTextActive]}>{design.name}</Text></Pressable>)}</ScrollView> : null}
       <View accessibilityRole="tablist" style={[styles.nav, tablet && styles.navTablet]}>
