@@ -3,7 +3,58 @@ const {
   withProjectBuildGradle,
   withGradleProperties,
   withSettingsGradle,
+  withAndroidManifest,
+  withFinalizedMod,
+  XML,
 } = require("expo/config-plugins");
+const path = require("node:path");
+
+function optionalCamera(manifest) {
+  const features = manifest.manifest["uses-feature"] ??= [];
+  const camera = features.find((feature) => feature.$?.["android:name"] === "android.hardware.camera");
+  if (camera) camera.$["android:required"] = "false";
+  else features.push({ $: { "android:name": "android.hardware.camera", "android:required": "false" } });
+  return manifest;
+}
+
+function splitSplashStyles(base, qualified) {
+  const splash = base.resources.style?.find((style) => style.$?.name === "Theme.App.SplashScreen");
+  if (!splash) throw new Error("Tokito requires Expo's generated splash theme");
+  const api33Name = "android:windowSplashScreenBehavior";
+  const previous = qualified.resources.style?.find((style) => style.$?.name === splash.$.name);
+  const behavior = splash.item?.find((item) => item.$?.name === api33Name)
+    ?? previous?.item?.find((item) => item.$?.name === api33Name);
+  splash.item = (splash.item ?? []).filter((item) => item.$?.name !== api33Name);
+  qualified.resources.style = (qualified.resources.style ?? []).filter((style) => style.$?.name !== splash.$.name);
+  if (behavior) {
+    // Qualified styles replace, rather than extend, the same-named default style.
+    // Copy every common attribute so the API 33 override keeps the real splash.
+    const override = structuredClone(splash);
+    override.item.push(structuredClone(behavior));
+    qualified.resources.style.push(override);
+    qualified.resources.$ = { ...base.resources.$, ...qualified.resources.$ };
+  }
+  return { base, qualified };
+}
+
+function withCompatibleAndroidResources(config) {
+  config = withAndroidManifest(config, (result) => {
+    result.modResults = optionalCamera(result.modResults);
+    return result;
+  });
+  return withFinalizedMod(config, ["android", async (result) => {
+    if (result.modRequest.introspect) return result;
+    const file = path.join(result.modRequest.platformProjectRoot, "app/src/main/res/values-v33/styles.xml");
+    const baseFile = path.join(result.modRequest.platformProjectRoot, "app/src/main/res/values/styles.xml");
+    const base = await XML.readXMLAsync({ path: baseFile });
+    const qualified = await XML.readXMLAsync({ path: file, fallback: "<resources/>" });
+    qualified.resources ||= {};
+    splitSplashStyles(base, qualified);
+    await XML.writeXMLAsync({ path: baseFile, xml: base });
+    await XML.writeXMLAsync({ path: file, xml: qualified });
+    return result;
+  }]);
+}
 
 const SETTINGS_MARKER = "// tokito-physical: generated integration";
 const DEPENDENCY_MARKER = "// tokito-physical: native shell dependency";
@@ -122,7 +173,9 @@ function withPhysicalMinSdk(config) {
 }
 
 module.exports = function withTokitoPhysical(config) {
-  return withPhysicalMinSdk(
+  return withCompatibleAndroidResources(withPhysicalMinSdk(
     withPhysicalRepository(withPhysicalDependency(withPhysicalSettings(config))),
-  );
+  ));
 };
+module.exports.optionalCamera = optionalCamera;
+module.exports.splitSplashStyles = splitSplashStyles;

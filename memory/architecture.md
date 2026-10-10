@@ -143,3 +143,11 @@ minimum Android SDK is 27. LiteRT is pinned to 1.4.1 because Expo 57's Pika
 compiler supports Kotlin 2.1.x while LiteRT 2.2 metadata requires Kotlin 2.3;
 do not upgrade either side independently without building the unified APK.
 
+Android generated resources must pass the final application release lint gate,
+not only the native-library gate. The Physical integration plugin qualifies
+Android 13's splash behavior in `values-v33` after Expo finishes generating its
+styles, preserving the full splash theme. Camera hardware is optional at the
+manifest level; Cloud project review must remain installable without a camera.
+**How to apply:** maintain these transformations in the Expo source plugin,
+never patch only ignored generated Android files or suppress API-level errors.
+
