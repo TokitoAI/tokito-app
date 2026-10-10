@@ -51,3 +51,11 @@ export class ChatFollowFrame {
     this.frame = null; this.animated = false;
   }
 }
+
+/** ScrollView's native command uses actual child bounds; FlatList.scrollToEnd estimates rows. */
+export function nativeChatScrollToEnd(responder: unknown, animated = false): boolean {
+  if (responder === null || typeof responder !== "object" || !("scrollToEnd" in responder) ||
+      typeof responder.scrollToEnd !== "function") return false;
+  responder.scrollToEnd({ animated });
+  return true;
+}

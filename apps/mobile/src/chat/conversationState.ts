@@ -22,6 +22,10 @@ export class ConversationScope {
   ticket(): number { return this.revision; }
   draft(thread: string | null): string { return this.drafts.get(thread) ?? ""; }
   save(thread: string | null, text: string): void { this.drafts.set(thread, text); }
+  saveInput(owner: string | null, selected: string | null, text: string, epoch: number, currentEpoch: number): boolean {
+    if (owner !== selected || epoch !== currentEpoch) return false;
+    this.save(owner, text); return true;
+  }
   firstMessageCommand(intent: string, allocate: () => string, version = 0): string {
     if (this.firstMessage?.intent !== intent) this.firstMessage = { intent, command: allocate(), version };
     return this.firstMessage.command;

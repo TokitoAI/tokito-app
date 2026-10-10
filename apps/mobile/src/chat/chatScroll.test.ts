@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ChatFollowFrame, ChatScrollIntent } from "./chatScroll";
+import { ChatFollowFrame, ChatScrollIntent, nativeChatScrollToEnd } from "./chatScroll";
 
 test("history layout cannot disable latest-on-open before scrolling finishes", () => {
   const intent = new ChatScrollIntent();
@@ -76,4 +76,17 @@ test("unmounted list cancels queued follow work", () => {
   const cancelled: number[] = [];
   const follow = new ChatFollowFrame(intent, () => 42, frame => cancelled.push(frame), () => assert.fail("Disposed list scrolled"));
   follow.request(); follow.cancel(); assert.deepEqual(cancelled, [42]);
+});
+
+test("saved answer follows native child extent even while JS still has the footer height", () => {
+  const intent = new ChatScrollIntent(); intent.layout(700); intent.content(1800);
+  const frames: (() => void)[] = [];
+  let nativeHeight = 1800; let actualOffset = 0;
+  const responder = { scrollToEnd() { actualOffset = nativeHeight - 700; } };
+  const follow = new ChatFollowFrame(intent, callback => frames.push(callback), () => {},
+    () => { assert.equal(nativeChatScrollToEnd(responder), true); });
+  follow.request(); nativeHeight = 3200;
+  frames.shift()!(); assert.equal(actualOffset, 2500);
+  assert.equal(nativeChatScrollToEnd(null), false);
+  assert.equal(nativeChatScrollToEnd({ scrollToEnd: "not a native command" }), false);
 });

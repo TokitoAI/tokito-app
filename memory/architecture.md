@@ -55,6 +55,13 @@ correct a scroll clamped during the streamed-footer-to-history transition.
 Never treat the old footer height as the final saved Markdown height or steal
 a reader drag to force the last answer visible. The Latest action is an
 immediate follow, not a synthetic reader momentum gesture.
+Use the underlying ScrollView responder's native `scrollToEnd`, not FlatList's
+estimated last-row offset, when following committed content. Android evaluates
+the current child bounds for that command even when JS retains old footer metrics.
+Composer input events carry their rendered conversation and native-input epoch.
+Retiring an acknowledged input prevents delayed Android edits from resurrecting
+a sent draft. A New-chat draft started during asynchronous history hydration
+must prevent automatic selection from splitting that draft across thread keys.
 Streamed output belongs to its exact run ID: stop the previous watch before
 queueing a new user message, and ignore
 late events for older runs. Tool-separated response rounds preserve completed

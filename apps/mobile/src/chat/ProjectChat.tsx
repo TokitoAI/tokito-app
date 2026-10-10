@@ -9,7 +9,7 @@ import { tokens } from "../theme";
 import { ErrorText, PrimaryButton } from "../ui/primitives";
 import { selectedSheet, type ChatSheet } from "./sheetContext";
 import { ChatMarkdown } from "./ChatMarkdownView";
-import { ChatFollowFrame, ChatScrollIntent } from "./chatScroll";
+import { ChatFollowFrame, ChatScrollIntent, nativeChatScrollToEnd } from "./chatScroll";
 import { chatCardLayout } from "./chatLayout";
 import { sendBlockReason } from "./sendReadiness";
 import { chatSendFailure, chatSendStep, type ChatSendStage } from "./sendDiagnostics";
@@ -28,7 +28,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const followFrame = useRef<ChatFollowFrame | null>(null);
   if (followFrame.current === null) followFrame.current = new ChatFollowFrame(
     scrollIntent.current, requestAnimationFrame, cancelAnimationFrame,
-    (offset, animated) => list.current?.scrollToOffset({ offset, animated }),
+    (offset, animated) => { if (offset >= 0) nativeChatScrollToEnd(list.current?.getScrollResponder(), animated); },
   );
   useEffect(() => () => followFrame.current?.cancel(), []);
   const [showLatest, setShowLatest] = useState(false);
@@ -41,6 +41,8 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const [savedRun, setSavedRun] = useState<string | null>(null);
   const [view, setView] = useState<RunView>(emptyRun);
   const [draft, setDraft] = useState("");
+  const inputEpoch = useRef(0);
+  const [composerEpoch, setComposerEpoch] = useState(0);
   const [busy, setBusy] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +57,10 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
   const sendingTicket = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
   function updateDraft(text: string): void { scope.current.save(selected.current, text); setDraft(text); }
+  function retireInput(): void { inputEpoch.current += 1; setComposerEpoch(inputEpoch.current); }
+  function updateInput(owner: string | null, inputVersion: number, text: string): void {
+    if (scope.current.saveInput(owner, selected.current, text, inputVersion, inputEpoch.current)) setDraft(text);
+  }
   function followLatest(animated = false): void {
     followFrame.current?.request(animated);
   }
@@ -98,6 +104,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     if (scopeKey.current !== key) { scope.current.reset(); scopeKey.current = key; }
     else scope.current.next();
     sendingTicket.current = null;
+    retireInput();
     setDraft(scope.current.draft(null)); setReady(false); setSending(false); setBlocked(null); setNotice(null);
     selected.current = null;
     displayedRun.current = null; setSavedRun(null); scrollIntent.current.open(); setShowLatest(false);
@@ -155,7 +162,9 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
       setThreads(items);
       setReady(true);
       const first = items.find(item => item.id === resumeThread) ?? items[0];
-      if (first) { selected.current = first.id; setThread(first.id); setDraft(scope.current.draft(first.id)); await load(client, first.id); }
+      // A draft begun while history hydrates belongs to New chat; do not switch
+      // its native input or split its text between two conversation identities.
+      if (first && !scope.current.draft(null)) { selected.current = first.id; setThread(first.id); setDraft(scope.current.draft(first.id)); await load(client, first.id); }
     }).catch(error => { if (current()) setError(chatFailure(error)); })
       .finally(() => { if (current()) setBusy(false); });
     return () => { epoch.current++; connection.current = null; void client.close().catch(() => {}); };
@@ -167,6 +176,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     if (!client) return;
     const ticket = scope.current.next();
     sendingTicket.current = null;
+    retireInput();
     displayedRun.current = null; setSavedRun(null); scrollIntent.current.open(); setShowLatest(false);
     setDraft(scope.current.draft(id));
     selected.current = id; acceptedMessage.current = null; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
@@ -228,6 +238,9 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
       if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
       displayedRun.current = runId;
       setRows(items => items.some(item => item.id === messageId) ? items : [...items, { id: messageId, runId, role: "user", content }]);
+      // Retire the submitted native input as well as its text. Delayed Android
+      // edit events from that input cannot resurrect the already queued draft.
+      retireInput();
       setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…");
       // Acceptance may beat the JS receipt for a newly created thread. The
       // durable run ID recovers its actual state and events without fake status.
@@ -280,7 +293,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); followLatest(); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
     {error ? <View accessibilityLiveRegion="polite" style={styles.feedback}><ErrorText>{error}</ErrorText><Pressable accessibilityRole="button" onPress={() => setRetry(n => n + 1)} style={styles.retry}><Text style={styles.link}>Try again</Text></Pressable></View> : null}
     {needsSheet ? <View style={styles.feedback}><Text style={styles.muted}>Choose a synchronized sheet before sending. Your draft is kept.</Text></View> : null}
-    <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
+    <View style={styles.composer}><TextInput key={`${thread ?? "new-chat"}:${composerEpoch}`} accessibilityLabel="Message Tokito" value={draft} onChangeText={text => updateInput(thread, composerEpoch, text)} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
       {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={sendProblem !== null} onPress={() => void send()} />}
     </View>
   </KeyboardAvoidingView>;
