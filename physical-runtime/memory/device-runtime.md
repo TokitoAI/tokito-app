@@ -281,3 +281,11 @@ is polite accessible feedback. Only a resumed listening session can update it.
 Pause, call retirement and measurement capture clear it; it is never saved as
 view state or telemetry. **Why:** users need to distinguish ASR mistakes from
 retrieval failures without retaining microphone transcripts or stale turn text.
+
+Camera zoom uses CameraX-reported bounds and actual observed ratio. The surface
+intercepts only multi-touch zoom so the guidance overlay retains single-tap
+registration. Zoom changes advance a geometry revision and invalidate registered
+AR and pose history; discard queued observations from the earlier revision.
+**Why:** scaling the preview without invalidating registration presents old
+component locations as current evidence. Test controls and pinch on hardware,
+not only by looking for a zoom label in a screenshot.

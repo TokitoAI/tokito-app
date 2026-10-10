@@ -54,6 +54,7 @@ class ArSessionController(
             )
         }.bind(owner)
         surface.overlay.setOnBoardTapListener(::acceptCorner)
+        surface.onCameraGeometryChanged = ::reset
         reset()
     }
 
@@ -99,6 +100,7 @@ class ArSessionController(
                 null
             }
             surface.post {
+                if (frame.geometryRevision != surface.geometryRevision) return@post
                 if (observation == null) handleAutomaticMiss() else acceptAutomaticRegistration(observation)
             }
         }

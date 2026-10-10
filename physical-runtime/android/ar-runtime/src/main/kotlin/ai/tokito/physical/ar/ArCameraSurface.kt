@@ -6,11 +6,14 @@ import android.graphics.Matrix
 import android.util.AttributeSet
 import android.util.Log
 import android.view.ViewGroup
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.ZoomState
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.view.LifecycleCameraController
@@ -31,6 +34,7 @@ class ArCameraSurface @JvmOverloads constructor(
         val previewWidth: Int,
         val previewHeight: Int,
         val analysisToPreview: Matrix?,
+        val geometryRevision: Long = 0,
     )
 
     val preview = PreviewView(context).apply {
@@ -43,6 +47,44 @@ class ArCameraSurface @JvmOverloads constructor(
     private var controller: LifecycleCameraController? = null
     private var cameraStateSource: LiveData<CameraState>? = null
     private var cameraStateObserver: Observer<CameraState>? = null
+    private var zoomSource: LiveData<ZoomState>? = null
+    private var zoomObserver: Observer<ZoomState>? = null
+    var onZoomChanged: ((Float?, Float?, Float?) -> Unit)? = null
+    var onCameraGeometryChanged: (() -> Unit)? = null
+    @Volatile var geometryRevision: Long = 0
+        private set
+    private var lastZoomRatio: Float? = null
+    private var pinchActive = false
+    private val pinch = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val ratio = zoomSource?.value?.zoomRatio ?: return false
+            setZoomRatio(ratio * detector.scaleFactor)
+            return true
+        }
+    })
+
+    val currentZoomRatio: Float? get() = zoomSource?.value?.zoomRatio
+
+    fun setZoomRatio(ratio: Float) {
+        if (!ratio.isFinite()) return
+        val state = zoomSource?.value ?: return
+        controller?.setZoomRatio(ratio.coerceIn(state.minZoomRatio, state.maxZoomRatio))
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        pinch.onTouchEvent(event)
+        if (event.pointerCount > 1 && !pinchActive) {
+            pinchActive = true
+            val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+        }
+        if (pinchActive) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) pinchActive = false
+            return true
+        }
+        return super.dispatchTouchEvent(event)
+    }
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "tokito-camera-analysis")
     }
@@ -77,6 +119,7 @@ class ArCameraSurface @JvmOverloads constructor(
         return try {
             val next = LifecycleCameraController(context).apply {
                 cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                setPinchToZoomEnabled(false) // The guidance overlay owns single-tap registration.
                 setImageAnalysisBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 setImageAnalysisOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             }
@@ -98,6 +141,20 @@ class ArCameraSurface @JvmOverloads constructor(
             cameraStateObserver = observer
             source?.observe(lifecycleOwner, observer)
             controller = next
+            zoomSource = next.zoomState
+            zoomObserver = Observer<ZoomState> { state ->
+                if (state != null) {
+                    if (lastZoomRatio != null && lastZoomRatio != state.zoomRatio) {
+                        geometryRevision++
+                        sensorToPreview = null
+                        onCameraGeometryChanged?.invoke()
+                        preview.post(::refreshSensorToPreview)
+                    }
+                    lastZoomRatio = state.zoomRatio
+                    onZoomChanged?.invoke(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio)
+                }
+            }
+            zoomSource?.observe(lifecycleOwner, requireNotNull(zoomObserver))
             StartResult.Started
         } catch (failure: RuntimeException) {
             cameraStateObserver?.let { cameraStateSource?.removeObserver(it) }
@@ -110,6 +167,13 @@ class ArCameraSurface @JvmOverloads constructor(
     }
 
     fun stop() {
+        zoomObserver?.let { zoomSource?.removeObserver(it) }
+        zoomObserver = null
+        zoomSource = null
+        lastZoomRatio = null
+        pinchActive = false
+        geometryRevision++
+        onZoomChanged?.invoke(null, null, null)
         cameraStateObserver?.let { cameraStateSource?.removeObserver(it) }
         cameraStateObserver = null
         cameraStateSource = null
@@ -138,6 +202,7 @@ class ArCameraSurface @JvmOverloads constructor(
     }
 
     private fun analyzeFrame(image: ImageProxy) {
+        val revision = geometryRevision
         val listener = frameListener
         if (listener == null) {
             image.close()
@@ -169,7 +234,8 @@ class ArCameraSurface @JvmOverloads constructor(
         image.close()
         deliveredFrames += 1
         if (deliveredFrames == 1L) Log.d(TAG, "Delivered first camera analysis frame")
-        listener(CameraFrame(bitmap, timestamp, preview.width, preview.height, analysisToPreview))
+        if (revision != geometryRevision) { bitmap.recycle(); return }
+        listener(CameraFrame(bitmap, timestamp, preview.width, preview.height, analysisToPreview, revision))
     }
 
     private fun Bitmap.upright(rotationDegrees: Int): Bitmap {

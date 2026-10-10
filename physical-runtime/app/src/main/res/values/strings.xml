@@ -2,6 +2,12 @@
 <resources>
     <string name="transcript_partial">Hearing…</string>
     <string name="transcript_final">You said</string>
+    <string name="camera_zoom_out">Zoom camera out</string>
+    <string name="camera_zoom_in">Zoom camera in</string>
+    <string name="camera_zoom_reset">Reset camera zoom</string>
+    <string name="camera_zoom_loading">—</string>
+    <string name="camera_zoom_ratio">%1$.1f×</string>
+    <string name="camera_zoom_current">Camera zoom %1$.1f times. Tap to reset.</string>
     <string name="app_name">Tokito Physical</string>
     <string name="product_title">Tokito</string>
     <string name="camera_content_description">Live board camera with registered AR guidance</string>
