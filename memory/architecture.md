@@ -145,6 +145,9 @@ separate from project metadata/publication `updated_at`. Bootstrap/index supply
 committed activity and SSE contributes its original `created_at`; SQLite caches
 that metadata across restarts. Only confirmed resource activity affects sorting:
 reads, local enqueue and exact retries must not manufacture a new update time.
+Live JS resource replacement retains the maximum admitted activity independently
+of a newer content revision's timestamp, matching SQLite and bootstrap metadata.
+An older server clock stamp must not move a recently active project backwards.
 Missing activity retains a known metadata-date fallback or remains unknown.
 **Why:** schematic/BOM approval and chat change their own resources without
 renaming/publishing a project; metadata-only sorting left active projects old.

@@ -6,6 +6,7 @@ import type { CloudClient, SyncResourceName } from "../native/bridge";
 import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
 import { retryableStartup, startupRetryDelay } from "./startupRetry";
 import { ownsWorkspaceEvent } from "./workspaceOwnership";
+import { mergeCommittedResourceEvent } from "./resourceActivity";
 import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 
 export type SyncResource = {
@@ -157,9 +158,10 @@ export function RealtimeWorkspaceProvider({
         const item = parseJson<SyncEvent>(event.eventJson);
         setResourceMap((previous) => {
           const current = previous.get(keyOf(item.project_id, item.design_id, item.resource));
-          if (current && current.version >= item.version) return previous;
+          const admitted = mergeCommittedResourceEvent(current, item);
+          if (admitted === current) return previous;
           const next = new Map(previous);
-          next.set(keyOf(item.project_id, item.design_id, item.resource), { ...item, last_activity_at: item.created_at });
+          next.set(keyOf(item.project_id, item.design_id, item.resource), admitted);
           return next;
         });
         });
