@@ -204,6 +204,12 @@ The pinned GenieX Android 0.3.1 wrapper has no public encode/count API. Its
 packaged `libgeniex-proc.so` does export the tokenizers-cpp C ABI. The local
 dialogue bridge uses those existing symbols with the signed Qwen tokenizer,
 counts the complete vendor template, and checks vendor completion receipts.
+The QAIRT text pipeline also prepends the signed context's BOS token on a fresh
+KV session unless the encoded prompt already starts with it. Include this rule
+in prompt counts; do not add an empirical offset or allow count tolerances.
+Tokito resets native KV between requests, making each request a fresh session.
+The producer rule is documented with a pinned source link in
+`docs/RELEASE_DEVICE_QA.md` at the repository root.
 **Why:** MiniLM WordPiece, character ratios and stream chunks cannot measure
 Qwen BPE tokens or prove output-cap enforcement.
 **How to apply:** keep Qwen and its NPU backend unchanged; treat the tokenizer
