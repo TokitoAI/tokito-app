@@ -29,6 +29,7 @@ The documentation is split by authority and purpose:
 | [FRDM_MCXN236_PHOTO_VALIDATION.md](FRDM_MCXN236_PHOTO_VALIDATION.md) | Photo-to-model validation evidence and limits |
 | [FRDM_CAPTURE_INTAKE.md](FRDM_CAPTURE_INTAKE.md) | Local iQOO capture intake, YOLO annotation, and AR asset boundary |
 | [YOLO_LOCAL_EXPERIMENTS.md](YOLO_LOCAL_EXPERIMENTS.md) | Provenance-bound local detector smoke training and inference |
+| [COMPONENT_DETECTOR_IQOO_SMOKE.md](COMPONENT_DETECTOR_IQOO_SMOKE.md) | Release-ineligible three-class LiteRT detector smoke test on the physical iQOO |
 | [DEVICE_PROFILE_CAPTURE.md](DEVICE_PROFILE_CAPTURE.md) | Reproducible, privacy-safe Android target-device evidence capture |
 | [DEVICE_PROFILE_I2501.md](DEVICE_PROFILE_I2501.md) | Sanitized evidence for the declared target device profile |
 | [NATIVE_CORE.md](NATIVE_CORE.md) | Native fail-closed lifecycle, registration, scheduling, and thermal core |
