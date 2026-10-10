@@ -66,9 +66,26 @@ test("final APK release optimization is generated without independently shrinkin
     language: "groovy", contents: `dependencies {}\nproguardFiles getDefaultProguardFile('proguard-android.txt'), "proguard-rules.pro"`,
   } });
   assert.match(gradle.modResults.contents, /proguard-android-optimize\.txt/);
+  assert.match(gradle.modResults.contents, /proguard-release-abi\.pro/);
   assert.doesNotMatch(gradle.modResults.contents, /proguard-android\.txt/);
   const repeated = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: gradle.modResults });
   assert.equal(repeated.modResults.contents, gradle.modResults.contents);
+});
+
+test("release instrumentation keeps only its cross-APK ABI without disabling R8", async () => {
+  const rules = await readFile(new URL("../proguard-release-abi.pro", import.meta.url), "utf8");
+  assert.doesNotMatch(rules, /^\s*-(?:dontoptimize|dontshrink|dontobfuscate)/m);
+  assert.doesNotMatch(rules, /class\s+(?:kotlin|kotlinx|dev\.tokito)\.\*\*/);
+  assert.match(rules, /-keep class kotlin\.jvm\.internal\.Intrinsics \{ \*; \}/);
+  assert.match(rules, /java\.lang\.Object runBlocking\(\.\.\.\)/);
+  assert.match(rules, /java\.lang\.Object withTimeout\(\.\.\.\)/);
+  assert.match(rules, /ModelBundleRepository \{ public \*; \}/);
+  const config = withTokitoPhysical({ name: "Tokito", slug: "tokito" });
+  const base = `dependencies {}\nproguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"`;
+  const ordinary = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: { language: "groovy", contents: base } });
+  assert.equal(ordinary.modResults.contents.match(/proguard-release-abi\.pro/g).length, 1);
+  const repeated = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: ordinary.modResults });
+  assert.equal(repeated.modResults.contents, ordinary.modResults.contents);
 });
 
 test("final generation mod writes the API-qualified splash after Expo's styles", async () => {

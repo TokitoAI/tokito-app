@@ -108,6 +108,16 @@ function withPhysicalDependency(config) {
       /getDefaultProguardFile\((["'])proguard-android\.txt\1\)/g,
       'getDefaultProguardFile("proguard-android-optimize.txt")',
     );
+    // Both ordinary releases and device-test targets use the exact same narrow
+    // cross-APK ABI. Never create a differently optimized "test release".
+    if (!result.modResults.contents.includes("../../proguard-release-abi.pro")) {
+      const configured = result.modResults.contents.replace(
+        /(proguardFiles\s+getDefaultProguardFile\(["']proguard-android-optimize\.txt["']\),\s*["']proguard-rules\.pro["'])/g,
+        '$1, "../../proguard-release-abi.pro"',
+      );
+      if (configured === result.modResults.contents) throw new Error("Tokito requires the final release ProGuard configuration before adding its device acceptance ABI");
+      result.modResults.contents = configured;
+    }
     if (!result.modResults.contents.includes(DEPENDENCY_MARKER)) {
       result.modResults.contents = result.modResults.contents.replace(
         /dependencies\s*\{/,

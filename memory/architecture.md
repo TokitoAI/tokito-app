@@ -10,6 +10,16 @@ successful release build and failed when opening the phone's model manager.
 **How to apply:** keep library `isMinifyEnabled = false` and check the installed
 release's bridge calls as well as build/unit checks.
 
+The optimized final APK and its release instrumentation APK share a narrow
+binary acceptance boundary in `apps/mobile/proguard-release-abi.pro`, applied
+unconditionally by the Expo plugin. Keep production R8 enabled; do not create
+a less-optimized test target or disable shrinking to get a passing benchmark.
+**Why:** AndroidTest applies the target name mapping but cannot reconstruct
+R8-reordered method parameters or narrowed constructor types. Intrinsics and
+the explicitly exercised runtime exports must keep their original signatures.
+Build the target and test APK together, install both exact outputs with `-r`,
+and run the installed runner directly to preserve admitted app-private models.
+
 GenieX resolves plugins from `ApplicationInfo.nativeLibraryDir`, so the unified
 APK needs `expo.useLegacyPackaging=true` (native library extraction). A library
 module's packaging setting does not control the final Expo APK.
