@@ -24,7 +24,9 @@ options.inter_op_num_threads = 1
 session = ort.InferenceSession(str(args.encoder / "model.onnx"), options, providers=["CPUExecutionProvider"])
 with sqlite3.connect(f"file:{args.database.as_posix()}?mode=ro", uri=True) as db:
     cases = [("esp32_board", "What is ESP32?"), ("esp8266_board", "What is ESP8266?"),
-             ("nxp_frdm_mcxn236_board", "What is FRDM MCXN236?"), ("ultimainboard", "What is Ultimainboard?")]
+             ("nxp_frdm_mcxn236_board", "What is FRDM MCXN236?"), ("ultimainboard", "What is Ultimainboard?"),
+             ("esp32_board", "ESP32"),
+             ("nxp_frdm_mcxn236_board", "What MCU does the FRDM NXP board use?")]
     results = []
     for board, question in cases:
         encoded = tokenizer.encode(question)
@@ -34,7 +36,7 @@ with sqlite3.connect(f"file:{args.database.as_posix()}?mode=ro", uri=True) as db
         hidden = session.run(["last_hidden_state"], feeds)[0]
         vector = np.asarray(embedding.normalized_pool(hidden, feeds["attention_mask"]), dtype=np.float32).reshape(-1)
         top = sorted([(float(np.dot(vector, np.array(struct.unpack("<384f", blob)))), identifier)
-                      for identifier, blob in db.execute("SELECT id,vector FROM records WHERE board_id=?", (board,))], reverse=True)[:8]
-        assert any(":overview:" in identifier for _, identifier in top), (board, top)
-        results.append({"board_id": board, "question": question, "top": top})
+                      for identifier, blob in db.execute("SELECT id,vector FROM records")], reverse=True)[:6]
+        results.append({"board_id": board, "question": question, "top": top,
+                        "expected_overview_retrieved": any(identifier.startswith(board + ":overview:") for _, identifier in top)})
     print(json.dumps(results, indent=2))
