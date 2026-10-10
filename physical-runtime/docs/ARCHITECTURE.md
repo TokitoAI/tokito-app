@@ -100,8 +100,10 @@ manual-registration conformance host and is not a second product. Their package 
 development coordinates until the runtime-foundation epic accepts the public
 ABI. The active iQOO dialogue candidate uses GenieX 0.3.1 with the verified,
 app-private Qwen3 1.7B QAIRT w4a16 NPU bundle. GGUF/llama.cpp candidates are
-not selected automatically. Reviewed board answers bypass generation; ordinary
-electronics conversation uses bounded plain text. QAIRT tool proposals are
+not selected automatically. Authored-project answers retain deterministic
+reviewed evidence. Dataset-reference conversation uses actual local embeddings
+and Qwen to select cited facts; native validation reconstructs spoken source
+text rather than admitting free-form technical claims. QAIRT tool proposals are
 rejected because constrained generation has not passed its device gate.
 Automatic vision and remaining physical-tool artifacts remain gated work
 rather than stubbed capabilities.

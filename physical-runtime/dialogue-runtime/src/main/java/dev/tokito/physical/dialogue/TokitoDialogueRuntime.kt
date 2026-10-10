@@ -200,10 +200,11 @@ class TokitoDialogueRuntime(
     }
 
     private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
-        protocol.ungroundedIdentityClarification(request)?.let { return it }
+        if (request.knowledgeSelection == null) protocol.ungroundedIdentityClarification(request)?.let { return it }
         val toolMode = request.capabilities.isNotEmpty()
         requireDialogueMode(activeRuntime, toolMode)
-        val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
+        val systemPrompt = if (request.knowledgeSelection != null) KnowledgeSelectionRequest.SYSTEM
+            else if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
         val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
         val started = android.os.SystemClock.elapsedRealtime()
@@ -223,7 +224,7 @@ class TokitoDialogueRuntime(
                     }
                 } else null
                 val (prompt, formattedText, tokenBudget) = admitConversationWindow(request) { candidate ->
-                    val prompt = protocol.requestPrompt(candidate)
+                    val prompt = candidate.knowledgeSelection?.prompt(candidate.utterance) ?: protocol.requestPrompt(candidate)
                     val text = activeEngine.applyChatTemplate(arrayOf(ChatMessage("system", systemPrompt),
                         ChatMessage("user", prompt)), null, false).getOrThrow().formattedText
                     if (text.length > limits.maxPromptChars) {
@@ -242,7 +243,12 @@ class TokitoDialogueRuntime(
                     "nonThinkingPrefix=${formattedText.endsWith("<think>\n\n</think>\n\n")}")
                 val generation = GenerationConfig(
                     maxTokens = limits.maxPredictTokens,
-                    samplerConfig = if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
+                    samplerConfig = if (request.knowledgeSelection != null) {
+                        // Qwen's non-thinking decoder must not be forced into
+                        // greedy top-1 loops. Source validation, not greedy
+                        // sampling, is the authority boundary.
+                        evidenceSelectionSampler(activeRuntime)
+                    } else if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
                         SamplerConfig(grammarString = TOKITO_DIALOGUE_GRAMMAR)
                     } else {
                         conversationalSampler(activeRuntime)
@@ -287,7 +293,8 @@ class TokitoDialogueRuntime(
             }
             phase("native_returned")
             val outcome = try {
-                if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
+                request.knowledgeSelection?.parse(protocol.spokenFinalAnswer(raw))
+                    ?: if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
             } catch (failure: DialogueFailure) {
                 if (failure.code == DialogueFailureCode.INVALID_MODEL_OUTPUT) {
                     Log.w(
@@ -459,6 +466,8 @@ internal fun supportsDialogueRuntime(abis: Array<String>): Boolean =
     abis.any { it == "arm64-v8a" }
 
 /** The admitted QAIRT profile is Qwen3 non-thinking; greedy decoding is not its recommended profile. */
+internal fun evidenceSelectionSampler(runtime: DialogueRuntime?): SamplerConfig = conversationalSampler(runtime)
+
 internal fun conversationalSampler(runtime: DialogueRuntime?): SamplerConfig =
     if (runtime == DialogueRuntime.QAIRT) {
         SamplerConfig(temperature = 0.7f, topP = 0.8f, topK = 20, minP = 0f)

@@ -67,6 +67,10 @@
 -keep,includedescriptorclasses class kotlin.jvm.internal.Lambda { public *; protected *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.CoroutineScope { public *; }
 -keep,includedescriptorclasses class kotlinx.coroutines.flow.StateFlow { public *; }
+# Real microphone acceptance consumes final events across the paired test APK.
+# Keep the Flow interface and its Kotlin facade/delegate ABI, not all coroutines.
+-keep,includedescriptorclasses interface kotlinx.coroutines.flow.Flow { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.flow.FlowKt** { public *; }
 
 # Installed acceptance exercises these APIs as a separate consumer program.
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.Capability { public *; }
@@ -125,3 +129,20 @@
     public dev.tokito.physical.dialogue.QairtContextMetadata admit(android.content.Context, dev.tokito.physical.dialogue.DialogueModel);
 }
 -keep class dev.tokito.physical.dialogue.NativeQnnInventory { private native <methods>; }
+-keepclassmembers class dev.tokito.physical.MainActivity {
+    public *** getLocalReasoningState();
+    public java.lang.Object respondLocally(java.lang.String, kotlin.coroutines.Continuation);
+}
+-keep,includedescriptorclasses class kotlin.TuplesKt { public *; }
+-keepclassmembers class kotlin.Pair {
+    public java.lang.Object component1();
+    public java.lang.Object component2();
+}
+-keep,includedescriptorclasses class kotlin.io.CloseableKt { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.DelayKt { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.Dispatchers { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.MainCoroutineDispatcher { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionContext { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionRecord { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionStore { public *; }
+-keep class dev.tokito.physical.session.PhysicalSessionStore$Companion { public *; }

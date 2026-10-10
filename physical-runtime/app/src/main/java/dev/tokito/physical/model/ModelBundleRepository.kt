@@ -91,6 +91,7 @@ class ModelBundleRepository(private val context: Context) {
                 }
                 ModelCapability.EMBEDDING -> {
                     LocalTextEmbeddingRuntime.verifyConformance(bundle)
+                    dev.tokito.physical.dialogue.BoardKnowledgePackage.openIfPresent(bundle)?.use { }
                     true
                 }
             }
@@ -123,6 +124,7 @@ class ModelBundleRepository(private val context: Context) {
         val ALLOWED_LICENSES = setOf("apache-2.0", "mit", "bsd-3-clause") +
             if (BuildConfig.ALLOW_EVALUATION_MODELS) setOf(
                 "agpl-3.0-only", "licenseref-kroko-piper-espeak-local-evaluation",
+                "licenseref-tokito-knowledge-private-evaluation",
             ) else emptySet()
 
         // P-256 release verification key. The private half is never shipped.

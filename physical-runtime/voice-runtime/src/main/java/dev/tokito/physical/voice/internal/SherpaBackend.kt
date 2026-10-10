@@ -283,7 +283,7 @@ private class SherpaSpeechSynthesizer(
         check(speaking.compareAndSet(false, true)) { "synthesizer is already speaking" }
         continueSynthesis.set(true)
         val tts = requireEngine()
-        val deadline = SystemClock.elapsedRealtime() + synthesisTimeoutMillis
+        val synthesisDeadline = SystemClock.elapsedRealtime() + synthesisTimeoutMillis
         val startedAt = SystemClock.elapsedRealtime()
         var output: AudioTrack? = null
         try {
@@ -295,16 +295,23 @@ private class SherpaSpeechSynthesizer(
             // Touch interruption / focus loss is normal control flow, not a
             // synthesis failure. The runtime reports SpeechFinished(interrupted).
             if (!continueSynthesis.get()) return
-            check(SystemClock.elapsedRealtime() < deadline) {
+            check(SystemClock.elapsedRealtime() < synthesisDeadline) {
                 "local TTS exceeded its bounded deadline"
             }
-            output = createTrack(tts.sampleRate())
+            val sampleRate = tts.sampleRate()
+            require(sampleRate > 0)
+            val audioDurationMillis = generated.samples.size.toLong() * 1000 / sampleRate
+            require(audioDurationMillis <= 180_000) { "local TTS audio exceeds playback bound" }
+            // Playback has its own measured-duration budget. Synthesis time
+            // must not consume the time needed to hear the complete answer.
+            val playbackDeadline = SystemClock.elapsedRealtime() + audioDurationMillis + 10_000
+            output = createTrack(sampleRate)
             track.set(output)
             output.play()
             var offset = 0
             var playbackStarted = false
             while (offset < generated.samples.size && continueSynthesis.get()) {
-                check(SystemClock.elapsedRealtime() < deadline) {
+                check(SystemClock.elapsedRealtime() < playbackDeadline) {
                     "local TTS exceeded its bounded deadline"
                 }
                 val sampleCount = minOf(PLAYBACK_CHUNK_SAMPLES, generated.samples.size - offset)
@@ -320,6 +327,13 @@ private class SherpaSpeechSynthesizer(
                     onPlaybackStarted()
                 }
                 offset += written
+            }
+            // WRITE_BLOCKING drains into the hardware buffer, not necessarily
+            // the speaker. Do not stop/release the track with its tail queued.
+            while (continueSynthesis.get() &&
+                (output.playbackHeadPosition.toLong() and 0xffffffffL) < offset.toLong()) {
+                check(SystemClock.elapsedRealtime() < playbackDeadline) { "local TTS playback did not drain" }
+                SystemClock.sleep(10)
             }
         } catch (failure: Throwable) {
             Log.e(TAG, "Local sherpa synthesis failed", failure)

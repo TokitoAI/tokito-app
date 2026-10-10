@@ -131,6 +131,13 @@ globally. Run the paired DEX class/method audit described in
 `docs/RELEASE_DEVICE_QA.md` before installing both outputs. This linkage check is
 not device execution or model-performance evidence.
 
+Android's boot classpath owns `org.json`. The desktop `org.json:json` artifact
+belongs only in host-test dependencies, never `implementation`. An installed
+optimized corpus-import run failed because R8 renamed desktop `JSONTokener.nextValue`
+to `e`, while Android resolved the class to its platform implementation. Removing
+the packaged shadow fixes the boundary; preserving one renamed method is not
+a substitute for removing the duplicate runtime class family.
+
 GenieX 0.3.1 has no AAR consumer keep rules. Its native LLM creation consumes
 private bean fields by original name. An optimized iQOO run crashed in native
 `strlen` during creation while its mapping renamed `model_path`/`model_name`
@@ -233,3 +240,41 @@ Final-answer extraction follows Qwen's last closing delimiter and keeps the
 reasoning prelude out of speech and retained assistant history; unfinished
 final-answer tags and incomplete native
 responses still fail closed. Playback is not factual-quality qualification.
+
+## Dataset reference selection
+
+Signed embedding bundles may include the validated SQLite reference corpus and
+its manifest. Bench reference questions use that admitted corpus and the same
+384-dimensional encoder; they do not require a GLB or camera registration.
+Every microphone and typed question searches the full admitted corpus through
+the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
+Quoted previous questions add separately retrieved follow-up context; they
+cannot displace the current question's ranked results. Source descriptions and
+other records share the bounded fact budget, retaining their original citations.
+**Why:** ASR spelling and unknown reference names must not bypass RAG and enter
+the older no-source path. Semantic reference retrieval is not physical board
+identification; it grants no AR targets or observed identity.
+Qwen selects zero to four existing fact IDs in a single `facts` array. Native
+code reconstructs speech from the cited source values. The selector cannot
+authorize component highlights or invent physical identity.
+**Why:** unfamiliar reference names must be answered from retrieved documentation,
+not rejected based on model recall. Extra schema fields make small local-model
+selection less reliable without adding authority. Whole-response JSON fences
+are presentation wrappers only; unknown IDs and arbitrary prose still fail.
+**How to apply:** keep facts/aliases in the pinned dataset, not board-specific
+application branches. Test multiple references on the optimized installed APK,
+including local playback, and retain independent physical-identity gates.
+Evidence-ID selection uses Qwen's recommended non-thinking sampling profile
+(0.7 temperature, 0.8 top-p, top-k 20, min-p 0), like conversation. Greedy
+top-1 selection repeatedly exhausted the 512-token device budget. Source-ID
+validation remains mandatory regardless of decoding. One malformed or
+token-limited selection may be repaired with the exact same admitted evidence
+inside the existing overall deadline; partial output is never accepted.
+**Why:** deterministic decoding is not a factual guardrail and can create
+repetition loops. Do not raise the context/output cap to hide that failure.
+
+Local Sherpa playback has a measured-audio-duration deadline separate from the
+synthesis deadline, and drains the hardware playback head before releasing the
+track. **Why:** generation plus playback can exceed a shared timer even for a
+valid answer, while successful blocking writes can still leave the last audio
+buffer queued. Preserve interruption checks during both writes and draining.

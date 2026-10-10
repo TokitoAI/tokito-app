@@ -27,6 +27,18 @@ class SpokenProfileTest {
         assertEquals(0f, config.minP)
     }
 
+    @Test fun sourceSelectorAlsoPreservesQwenNonGreedyProfile() {
+        val config = evidenceSelectionSampler(DialogueRuntime.QAIRT)
+        assertEquals(0.7f, config.temperature)
+        assertEquals(0.8f, config.topP)
+        assertEquals(20, config.topK)
+        assertEquals(0f, config.minP)
+        assertTrue(canRepairEvidenceSelection(DialogueFailureCode.OUTPUT_LIMIT))
+        assertTrue(canRepairEvidenceSelection(DialogueFailureCode.INVALID_MODEL_OUTPUT))
+        assertFalse(canRepairEvidenceSelection(DialogueFailureCode.GENERATION_TIMEOUT))
+        assertFalse(canRepairEvidenceSelection(DialogueFailureCode.MODEL_LOAD))
+    }
+
     @Test fun spokenPromptHasOneConsistentConfigurableBudgetWithoutAnswerFixtures() {
         val protocol = DialogueProtocol(DialogueLimits())
         assertTrue(protocol.conversationalSystemPrompt().contains("160 words"))

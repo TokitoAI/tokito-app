@@ -163,7 +163,8 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
      * before that boundary is untrusted reasoning, never spoken or retained.
      * Unclosed/reopened tags in the final answer still fail the content guards.
      */
-    private fun spokenFinalAnswer(raw: String): String {
+    internal fun spokenFinalAnswer(raw: String): String {
+        if (raw.length > limits.maxOutputChars) throw DialogueFailure(DialogueFailureCode.OUTPUT_LIMIT, "Model output exceeds limit")
         val value = raw.trim()
         val close = value.lastIndexOf("</think>")
         if (close < 0) return value // Unclosed tags are rejected by CONTROL_TAG.
@@ -211,6 +212,12 @@ internal class DialogueProtocol(private val limits: DialogueLimits) {
     }
 
     fun validateRequest(request: DialogueRequest) {
+        request.knowledgeSelection?.let {
+            if (request.designContext != null || request.capabilities.isNotEmpty() || request.observations.isNotEmpty() || request.history.isNotEmpty()) {
+                fail("Knowledge selection cannot mix unrelated evidence authorities")
+            }
+            if (it.prompt(request.utterance).length > limits.maxPromptChars - 2048) fail("Knowledge selection exceeds prompt bounds")
+        }
         if (request.utterance.isBlank() || request.utterance.length > limits.maxTurnChars) fail("Invalid utterance")
         if (request.utterance.any { it.isISOControl() && it !in "\n\r\t" }) fail("Utterance contains control characters")
         if (request.history.size > limits.maxHistoryTurns || request.history.any {
