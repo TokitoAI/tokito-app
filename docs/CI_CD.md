@@ -21,7 +21,8 @@ not by a mutable tag, and authenticates only long enough to pull it.
    forbidden-JS boundary, typecheck, lint, and tests.
 3. Physical-runtime Python contract tests and Rust tests.
 4. Physical Android unit tests, lint, and debug assembly.
-5. Unified arm64 APK assembly and package-content verification.
+5. Native Cloud bridge release unit tests and lint, final application release
+   lint, unified arm64 APK assembly, and package-content verification.
 
 The unified APK gate depends on the first four. Its standalone unsigned release APK is retained as a
 Buildkite artifact for manual QA.
