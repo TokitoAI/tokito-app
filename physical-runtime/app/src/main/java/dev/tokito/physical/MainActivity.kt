@@ -543,7 +543,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     val localReasoningState: dev.tokito.physical.dialogue.DialogueRuntimeState?
-        get() = localGenerator?.state?.value
+        get() = localGenerator?.state?.value?.takeIf {
+            localRag != null || it is dev.tokito.physical.dialogue.DialogueRuntimeState.Failed
+        }
 
     private fun requireForeground(epoch: Long) {
         if (destroyed || !foregroundActive || epoch != foregroundEpoch) throw CancellationException("Bench foreground ownership retired")

@@ -129,6 +129,11 @@
     public *** getLocalReasoningState();
     public java.lang.Object respondLocally(java.lang.String, kotlin.coroutines.Continuation);
 }
+-keep,includedescriptorclasses class kotlin.TuplesKt { public *; }
+-keep,includedescriptorclasses class kotlin.io.CloseableKt { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.DelayKt { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.Dispatchers { public *; }
+-keep,includedescriptorclasses class kotlinx.coroutines.MainCoroutineDispatcher { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionContext { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionRecord { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionStore { public *; }
