@@ -110,8 +110,33 @@ token limits alone cannot enforce concise, correct speech.
 Verified assembly-context facts are retrieved locally before generation. Exact
 reference keys outrank deterministic bounded text overlap, every result retains
 its context revision and source IDs, and no-match queries inject no corpus. An
-embedding model is deferred until held-out retrieval evaluation proves that the
-small structured per-board corpus needs one.
+embedding encoder is separate from the unchanged Qwen generator. MiniLM neural
+embeddings run through an explicit native ONNX CPU profile with WordPiece
+tokenization, masked mean pooling and L2 normalization. Signed provisioning
+includes source-pinned model/tokenizer digests and independent reference vectors.
+No hash-vector or remote inference substitutes for that encoder.
+
+Semantic ranking operates only over admitted records in the exact current context
+revision. Exact references (including spoken spacing) and named/numeric pins retain deterministic authority;
+unknown references cannot become a nearby semantic match. Similarity and runner-up
+margin gates abstain on ambiguous queries; their values are retrieval thresholds,
+not calibrated factual confidence. Held-out retrieval and device qualification
+remain release requirements, not consequences of successful compilation.
+Semantic-only evidence cannot authorize component highlighting. A reviewed exact
+reference or explicit reviewed alias is required for positional presentation.
+
+SQLite persists one bounded active corpus keyed by revision, corpus content and
+encoder identity. Updates are transactional, cached vectors have digests, and
+source facts remain in the verified context rather than in an independent vector
+database truth. Small per-board corpora use bounded exact cosine search instead
+of introducing an approximate index before measurements justify it.
+Invalid derived vectors are discarded and regenerated from the same admitted
+corpus and encoder identity. Foreground ownership is checked between encodes and
+before cache publication; stopped activities cannot finish background warmup.
+Embedding startup/query and vision startup are serialized, but this is not yet
+qualification of a global scheduler for continuous pose inference. Measure
+actual device memory, thermal behavior and end-to-end voice latency before
+claiming the CPU/NPU concurrency profile is production-qualified.
 
 ## Detector candidate status
 

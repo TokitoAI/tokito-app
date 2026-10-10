@@ -14,6 +14,31 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceCallControllerTest {
+    @Test fun foregroundRetirementInvalidatesEvenACompletedWarmup() = runTest {
+        val harness = Harness(this)
+        harness.controller.warmUp()
+        val retired = harness.controller.revokeActiveTurn()
+        harness.controller.invalidatePreparation()
+        harness.controller.cleanupRevokedTurn(retired)
+        harness.controller.start()
+        assertEquals(2, harness.preparations)
+        assertEquals(1, harness.starts)
+    }
+
+    @Test fun latePreparationCannotBecomePreparedAfterForegroundRetirement() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val harness = Harness(this, prepareGate = release)
+        val warming = launch { harness.controller.warmUp() }
+        testScheduler.runCurrent()
+        harness.controller.revokeActiveTurn()
+        harness.controller.invalidatePreparation()
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(warming.isCancelled)
+        harness.controller.start()
+        assertEquals(2, harness.preparations)
+        assertEquals(1, harness.starts)
+    }
     @Test fun cancelledPreparationCannotLeaveCallActiveOrPrepared() = runTest {
         val harness = Harness(this, prepareFailure = kotlinx.coroutines.CancellationException("stopped"))
         repeat(2) {

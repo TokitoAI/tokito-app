@@ -1,0 +1,7 @@
+# Host-only pinned export/conformance environment, not Android runtime dependencies.
+numpy==2.4.6
+onnxruntime==1.27.0
+tokenizers==0.15.2
+# Optional independent safetensors parity checker:
+transformers==4.36.2
+torch==2.11.0

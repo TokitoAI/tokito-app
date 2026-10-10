@@ -25,7 +25,7 @@ export type PhysicalSyncSnapshot = {
   payloadJson: string;
 };
 
-export type ModelCapability = "dialogue" | "vision" | "voice";
+export type ModelCapability = "dialogue" | "vision" | "voice" | "embedding";
 
 export type InstalledModelBundle = {
   capability: ModelCapability;

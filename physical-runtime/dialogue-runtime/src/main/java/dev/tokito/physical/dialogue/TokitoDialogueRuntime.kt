@@ -13,6 +13,7 @@ import com.geniex.sdk.bean.GenerationConfig
 import com.geniex.sdk.bean.LlmCreateInput
 import com.geniex.sdk.bean.LlmStreamResult
 import com.geniex.sdk.bean.ModelConfig
+import com.geniex.sdk.bean.ProfilingData
 import com.geniex.sdk.bean.SamplerConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -206,6 +207,9 @@ class TokitoDialogueRuntime(
                     null,
                     false,
                 ).getOrThrow()
+                if (templated.formattedText.length > limits.maxPromptChars) {
+                    throw DialogueFailure(DialogueFailureCode.INVALID_REQUEST, "Formatted request exceeds prompt limit")
+                }
                 Log.i(TAG, "Local template: chatmlSystem=${templated.formattedText.contains("<|im_start|>system")}, " +
                     "chatmlUser=${templated.formattedText.contains("<|im_start|>user")}, " +
                     "chatmlAssistant=${templated.formattedText.contains("<|im_start|>assistant")}, " +
@@ -219,19 +223,38 @@ class TokitoDialogueRuntime(
                     },
                 )
                 phase("native_generate")
+                var completed = false
+                var firstOutput = false
                 buildString {
                     activeEngine.generateStreamFlow(templated.formattedText, generation).collect { result ->
                         when (result) {
                             is LlmStreamResult.Token -> {
+                                if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Output after completion")
+                                if (!firstOutput && result.text.isNotEmpty()) {
+                                    firstOutput = true
+                                    phase("first_output")
+                                }
                                 append(result.text)
                                 if (length > limits.maxOutputChars) {
                                     throw DialogueFailure(DialogueFailureCode.OUTPUT_LIMIT, "Model output exceeds limit")
                                 }
                             }
-                            is LlmStreamResult.Completed -> Unit
+                            is LlmStreamResult.Completed -> {
+                                if (completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Duplicate completion")
+                                completed = true
+                                validateGenerationReceipt(result.profile, limits.maxPredictTokens)
+                                // Counts are vendor tokenizer measurements, never stream chunk counts.
+                                // Keep all prompt/output content and arbitrary vendor strings out of logs.
+                                Log.i(TAG, "Generation profile source=vendor " +
+                                    "tokenCountsAvailable=${result.profile.promptTokens > 0 && result.profile.generatedTokens > 0} " +
+                                    "promptTokens=${result.profile.promptTokens} " +
+                                    "generatedTokens=${result.profile.generatedTokens} ttftMs=${result.profile.ttftMs} " +
+                                    "promptTimeMs=${result.profile.promptTimeMs} decodeTimeMs=${result.profile.decodeTimeMs}")
+                            }
                             is LlmStreamResult.Error -> throw result.throwable
                         }
                     }
+                    if (!completed) throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Stream ended without completion")
                 }
             }
             phase("native_returned")
@@ -329,6 +352,8 @@ class TokitoDialogueRuntime(
             sessionSystemPrompt != null && sessionSystemPrompt != systemPrompt ||
             sessionTurns >= limits.maxHistoryTurns ||
             sessionChars + userPrompt.length > limits.maxPromptChars
+        // Native KV state must not carry old project evidence into a new request.
+        // Bounded host-supplied history is quoted in the current prompt instead.
         if (mustReset) {
             val resetCode = activeEngine.reset()
             if (resetCode != 0) {
@@ -382,6 +407,18 @@ class TokitoDialogueRuntime(
         const val INITIALIZATION_DEADLINE_MS = 120_000L
         const val TAG = "TokitoDialogue"
         const val SUPPORTED_ABI = "arm64-v8a"
+    }
+}
+
+internal fun validateGenerationReceipt(profile: ProfilingData, maxTokens: Int) {
+    if (profile.promptTokens < 0 || profile.generatedTokens < 0 || profile.generatedTokens > maxTokens ||
+        listOf(profile.ttftMs, profile.promptTimeMs, profile.decodeTimeMs).any { !it.isFinite() || it < 0 }) {
+        throw DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Invalid native generation profile")
+    }
+    // An explicit token-limit termination is incomplete, even if the text happens
+    // to end in punctuation. Do not truncate or present it as a complete answer.
+    if (profile.stopReason.lowercase() in setOf("length", "max_tokens", "max_token", "token_limit", "max_tokens_reached")) {
+        throw DialogueFailure(DialogueFailureCode.OUTPUT_LIMIT, "Generation reached its token limit")
     }
 }
 

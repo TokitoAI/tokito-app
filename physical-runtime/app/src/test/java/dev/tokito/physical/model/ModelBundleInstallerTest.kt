@@ -6,6 +6,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNoException
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -17,6 +18,7 @@ import java.security.Signature
 import java.util.Base64
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.nio.file.Files
 
 class ModelBundleInstallerTest {
     @get:Rule
@@ -123,6 +125,128 @@ class ModelBundleInstallerTest {
             quotaInstaller.install(bundle("second", ByteArray(300)))
         }
         assertArrayEquals(ByteArray(300), activeBytes(quotaInstaller))
+    }
+
+    @Test
+    fun missingActiveIsUnavailableButUnsignedDirectoryIsRejected() {
+        val installer = installer()
+        assertEquals(null, installer.verifiedActiveBundle())
+        temporaryFolder.root.resolve("models/active").mkdirs()
+        assertFails("missing or unsafe") { installer.activeDirectory() }
+    }
+
+    @Test
+    fun activeReadsCheckSignatureInventoryAndFullArtifactDigest() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1, 2, 3)))
+        val active = temporaryFolder.root.resolve("models/active")
+        active.resolve("weights.bin").writeBytes(byteArrayOf(3, 2, 1))
+        assertFails("digest") { installer.activeDirectory() }
+        active.resolve("weights.bin").writeBytes(byteArrayOf(1, 2, 3))
+        active.resolve("surprise.bin").writeBytes(byteArrayOf(1))
+        assertFails("inventory") { installer.verifiedActiveBundle() }
+        active.resolve("surprise.bin").delete()
+        active.resolve("model.manifest.sig").writeText("wrong")
+        assertFails("signature") { installer.activeDirectory() }
+    }
+
+    @Test
+    fun activeReadsRejectSelfDeclaredReplacementAndMissingArtifacts() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        val active = temporaryFolder.root.resolve("models/active")
+        val originalManifest = active.resolve("model.manifest.json").readText()
+        val forged = JSONObject(originalManifest)
+        forged.getJSONArray("artifacts").getJSONObject(0).put("sha256", sha256(byteArrayOf(2)))
+        active.resolve("weights.bin").writeBytes(byteArrayOf(2))
+        active.resolve("model.manifest.json").writeText(forged.toString())
+        assertFails("signature") { installer.activeDirectory() }
+        active.resolve("model.manifest.json").writeText(originalManifest)
+        active.resolve("weights.bin").delete()
+        assertFails("inventory") { installer.activeDirectory() }
+    }
+
+    @Test
+    fun activeReadsReapplyPolicyEvenWhenManifestIsSigned() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        val active = temporaryFolder.root.resolve("models/active")
+        val changed = JSONObject(active.resolve("model.manifest.json").readText())
+            .put("runtime_revision", "other")
+        val bytes = changed.toString().toByteArray()
+        active.resolve("model.manifest.json").writeBytes(bytes)
+        active.resolve("model.manifest.sig").writeText(sha256(bytes))
+        assertFails("another runtime") { installer.activeDirectory() }
+    }
+
+    @Test
+    fun corruptedRollbackNeverReplacesActiveAndCorruptedActiveIsNotRetained() {
+        val installer = installer()
+        installer.install(bundle("one", byteArrayOf(1)))
+        installer.install(bundle("two", byteArrayOf(2)))
+        val active = temporaryFolder.root.resolve("models/active")
+        val rollback = temporaryFolder.root.resolve("models/rollback")
+        rollback.resolve("weights.bin").writeBytes(byteArrayOf(9))
+        assertFails("digest") { installer.rollback() }
+        assertArrayEquals(byteArrayOf(2), activeBytes(installer))
+        assertArrayEquals(byteArrayOf(9), rollback.resolve("weights.bin").readBytes())
+        rollback.resolve("weights.bin").writeBytes(byteArrayOf(1))
+        active.resolve("weights.bin").writeBytes(byteArrayOf(8))
+        assertFails("digest") { installer.rollback() }
+        assertFails("digest") { installer.install(bundle("three", byteArrayOf(3))) }
+        assertArrayEquals(byteArrayOf(8), active.resolve("weights.bin").readBytes())
+        assertArrayEquals(byteArrayOf(1), rollback.resolve("weights.bin").readBytes())
+        assertEquals(setOf("active", "rollback"), temporaryFolder.root.resolve("models").list()!!.toSet())
+    }
+
+    @Test
+    fun repeatedAdmissionAndRollbackDoNotRerunInferenceConformance() {
+        var conformanceCalls = 0
+        val installer = installer(conformance = { _, _ -> conformanceCalls++; true })
+        installer.install(bundle("one", byteArrayOf(1)))
+        installer.install(bundle("two", byteArrayOf(2)))
+        repeat(3) { assertEquals("two", installer.verifiedActiveBundle()!!.manifest.getString("model_revision")) }
+        assertEquals("one", installer.rollback().getString("model_revision"))
+        assertArrayEquals(byteArrayOf(1), activeBytes(installer))
+        assertEquals(2, conformanceCalls)
+    }
+
+    @Test
+    fun conformanceCannotChangeSignedStagingBeforeActivation() {
+        val installer = installer(conformance = { directory, _ ->
+            directory.resolve("weights.bin").writeBytes(byteArrayOf(9))
+            true
+        })
+        assertFails("digest") { installer.install(bundle("one", byteArrayOf(1))) }
+        assertEquals(null, installer.verifiedActiveBundle())
+    }
+
+    @Test
+    fun symlinkedArtifactCannotMasqueradeAsAdmittedBytes() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        val artifact = temporaryFolder.root.resolve("models/active/weights.bin")
+        val external = temporaryFolder.root.resolve("external.bin").apply { writeBytes(byteArrayOf(1)) }
+        artifact.delete()
+        try {
+            Files.createSymbolicLink(artifact.toPath(), external.toPath())
+        } catch (unsupported: Exception) {
+            // Windows runners without symlink privileges cannot exercise this check.
+            assumeNoException(unsupported)
+        }
+        assertFails("link") { installer.activeDirectory() }
+    }
+
+    @Test
+    fun activeReadsRejectUndeclaredEmptyDirectoriesAndOversizedMetadata() {
+        val installer = installer()
+        installer.install(bundle("trusted", byteArrayOf(1)))
+        val active = temporaryFolder.root.resolve("models/active")
+        active.resolve("undeclared").mkdir()
+        assertFails("inventory") { installer.activeDirectory() }
+        active.resolve("undeclared").delete()
+        active.resolve("model.manifest.json").writeBytes(ByteArray(256 * 1024 + 1))
+        assertFails("metadata exceeds") { installer.activeDirectory() }
     }
 
     private fun installer(

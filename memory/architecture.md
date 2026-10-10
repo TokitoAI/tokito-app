@@ -40,6 +40,24 @@ abstention. General educational wording cannot bypass evidence admission. Raw
 local-model generation remains available to quality instrumentation, not the
 bench answer path; passing this safety boundary is not model factual accuracy.
 
+Local semantic retrieval uses a separate signed `embedding` model slot, not a
+replacement Qwen generator. The native encoder's WordPiece/pooling output must
+pass source-reference conformance. Corpus vectors are revision/model/content-keyed
+SQLite cache data; source facts remain authoritative in verified context records.
+**Why:** similarity is evidence ranking, not factual confidence, and a stale
+embedding must never identify a component in a different project revision.
+**How to apply:** exact references/pins precede semantic ranking, unknown identities
+abstain, and semantic retrieval runs off the main thread. Preserve the explicit CPU
+encoder/NPU generator split until exact-device measurements qualify another backend.
+Semantic-only matches never authorize board highlighting. Spaced reference
+designators and named package pins must retain the same exact-identity gates as
+contiguous references and numeric pins. A corrupt derived vector projection is
+rebuilt from the same admitted records; it never becomes new source evidence.
+Foreground epochs revoke warmup/results across stop/start, and native handles
+must be freshly admitted before reuse after retirement. Signed model reads and
+rollback verify the signature, policy and complete inventory without rerunning
+inference conformance; avoid polling this streaming-hash boundary on hot paths.
+
 Shared Cloud conversation history and generation run journals are server-owned.
 Phone chat opens at the latest turn, but only a reader drag can disable live
 scroll following. Earlier-message pagination preserves the reading anchor;

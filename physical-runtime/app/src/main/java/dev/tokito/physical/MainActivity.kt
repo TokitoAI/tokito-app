@@ -21,6 +21,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import dev.tokito.physical.databinding.ActivityMainBinding
 import dev.tokito.physical.dialogue.BoardReferenceContext
 import dev.tokito.physical.dialogue.LocalBenchDialoguePolicy
+import dev.tokito.physical.dialogue.LocalTextEmbeddingRuntime
+import dev.tokito.physical.dialogue.SqliteDesignVectorCache
+import dev.tokito.physical.model.ModelBundleRepository
+import dev.tokito.physical.model.ModelCapability
 import dev.tokito.physical.model.DeviceResourceGovernor
 import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.voice.TokitoVoiceRuntime
@@ -35,6 +39,13 @@ import dev.tokito.physical.measurement.MeasurementValue
 import dev.tokito.physical.measurement.RelationshipKind
 import dev.tokito.physical.voice.MeasurementVoiceSession
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -48,6 +59,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var call: VoiceCallController
     private lateinit var measurement: MeasurementVoiceSession
     private var boardReference: BoardReferenceContext? = null
+    private var embedding: LocalTextEmbeddingRuntime? = null
+    private val knowledgePreparation = Mutex()
+    private val embeddingOwner = Any()
+    private val heavyWork = Mutex()
+    @Volatile private var foregroundEpoch = 0L
+    @Volatile private var foregroundActive = false
+    private var preparationJob: Job? = null
+    private var visionPreparationJob: Job? = null
+    @Volatile private var destroyed = false
     private var digitalTwinAttempted = false
     private var vision: LocalPoseVisionRuntime? = null
     private var cameraPermissionRequested = false
@@ -145,8 +165,6 @@ class MainActivity : AppCompatActivity() {
         bindActions()
         observeVoiceEvents()
         ensureCameraPermission()
-        lifecycleScope.launch { prepareLocalVision() }
-        lifecycleScope.launch { call.warmUp() }
         registerDebugUtteranceReceiver()
     }
 
@@ -192,7 +210,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        foregroundActive = true
+        foregroundEpoch++
         if (::ar.isInitialized && hasPermission(Manifest.permission.CAMERA)) ar.start()
+        if (::call.isInitialized) preparationJob = lifecycleScope.launch { call.warmUp() }
+        if (vision == null) visionPreparationJob = lifecycleScope.launch { prepareLocalVision() }
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -201,7 +223,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        foregroundActive = false
+        foregroundEpoch++
+        preparationJob?.cancel()
+        visionPreparationJob?.cancel()
+        preparationJob = null
+        visionPreparationJob = null
+        val retiredEmbedding = synchronized(embeddingOwner) { embedding.also { embedding = null } }
+        boardReference = null
+        retiredEmbedding?.let { retired -> CoroutineScope(Dispatchers.IO).launch { retired.close() } }
         if (::call.isInitialized) {
+            call.invalidatePreparation()
             val retired = call.revokeActiveTurn()
             lifecycleScope.launch { call.cleanupRevokedTurn(retired) }
         }
@@ -210,6 +242,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        val retiredEmbedding = synchronized(embeddingOwner) {
+            destroyed = true
+            embedding.also { embedding = null }
+        }
+        retiredEmbedding?.let { retired -> CoroutineScope(Dispatchers.IO).launch { retired.close() } }
         debugUtteranceReceiver?.let(::unregisterReceiver)
         debugUtteranceReceiver = null
         if (::call.isInitialized) call.close()
@@ -313,14 +350,51 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun prepareLocalAi() {
-        boardReference = withContext(Dispatchers.IO) {
+        val epoch = foregroundEpoch
+        val caller = coroutineContext
+        fun checkpoint() {
+            caller.ensureActive()
+            requireForeground(epoch)
+        }
+        val prepared = withContext(Dispatchers.IO) { knowledgePreparation.withLock { heavyWork.withLock knowledge@{
+            checkpoint()
             val session = requireNotNull(sessionStore.session(sessionId)) { "Physical session is no longer available" }
-            BoardReferenceContext.loadIfPresent(filesDir)?.takeIf { reference ->
+            val reference = BoardReferenceContext.loadIfPresent(filesDir)?.takeIf { reference ->
                 session.context.admitsBoardReference(reference.identity.contextRevision).also { admitted ->
                     if (!admitted) android.util.Log.w("TokitoDialogue", "Board reference does not match the bound session revision")
                 }
             }
-        }
+            if (reference == null) return@knowledge null
+            // Explicit CPU encoder is independent of the unchanged Qwen NPU profile.
+            val encoder = synchronized(embeddingOwner) { embedding } ?: run {
+                // Reuse a previously admitted native handle; streaming bundle rehash
+                // is needed only when opening a new handle, not for every call.
+                val directory = ModelBundleRepository(this@MainActivity).activeDirectory(ModelCapability.EMBEDDING)
+                    ?: return@knowledge reference
+                requireHeavyWork("Knowledge search", 256L * 1024L * 1024L)
+                LocalTextEmbeddingRuntime.open(directory)
+            }.also { created ->
+                val admitted = synchronized(embeddingOwner) {
+                    if (destroyed || !foregroundActive || epoch != foregroundEpoch || !caller[Job]!!.isActive) false
+                    else { embedding = created; true }
+                }
+                if (!admitted) { created.close(); throw CancellationException("Bench preparation retired") }
+            }
+            var preparing = true
+            val index = SqliteDesignVectorCache(File(filesDir, "knowledge/design-vectors.sqlite")).use { cache ->
+                reference.index.withEmbeddings(encoder, cache) {
+                    if (preparing) caller.ensureActive()
+                    requireForeground(epoch)
+                    requireHeavyWork("Knowledge search", 256L * 1024L * 1024L)
+                }
+            }
+            preparing = false
+            checkpoint()
+            reference.copy(index = index)
+        } } }
+        caller.ensureActive()
+        requireForeground(epoch)
+        boardReference = prepared
         activateProjectTwinIfPresent()
         if (voice.state.value !is VoiceRuntimeState.Ready &&
             voice.state.value != VoiceRuntimeState.Listening &&
@@ -329,11 +403,15 @@ class MainActivity : AppCompatActivity() {
         ) {
             voice.initialize()
         }
+        caller.ensureActive()
+        requireForeground(epoch)
         // Admitted evidence and abstention need no unqualified generative model.
         // Model preparation remains explicit in runtime quality evaluation.
     }
 
     private suspend fun prepareLocalVision() {
+        val epoch = foregroundEpoch
+        val caller = coroutineContext
         val modelRoot = File(filesDir, "models/vision/active")
         val installedBytes = withContext(Dispatchers.IO) {
             modelRoot.walkTopDown().filter(File::isFile).fold(0L) { total, file ->
@@ -344,11 +422,24 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.w("TokitoPoseVision", "Local vision admission rejected by resource governor")
             return
         }
-        val runtime = withContext(Dispatchers.IO) {
-            runCatching { LocalPoseVisionRuntime.load(modelRoot) }
-        }.getOrElse { failure ->
+        var created: LocalPoseVisionRuntime? = null
+        val runtime = try {
+            withContext(Dispatchers.IO) { heavyWork.withLock {
+                caller.ensureActive()
+                requireForeground(epoch)
+                requireHeavyWork("Local vision", Math.multiplyExact(installedBytes, 2))
+                LocalPoseVisionRuntime.load(modelRoot).also { created = it }
+            } }
+        } catch (failure: CancellationException) {
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { created?.close() }
+            throw failure
+        } catch (failure: Throwable) {
             android.util.Log.e("TokitoPoseVision", "Local vision bundle was rejected", failure)
             return
+        }
+        if (!caller[Job]!!.isActive || !foregroundActive || epoch != foregroundEpoch || destroyed) {
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { runtime.close() }
+            throw CancellationException("Vision preparation retired")
         }
         android.util.Log.i("TokitoPoseVision", "Local pose runtime admitted")
         vision = runtime
@@ -366,8 +457,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun respondLocally(utterance: String): String {
+        val epoch = foregroundEpoch
+        val caller = coroutineContext
         val reference = boardReference
-        val grounded = LocalBenchDialoguePolicy().answer(utterance, reference?.index)
+        val grounded = withContext(Dispatchers.IO) { heavyWork.withLock {
+            caller.ensureActive()
+            requireForeground(epoch)
+            LocalBenchDialoguePolicy().answer(utterance, reference?.index).also { caller.ensureActive(); requireForeground(epoch) }
+        } }
+        caller.ensureActive()
+        requireForeground(epoch)
         grounded.boardTarget?.let { target ->
             val accepted = ar.highlightBoardTarget(target)
             android.util.Log.i(
@@ -378,6 +477,10 @@ class MainActivity : AppCompatActivity() {
         // Identity-sensitive answers are reviewed source text, not a model
         // rephrase that merely happens to retain some identifiers and numbers.
         return grounded.text
+    }
+
+    private fun requireForeground(epoch: Long) {
+        if (destroyed || !foregroundActive || epoch != foregroundEpoch) throw CancellationException("Bench foreground ownership retired")
     }
 
     private fun activateProjectTwinIfPresent() {

@@ -82,6 +82,14 @@
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalBenchDialoguePolicy$Authority { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalBenchDialoguePolicy { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalDesignContextIndex { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalTextEmbeddingRuntime { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalTextEmbeddingRuntime$Companion { public *; }
+-keep,includedescriptorclasses interface dev.tokito.physical.dialogue.TextEmbeddingEncoder { public *; }
+-keep,includedescriptorclasses interface dev.tokito.physical.dialogue.DesignSemanticSearch { public *; }
+-keep,includedescriptorclasses interface dev.tokito.physical.dialogue.DesignVectorCache { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.SqliteDesignVectorCache { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.SemanticDesignSearch { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.dialogue.SemanticDesignMatch { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.TokitoDialogueRuntime { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.SpeechQueuePolicy { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.voice.TokitoVoiceRuntime { public *; }

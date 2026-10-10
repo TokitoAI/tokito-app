@@ -23,15 +23,23 @@ class InitializationWorkerTest {
         } finally {
             worker.close()
             assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
+            awaitNativeAdmissionRelease()
         }
     }
     private suspend fun awaitFinished(worker: InitializationWorker<Resource>) {
         withTimeout(2_000) { while (worker.isFinishing()) delay(1) }
     }
-    private class Resource : AutoCloseable {
+    private fun awaitNativeAdmissionRelease() {
+        // Resource's close notification precedes the worker's finally/release.
+        // Waiting for that notification is NOT proof another JNI load is safe.
+        val acquired = NativeDialogueAdmission.permit.tryAcquire(2, TimeUnit.SECONDS)
+        assertTrue("Native disposal did not release admission", acquired)
+        if (acquired) NativeDialogueAdmission.permit.release()
+    }
+    private class Resource(private val closeGate: CountDownLatch? = null) : AutoCloseable {
         val closes = AtomicInteger()
         val disposed = CountDownLatch(1)
-        override fun close() { closes.incrementAndGet(); disposed.countDown() }
+        override fun close() { closes.incrementAndGet(); disposed.countDown(); closeGate?.await() }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,18 +116,25 @@ class InitializationWorkerTest {
     @Test fun successfulLoadIsOwnedUntilCloseAndBackendFailuresStayFailures() = runBlocking {
         val worker = InitializationWorker<Resource>()
         val result = Resource()
-        worker.load(2_000) { result }
-        awaitFinished(worker)
-        assertSame(result, worker.current())
-        worker.discardCurrent()
-        assertNull(worker.current())
-        assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
         val replacement = Resource()
-        worker.load(2_000) { replacement }
-        awaitFinished(worker)
-        assertEquals(1, result.closes.get())
-        assertSame(replacement, worker.current())
-        worker.close()
+        try {
+            worker.load(2_000) { result }
+            awaitFinished(worker)
+            assertSame(result, worker.current())
+            worker.discardCurrent()
+            assertNull(worker.current())
+            assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
+            awaitNativeAdmissionRelease()
+            worker.load(2_000) { replacement }
+            awaitFinished(worker)
+            assertEquals(1, result.closes.get())
+            assertSame(replacement, worker.current())
+        } finally {
+            val owned = worker.current()
+            worker.close()
+            if (owned != null) assertTrue(owned.disposed.await(2, TimeUnit.SECONDS))
+            awaitNativeAdmissionRelease()
+        }
         assertTrue(replacement.disposed.await(2, TimeUnit.SECONDS))
         assertEquals(1, replacement.closes.get())
         val failureWorker = InitializationWorker<Resource>()
@@ -130,5 +145,34 @@ class InitializationWorkerTest {
             awaitFinished(failureWorker)
             assertNull(failureWorker.current())
         } finally { failureWorker.close() }
+    }
+
+    @Test fun disposalNotificationDoesNotReleaseNativeOwnershipBeforeCloseUnwinds() = runBlocking {
+        val closeGate = CountDownLatch(1)
+        val result = Resource(closeGate)
+        val worker = InitializationWorker<Resource>()
+        val replacement = Resource()
+        try {
+            worker.load(2_000) { result }
+            awaitFinished(worker)
+            worker.discardCurrent()
+            assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
+            try { worker.load(2_000) { replacement }; fail("Disposal still owns native admission") }
+            catch (_: IllegalStateException) { }
+            assertEquals(0, replacement.closes.get())
+            closeGate.countDown()
+            awaitNativeAdmissionRelease()
+            worker.load(2_000) { replacement }
+            awaitFinished(worker)
+            assertSame(replacement, worker.current())
+        } finally {
+            closeGate.countDown()
+            val owned = worker.current()
+            worker.close()
+            if (owned != null) assertTrue(owned.disposed.await(2, TimeUnit.SECONDS))
+            awaitNativeAdmissionRelease()
+        }
+        assertEquals(1, result.closes.get())
+        assertEquals(1, replacement.closes.get())
     }
 }

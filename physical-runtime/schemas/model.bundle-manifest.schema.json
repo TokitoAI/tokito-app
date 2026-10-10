@@ -18,7 +18,7 @@
     "schema_version": { "const": 1 },
     "model_id": { "type": "string", "minLength": 1 },
     "model_revision": { "type": "string", "minLength": 1 },
-    "capability": { "enum": ["dialogue", "vision"] },
+    "capability": { "enum": ["dialogue", "vision", "voice", "embedding"] },
     "runtime_revision": { "type": "string", "minLength": 1 },
     "supported_abis": {
       "type": "array",

@@ -40,8 +40,12 @@ internal class VoiceCallController(
     private val preparationMutex = Mutex()
     private val audioOwnershipMutex = Mutex()
     @Volatile private var prepared = false
+    private var preparationRevision = 0L
 
     fun currentState(): CallState = state
+
+    /** Host foreground retirement invalidates prepared native resources as well as turns. */
+    fun invalidatePreparation() { preparationRevision++; prepared = false }
 
     suspend fun toggle() {
         if (active) stop() else start()
@@ -169,7 +173,9 @@ internal class VoiceCallController(
 
     private suspend fun ensurePrepared() = preparationMutex.withLock {
         if (prepared) return@withLock
+        val revision = preparationRevision
         prepare()
+        if (closed || revision != preparationRevision) throw CancellationException("Preparation ownership retired")
         prepared = true
     }
 

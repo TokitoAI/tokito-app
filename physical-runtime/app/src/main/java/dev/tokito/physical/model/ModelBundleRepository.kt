@@ -5,6 +5,7 @@ import android.os.Build
 import dev.tokito.physical.LocalPoseVisionRuntime
 import dev.tokito.physical.BuildConfig
 import dev.tokito.physical.dialogue.DialogueModelProvisioner
+import dev.tokito.physical.dialogue.LocalTextEmbeddingRuntime
 import dev.tokito.physical.voice.VoiceModelBundle
 import org.json.JSONObject
 import java.io.InputStream
@@ -16,6 +17,7 @@ import java.util.Base64
 enum class ModelCapability(val wireValue: String) {
     DIALOGUE("dialogue"),
     VISION("vision"),
+    EMBEDDING("embedding"),
     VOICE("voice");
 
     companion object {
@@ -39,16 +41,15 @@ class ModelBundleRepository(private val context: Context) {
 
     fun rollback(capability: ModelCapability): InstalledModelBundle {
         val installer = installer(capability)
-        installer.rollback()
-        val manifest = JSONObject(installer.activeDirectory()!!.resolve(MANIFEST).readText())
+        val manifest = installer.rollback()
         return manifest.toInstalledBundle(capability)
     }
 
     fun activeDirectory(capability: ModelCapability) = installer(capability).activeDirectory()
 
     fun activeBundle(capability: ModelCapability): InstalledModelBundle? = runCatching {
-        val directory = activeDirectory(capability) ?: return null
-        JSONObject(directory.resolve(MANIFEST).readText()).toInstalledBundle(capability)
+        val bundle = installer(capability).verifiedActiveBundle() ?: return null
+        bundle.manifest.toInstalledBundle(capability)
     }.getOrNull()
 
     private fun installer(capability: ModelCapability): ModelBundleInstaller = ModelBundleInstaller(
@@ -79,6 +80,10 @@ class ModelBundleRepository(private val context: Context) {
                     VoiceModelBundle.verify(bundle)
                     true
                 }
+                ModelCapability.EMBEDDING -> {
+                    LocalTextEmbeddingRuntime.verifyConformance(bundle)
+                    true
+                }
             }
         },
     )
@@ -93,6 +98,7 @@ class ModelBundleRepository(private val context: Context) {
             ModelCapability.DIALOGUE -> 3L * 1024L * 1024L * 1024L
             ModelCapability.VISION -> 256L * 1024L * 1024L
             ModelCapability.VOICE -> 512L * 1024L * 1024L
+            ModelCapability.EMBEDDING -> 128L * 1024L * 1024L
         }
 
     private val ModelCapability.expandedLimit: Long
@@ -100,11 +106,11 @@ class ModelBundleRepository(private val context: Context) {
             ModelCapability.DIALOGUE -> 3L * 1024L * 1024L * 1024L
             ModelCapability.VISION -> 256L * 1024L * 1024L
             ModelCapability.VOICE -> 512L * 1024L * 1024L
+            ModelCapability.EMBEDDING -> 128L * 1024L * 1024L
         }
 
     private companion object {
         const val RUNTIME_REVISION = "1"
-        const val MANIFEST = "model.manifest.json"
         val ALLOWED_LICENSES = setOf("apache-2.0", "mit", "bsd-3-clause") +
             if (BuildConfig.ALLOW_EVALUATION_MODELS) setOf(
                 "agpl-3.0-only", "licenseref-kroko-piper-espeak-local-evaluation",

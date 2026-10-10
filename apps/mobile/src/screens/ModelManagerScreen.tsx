@@ -80,10 +80,10 @@ export function ModelManagerScreen({ onBack }: { onBack: () => void }): JSX.Elem
           Import a Tokito-signed bundle from this device. Verification finishes before the active model changes.
         </Text>
         {error === null ? null : <ErrorText>{error}</ErrorText>}
-        {(["dialogue", "voice", "vision"] as const).map((capability) => {
+        {(["dialogue", "voice", "vision", "embedding"] as const).map((capability) => {
           const bundle = bundles.find((candidate) => candidate.capability === capability);
           const installed = bundle?.modelId !== null && bundle?.modelId !== undefined;
-          const label = { dialogue: "Conversation", voice: "Speech", vision: "Board vision" }[capability];
+          const label = { dialogue: "Conversation", voice: "Speech", vision: "Board vision", embedding: "Knowledge search" }[capability];
           return (
             <Card key={capability}>
               <View style={styles.cardHeader}>
