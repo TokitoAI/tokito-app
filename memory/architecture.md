@@ -51,6 +51,11 @@ prefaces instead of replacing or duplicating them. Render assistant Markdown
 from tokens into native components, never HTML/WebView execution or remote
 image loads. Prepared-change cards navigate to the existing server-backed
 Review flow; a card is not evidence that changes were applied.
+Assistant cards stretch to the available chat width; only user bubbles are
+right-aligned and width-bounded. Markdown documents contribute their natural
+height (`flexShrink: 0`), while list text flexes horizontally inside each row.
+**Why:** an intrinsically sized card plus a shrinking vertical document made
+long bullet lists narrow and allowed their text to overflow the rounded card.
 Ordinary project chat uses the conversational planner regardless of schematic
 revision, matching desktop. Existing geometry does not turn a question into a
 prepared edit: the schematic/BOM editor agents are only for explicit edit flows.
