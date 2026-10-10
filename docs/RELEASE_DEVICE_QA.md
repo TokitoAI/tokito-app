@@ -24,7 +24,7 @@ After Rust/UniFFI generation and Expo Android prebuild, build the two APKs in
 one invocation from `apps/mobile/android`:
 
 ```powershell
-.\gradlew.bat :app:lintRelease :app:assembleRelease :app:assembleReleaseAndroidTest -Ptokito.deviceTests=true
+.\gradlew.bat :app:lintRelease :app:assembleRelease :app:assembleReleaseAndroidTest '-Ptokito.deviceTests=true'
 ```
 
 Before installation, from `apps/mobile`, check the paired outputs:
