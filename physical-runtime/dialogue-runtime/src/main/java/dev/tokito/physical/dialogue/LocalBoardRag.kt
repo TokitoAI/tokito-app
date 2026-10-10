@@ -62,6 +62,7 @@ class LocalBoardRag(
         }
         if (evidence.isEmpty()) return@withLock DialogueOutcome.Response("No reference records are available for the selected board.")
         val selection = KnowledgeSelectionRequest(binding.boardId, binding.corpusRevision, evidence, history.toList())
+        android.util.Log.i("TokitoDialogue", "Reference retrieval records=${evidence.size} facts=${selection.facts.size} descriptionPresent=${selection.facts.any { it.pointer == "/facts/description" }}")
         val answer = generator.respond(DialogueRequest(utterance, deadlineMs = 60_000, knowledgeSelection = selection))
         coroutineContext.ensureActive()
         requireCurrent()

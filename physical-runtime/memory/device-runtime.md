@@ -240,3 +240,19 @@ Final-answer extraction follows Qwen's last closing delimiter and keeps the
 reasoning prelude out of speech and retained assistant history; unfinished
 final-answer tags and incomplete native
 responses still fail closed. Playback is not factual-quality qualification.
+
+## Dataset reference selection
+
+Signed embedding bundles may include the validated SQLite reference corpus and
+its manifest. Bench reference questions use that admitted corpus and the same
+384-dimensional encoder; they do not require a GLB or camera registration.
+Qwen selects zero to four existing fact IDs in a single `facts` array. Native
+code reconstructs speech from the cited source values. The selector cannot
+authorize component highlights or invent physical identity.
+**Why:** unfamiliar reference names must be answered from retrieved documentation,
+not rejected based on model recall. Extra schema fields make small local-model
+selection less reliable without adding authority. Whole-response JSON fences
+are presentation wrappers only; unknown IDs and arbitrary prose still fail.
+**How to apply:** keep facts/aliases in the pinned dataset, not board-specific
+application branches. Test multiple references on the optimized installed APK,
+including local playback, and retain independent physical-identity gates.
