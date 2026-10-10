@@ -51,8 +51,8 @@ class DatasetBenchDeviceTest {
                 assertFalse(answer.contains("think>"))
                 val played = AtomicBoolean(false)
                 voice.speak(answer, SpeechQueuePolicy.REPLACE) { played.set(true) }
-                withTimeout(30_000) { while (!played.get()) delay(20) }
-                withTimeout(45_000) { while (voice.state.value !is VoiceRuntimeState.Ready) delay(50) }
+                withTimeout(65_000) { while (!played.get()) delay(20) }
+                withTimeout(190_000) { while (voice.state.value !is VoiceRuntimeState.Ready) delay(50) }
                 instrumentation.sendStatus(2, Bundle().apply { putString("reference_question", question); putString("source_answer", answer) })
             }
             val followUp = withContext(Dispatchers.Main) { bench.respondLocally("Which revision does that reference cover?") }

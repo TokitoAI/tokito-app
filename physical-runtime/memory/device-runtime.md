@@ -260,3 +260,9 @@ Evidence-ID selection uses deterministic top-1 decoding; the conversational
 Qwen sampler remains separate. Do not use creative sampling for authoritative
 ID classification: stochastic empty selections can incorrectly claim that an
 available reference has no evidence.
+
+Local Sherpa playback has a measured-audio-duration deadline separate from the
+synthesis deadline, and drains the hardware playback head before releasing the
+track. **Why:** generation plus playback can exceed a shared timer even for a
+valid answer, while successful blocking writes can still leave the last audio
+buffer queued. Preserve interruption checks during both writes and draining.
