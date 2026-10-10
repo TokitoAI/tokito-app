@@ -15,39 +15,39 @@ class KnowledgeSelectionProtocolTest {
     }
 
     @Test fun qwenCanSelectOnlyExistingCitedFactsNotInventTechnicalProse() {
-        val answer = request().parse("""{"facts":["f0"],"target":"board:U1","abstain":false}""")
+        val answer = request().parse("""{"facts":["f0"]}""")
         assertEquals("Verified source microcontroller", answer.text)
-        assertEquals("board:U1", answer.componentTargetProposal)
+        assertNull(answer.componentTargetProposal)
         assertEquals("/facts/description", answer.sourceFacts.single().pointer)
         assertTrue(answer.sourceFacts.single().sourceCitation.contains("source.json"))
     }
 
     @Test fun invalidOrCrossBoardGeneratedSelectionFailsClosed() {
         val invalid = listOf(
-            """{"facts":["missing"],"target":null,"abstain":false}""",
+            """{"facts":["missing"]}""",
             """{"facts":["f0"],"target":"other:U1","abstain":false}""",
-            """{"facts":["f0","f0"],"target":null,"abstain":false}""",
+            """{"facts":["f0","f0"]}""",
             """{"facts":["f0"],"target":null,"abstain":false,"text":"Invented 5V"}""",
             """{"facts":[],"target":null,"abstain":false}""",
             """{"facts":["f0"],"target":null,"abstain":true}""",
-            """{"facts":[],"target":null,"abstain":true}{"extra":true}""",
+            """{"facts":[]}{"extra":true}""",
         )
         invalid.forEach { raw -> assertThrows(DialogueFailure::class.java) { request().parse(raw) } }
     }
 
     @Test fun abstentionHasNeitherSourceClaimsNorTarget() {
-        val answer = request().parse("""{"facts":[],"target":null,"abstain":true}""")
+        val answer = request().parse("""{"facts":[]}""")
         assertTrue(answer.sourceFacts.isEmpty())
         assertNull(answer.componentTargetProposal)
     }
 
     @Test fun wholeJsonFenceIsPresentationOnlyAndStillValidatesEvidence() {
-        val json = """{"facts":["f0"],"target":null,"abstain":false}"""
+        val json = """{"facts":["f0"]}"""
         for (language in listOf("json", "")) {
             assertEquals("Verified source microcontroller", request().parse("```$language\n$json\n```").text)
         }
         for (raw in listOf("Answer: ```json\n$json\n```", "```json\n$json\n``` extra",
-            "```json\n{\"facts\":[\"invented\"],\"target\":null,\"abstain\":false}\n```")) {
+            "```json\n{\"facts\":[\"invented\"]}\n```")) {
             assertThrows(DialogueFailure::class.java) { request().parse(raw) }
         }
     }

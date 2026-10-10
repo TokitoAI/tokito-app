@@ -45,10 +45,11 @@ selected catalog reference; it does not assert that a physical board has been
 identified. Query and corpus encoders match. Text/audio reference answers do not
 require camera tracking, AR registration, GLBs or component highlighting.
 
-Qwen selects existing source fact IDs and optionally a component ID. Native
-validation rejects invented facts, cross-component targets, extra prose and
+Qwen returns only a `facts` array of zero to four existing source fact IDs.
+Native validation rejects invented IDs, duplicates, extra keys/prose and
 malformed output. Spoken values/citations are reconstructed from source records.
-A target is only a proposal; it contains no coordinates or rendering authority.
+The selector has no component-target or rendering authority; physical targeting
+requires the independently admitted detector and assembly context.
 The bounded prompt exposes at most 40 scalar facts, at most 240 characters each;
 excluded fields cannot be claimed as read. Full source records remain stored.
 
