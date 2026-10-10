@@ -1,5 +1,6 @@
 import type { TokitoCompanionFfiNative, NativeEventSubscription } from "../../modules/tokito-companion-ffi/src";
 import { object, string, parseHistory, parseJson, parseRun, parseThread, type ChatHistory, type ChatRun, type ChatThread } from "./conversationModel";
+import { chatSendStep } from "./sendDiagnostics";
 
 let instance = 0;
 /** At most 240 UTF-8 bytes, without splitting a Unicode code point. */
@@ -39,15 +40,18 @@ export class ConversationClient {
   newCommand(): string { return this.native.newConversationCommand(); }
   async startChat(command: string, project: string, design: string, content: string, version: number, activeSheetId: string | null): Promise<{ thread: ChatThread; message: Record<string, unknown> }> {
     if (!Number.isSafeInteger(version) || version < 0) throw new Error("Refresh the design before sending");
-    const receipt = object(parseJson(await this.native.startConversation(this.id, command, project, design, content, String(version), "planner", activeSheetId)));
-    const title = conversationTitle(content);
-    const thread = parseThread(receipt.thread), message = object(receipt.message), request = object(message.request);
-    if (thread.project_id !== project || thread.design_id !== design || thread.title !== title
-      || message.project_id !== project || message.design_id !== design || message.thread_id !== thread.id
-      || request.content !== content || request.base_schematic_version !== version || request.kind !== "planner"
-      || (request.active_sheet_id ?? null) !== activeSheetId) throw new Error("Conversation receipt does not match the saved message");
-    if (!string(request.message_id) || !string(request.run_id) || !thread.id) throw new Error("Conversation receipt has no message identity");
-    return { thread, message };
+    const raw = await chatSendStep("startChat.native", () => this.native.startConversation(this.id, command, project, design, content, String(version), "planner", activeSheetId));
+    return chatSendStep("startChat.receipt", async () => {
+      const receipt = object(parseJson(raw));
+      const title = conversationTitle(content);
+      const thread = parseThread(receipt.thread), message = object(receipt.message), request = object(message.request);
+      if (thread.project_id !== project || thread.design_id !== design || thread.title !== title
+        || message.project_id !== project || message.design_id !== design || message.thread_id !== thread.id
+        || request.content !== content || request.base_schematic_version !== version || request.kind !== "planner"
+        || (request.active_sheet_id ?? null) !== activeSheetId) throw new Error("Conversation receipt does not match the saved message");
+      if (!string(request.message_id) || !string(request.run_id) || !thread.id) throw new Error("Conversation receipt has no message identity");
+      return { thread, message };
+    });
   }
   async history(project: string, design: string, thread: string, before: number | null = null): Promise<ChatHistory> {
     const page = parseHistory(await this.native.conversationHistory(this.id, project, design, thread, before === null ? null : String(before)));
@@ -56,7 +60,8 @@ export class ConversationClient {
   }
   async send(project: string, design: string, thread: string, content: string, version: number, kind: "planner" | "schematic" | "bom", activeSheetId: string | null = null): Promise<Record<string, unknown>> {
     if (!Number.isSafeInteger(version) || version < 0) throw new Error("Refresh the design before sending");
-    return object(parseJson(await this.native.sendConversationMessage(this.id, project, design, thread, content, String(version), kind, activeSheetId)));
+    const raw = await chatSendStep("sendChat.native", () => this.native.sendConversationMessage(this.id, project, design, thread, content, String(version), kind, activeSheetId));
+    return chatSendStep("sendChat.receipt", async () => object(parseJson(raw)));
   }
   /** Ordinary chat remains conversational even when a schematic exists.
    * Explicit prepared-edit flows may use send(..., "schematic" / "bom"). */

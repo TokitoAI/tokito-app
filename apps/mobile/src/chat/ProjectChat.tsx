@@ -12,6 +12,7 @@ import { ChatMarkdown } from "./ChatMarkdownView";
 import { ChatScrollIntent } from "./chatScroll";
 import { chatCardLayout } from "./chatLayout";
 import { sendBlockReason } from "./sendReadiness";
+import { chatSendFailure, chatSendStep, type ChatSendStage } from "./sendDiagnostics";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 
 type Props = { baseUrl: string; token: string; project: string; design: string; version: number; sheets: ChatSheet[]; onReview: () => void };
@@ -180,19 +181,26 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
     // Stop projecting the previous run before the new queued user turn exists.
     displayedRun.current = null; setSavedRun(null); setRun(null); setView(emptyRun());
     scrollIntent.current.latest(); setShowLatest(false);
+    let stage: ChatSendStage = "prepare";
     try {
-      const title = conversationTitle(content);
-      const firstCommand = selected.current === null
-        ? scope.current.firstMessageCommand(JSON.stringify([project, design, title, content, activeSheetId, "planner"]), () => client.newCommand(), version)
-        : null;
-      const firstVersion = firstCommand === null ? version : scope.current.firstMessageVersion(firstCommand);
-      await client.stopWatching();
+      const { firstCommand, firstVersion } = await chatSendStep("prepare", async () => {
+        const title = conversationTitle(content);
+        const firstCommand = selected.current === null
+          ? scope.current.firstMessageCommand(JSON.stringify([project, design, title, content, activeSheetId, "planner"]), () => client.newCommand(), version)
+          : null;
+        const firstVersion = firstCommand === null ? version : scope.current.firstMessageVersion(firstCommand);
+        return { firstCommand, firstVersion };
+      });
+      stage = "stopWatching";
+      await chatSendStep(stage, () => client.stopWatching());
       if (connection.current !== client || !scope.current.current(ticket)) return;
       let id = selected.current;
       let pending: Record<string, unknown>;
+      stage = "send";
       if (id === null) {
         if (firstCommand === null) throw new Error("Conversation changed before sending");
         const receipt = await client.startChat(firstCommand, project, design, content, firstVersion, activeSheetId);
+        stage = "receipt";
         // Commit owns the original text even when navigation finishes before
         // the receipt. Retain a newer draft/command; never clear another scope.
         const ownsDraft = scope.current.finishFirstMessage(firstCommand);
@@ -202,19 +210,25 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets, 
         setThreads(items => items.some(item => item.id === id) ? items : [receipt.thread, ...items]);
         pending = receipt.message;
       } else pending = await client.sendChat(project, design, id, content, version, activeSheetId);
+      stage = "receipt";
       // A successful durable enqueue owns this text, even if navigation finished
       // while it was pending. Do not leave a second sendable copy in its draft.
       if (scopeKey.current === JSON.stringify([baseUrl, token, project, design]) && scope.current.draft(id).trim() === content) scope.current.save(id, "");
       if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
-      const request = object(pending.request);
-      const runId = string(request.run_id);
+      stage = "queued";
+      const { request, runId, messageId } = await chatSendStep(stage, async () => {
+        const request = object(pending.request);
+        return { request, runId: string(request.run_id), messageId: string(request.message_id) };
+      });
+      if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
       displayedRun.current = runId;
-      setRows(items => items.some(item => item.id === request.message_id) ? items : [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
+      setRows(items => items.some(item => item.id === messageId) ? items : [...items, { id: messageId, runId, role: "user", content }]);
       setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…");
       // Acceptance may beat the JS receipt for a newly created thread. The
       // durable run ID recovers its actual state and events without fake status.
-      if (acceptedMessage.current !== runId) await client.watch(runId);
-    } catch (error) { if (connection.current === client && scope.current.current(ticket)) { setSending(false); setError(chatFailure(error)); } }
+      stage = "watch";
+      if (acceptedMessage.current !== runId) await chatSendStep(stage, () => client.watch(runId));
+    } catch (error) { chatSendFailure(stage, error); if (connection.current === client && scope.current.current(ticket)) { setSending(false); setError(chatFailure(error)); } }
     finally { if (sendingTicket.current === ticket) sendingTicket.current = null; }
   }
   const active = sending || isActive(run);

@@ -233,3 +233,10 @@ manifest level; Cloud project review must remain installable without a camera.
 **How to apply:** maintain these transformations in the Expo source plugin,
 never patch only ignored generated Android files or suppress API-level errors.
 
+Chat Send diagnostics use fixed stage/status/category vocabulary only. Native
+HTTP success does not prove JS receipt validation, durable queue projection, or
+watch startup succeeded. Preserve the separate native/receipt/queued/watch
+boundaries; never log prompt text, credentials, project/run identity, raw JSON,
+or exception messages. These diagnostics do not turn queueing into server
+acceptance or claim end-to-end success before actual UI QA.
+
