@@ -44,11 +44,14 @@ class CameraZoomDeviceTest {
                     event.recycle()
                 }
                 val center = surface.width / 2f
-                send(MotionEvent.ACTION_DOWN, start, center - 60, center + 60, 1)
-                send(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), start + 20, center - 60, center + 60)
-                for(i in 1..5) send(MotionEvent.ACTION_MOVE, start + 20 + i * 20L, center - 60 - i * 20, center + 60 + i * 20)
-                send(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), start + 140, center - 160, center + 160)
-                send(MotionEvent.ACTION_UP, start + 160, center - 160, center + 160, 1)
+                // Distances are device-scaled: a 120px span is below the
+                // platform pinch threshold on the high-density iQOO panel.
+                val span = surface.width / 8f
+                send(MotionEvent.ACTION_DOWN, start, center - span, center + span, 1)
+                send(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), start + 20, center - span, center + span)
+                for(i in 1..5) send(MotionEvent.ACTION_MOVE, start + 20 + i * 20L, center - span * (1 + i / 5f), center + span * (1 + i / 5f))
+                send(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), start + 140, center - span * 2, center + span * 2)
+                send(MotionEvent.ACTION_UP, start + 160, center - span * 2, center + span * 2, 1)
             }
             waitFor { it > initial }
             assertTrue(surface.geometryRevision > revision)
