@@ -74,16 +74,19 @@ export function RealtimeWorkspaceProvider({
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const physicalDrain = useRef<Promise<void> | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
-  const owner = useMemo(() => `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`, [client, token]);
-  const [activatedOwner, setActivatedOwner] = useState<string | null>(null);
+  const workspaceScope = useMemo(() => ({ client, token }), [client, token]);
+  const [activation, setActivation] = useState<{ scope: typeof workspaceScope; owner: string } | null>(null);
+  const owner = activation?.scope === workspaceScope ? activation.owner : null;
   useLayoutEffect(() => {
     const native = getTokitoCompanionFfi();
-    native.activateWorkspace(client.baseUrl(), token, owner);
-    setActivatedOwner(owner);
-    return () => native.deactivateWorkspace(owner);
-  }, [client, token, owner]);
+    const nextOwner = `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    native.activateWorkspace(client.baseUrl(), token, nextOwner);
+    setActivation({ scope: workspaceScope, owner: nextOwner });
+    return () => native.deactivateWorkspace(nextOwner);
+  }, [client, token, workspaceScope]);
 
   useEffect(() => {
+    if (owner === null) return;
     const native = getTokitoCompanionFfi();
     let disposed = false;
     const revoked = native.addListener("onAuthorizationRevoked", event => {
@@ -106,7 +109,7 @@ export function RealtimeWorkspaceProvider({
   }, [client, token, owner, onAuthorizationRevoked]);
 
   useEffect(() => {
-    if (activatedOwner !== owner) return;
+    if (owner === null) return;
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
       setStatus("disabled");
       return;
@@ -210,7 +213,7 @@ export function RealtimeWorkspaceProvider({
       subscriptions.forEach((item) => item.remove());
       if (activeId !== null) void client.stopSync?.(activeId);
     };
-  }, [client, token, owner, activatedOwner, startupAttempt]);
+  }, [client, token, owner, startupAttempt]);
 
   const getResource = useCallback(
     (projectId: string, designId: string | null, resource: SyncResourceName) =>
@@ -296,7 +299,7 @@ export function RealtimeWorkspaceProvider({
   }, [client, subscriptionId]);
 
   const value = useMemo<WorkspaceValue>(() => ({
-    owner: activatedOwner === owner ? owner : null,
+    owner,
     status,
     error,
     resources: [...resourceMap.values()],
@@ -304,7 +307,7 @@ export function RealtimeWorkspaceProvider({
     getResource,
     update,
     resolveConflict,
-  }), [owner, activatedOwner, status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
+  }), [owner, status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
