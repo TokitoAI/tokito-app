@@ -191,8 +191,8 @@ clarification, not a general-knowledge answer about the user's board. General
 electronics questions also require admitted evidence in production. The bench
 entry point has no raw-model fallback: unmatched questions return an explicit
 abstention, even when prefixed with educational or general-intent wording.
-The guard validates input bounds before retrieval. This is structured/lexical retrieval, not vector
-search, and embeddings are not required to enforce that boundary.
+The guard validates input bounds before retrieval. Structured/lexical retrieval
+enforces this boundary independently of the separately admitted neural encoder.
 A bounded, ambiguity-gated edit-distance recovery may match an ASR-corrupted
 phrase against aliases carried by the signed board reference; otherwise the
 host asks the user to repeat the component name. No transcript replacement or
@@ -208,13 +208,16 @@ source-page locators must refer to those sources. An exact-key-only object is
 not accepted as evidence. This structural validation does not replace bundle
 signature/integrity admission or authorize arbitrary synchronized text.
 
-This implementation intentionally does not add an embedding model. A single
-board's structured graph and placement records are small, exact keys
-are safer for identity, and an additional model would consume memory without
-yet having measured retrieval-quality evidence. A local embedding fallback may
-be added later behind the same record contract if held-out queries prove the
-lexical path insufficient. Design evidence is quoted data, never prompt
-instructions, and the LLM cannot turn datasheet evidence into placement truth.
+The native MiniLM encoder adds bounded semantic ranking behind this same record
+contract without replacing Qwen. Lexical/exact-reference matching runs first;
+semantic similarity never establishes a pin identity or authorizes a highlight.
+Its derived SQLite cache is bound to the admitted source corpus, revision and
+model. Absence of the encoder does not disable exact grounding, and an ambiguous
+or rejected semantic match abstains rather than inventing evidence. Initial
+held-out accepted recall remains low and device qualification is still required;
+see [Model strategy](MODEL_STRATEGY.md#initial-neural-retrieval-coverage-remains-unqualified).
+Design evidence is quoted data, never prompt instructions, and the LLM cannot
+turn datasheet evidence into placement truth.
 
 An authored assembly-context package and digital twin are not built into the
 APK. They become eligible for local activation only after the generic importer,
