@@ -201,6 +201,7 @@ async fn request<T: for<'de> Deserialize<'de>>(
     path: &str,
     body: Option<Value>,
 ) -> Result<T, CloudError> {
+    let operation = request_operation(&method, path);
     let mut request = client()?
         .request(method, format!("{}{path}", origin(base)?))
         .bearer_auth(token)
@@ -219,20 +220,33 @@ async fn request<T: for<'de> Deserialize<'de>>(
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
     let (status, bytes) = bounded_body(response).await?;
-    crate::http_diagnostics::record("chat_request", status, "http_status");
+    crate::http_diagnostics::record(operation, status, "http_status");
     if !(200..300).contains(&status) {
         return Err(status_error(status, &bytes));
     }
     if bytes.is_empty() {
         serde_json::from_value(Value::Null).map_err(|_| {
-            crate::http_diagnostics::record("chat_request", status, "malformed_success_body");
+            crate::http_diagnostics::record(operation, status, "malformed_success_body");
             CloudError::Unexpected
         })
     } else {
         serde_json::from_slice(&bytes).map_err(|_| {
-            crate::http_diagnostics::record("chat_request", status, "malformed_success_body");
+            crate::http_diagnostics::record(operation, status, "malformed_success_body");
             CloudError::Unexpected
         })
+    }
+}
+
+fn request_operation(method: &Method, path: &str) -> &'static str {
+    match method.as_str() {
+        "GET" if path.starts_with("/v1/agent/runs/") => "chat_run",
+        "GET" if path.ends_with("/threads") => "chat_threads",
+        "GET" if path.contains('?') => "chat_history",
+        "POST" if path.ends_with("/messages") => "chat_transmit",
+        "POST" if path.ends_with("/cancel") => "chat_cancel",
+        "PUT" => "chat_create_thread",
+        "DELETE" => "chat_delete_thread",
+        _ => "chat_request",
     }
 }
 
@@ -459,6 +473,37 @@ mod tests {
         matchers::{header, method, path},
         Mock, MockServer, ResponseTemplate,
     };
+
+    #[test]
+    fn diagnostics_distinguish_requests_without_recording_path_identity() {
+        for (method, path, expected) in [
+            (
+                Method::GET,
+                "/v1/projects/private/designs/private/threads",
+                "chat_threads",
+            ),
+            (
+                Method::GET,
+                "/v1/projects/private/designs/private/threads/private?tail=true&limit=100",
+                "chat_history",
+            ),
+            (Method::GET, "/v1/agent/runs/private", "chat_run"),
+            (
+                Method::POST,
+                "/v1/projects/private/designs/private/threads/private/messages",
+                "chat_transmit",
+            ),
+            (
+                Method::PUT,
+                "/v1/projects/private/designs/private/threads/private",
+                "chat_create_thread",
+            ),
+        ] {
+            let operation = request_operation(&method, path);
+            assert_eq!(operation, expected);
+            assert!(!operation.contains("private"));
+        }
+    }
 
     #[test]
     fn path_segments_cannot_escape_account_routes() {

@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, watch};
 use tokito_companion_core::{
     conversation_store::{ConversationStore, PendingMessage},
     conversations::{self as api, RunKind, SendMessage},
+    http_diagnostics::{chat_boundary, ChatBoundary},
     CloudError,
 };
 
@@ -109,17 +110,28 @@ impl ConversationSession {
             || thread.trim().is_empty()
             || thread.len() > 128
             || base_version > i64::MAX as u64
-            || active_sheet_id
-                .as_ref()
-                .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
         {
-            return Err(CompanionError::Unexpected);
+            return chat_boundary(ChatBoundary::Validation, Err(CompanionError::Unexpected));
+        }
+        if active_sheet_id
+            .as_ref()
+            .is_some_and(|id| uuid::Uuid::parse_str(id).is_err())
+        {
+            return chat_boundary(
+                ChatBoundary::SheetValidation,
+                Err(CompanionError::Unexpected),
+            );
         }
         let kind = match kind.as_str() {
             "planner" => RunKind::Planner,
             "schematic" => RunKind::Schematic,
             "bom" => RunKind::Bom,
-            _ => return Err(CompanionError::Unexpected),
+            _ => {
+                return chat_boundary(
+                    ChatBoundary::KindValidation,
+                    Err(CompanionError::Unexpected),
+                )
+            }
         };
         Ok(PendingMessage {
             project_id: project,
@@ -227,9 +239,11 @@ impl ConversationSession {
             kind,
             active_sheet_id,
         )?;
-        let receipt = self
-            .store
-            .enqueue_first_message(&command_id, &thread, &message)?;
+        let receipt = chat_boundary(
+            ChatBoundary::FirstEnqueue,
+            self.store
+                .enqueue_first_message(&command_id, &thread, &message),
+        )?;
         let serialized = serde_json::to_string(&receipt).map_err(|_| CompanionError::Unexpected)?;
         let _ = self.wake.try_send(());
         Ok(serialized)
@@ -274,9 +288,9 @@ impl ConversationSession {
             }
             Err(error) => return Err(self.failure(error)),
         };
-        self.store.cache_page(&page)?;
+        chat_boundary(ChatBoundary::HistoryCache, self.store.cache_page(&page))?;
         if let Some(run) = &page.latest_run {
-            self.store.acknowledge(run)?;
+            chat_boundary(ChatBoundary::HistoryAck, self.store.acknowledge(run))?;
         }
         serde_json::to_string(&page).map_err(|_| CompanionError::Unexpected)
     }
@@ -310,7 +324,7 @@ impl ConversationSession {
             kind,
             active_sheet_id,
         )?;
-        self.store.enqueue(&message)?;
+        chat_boundary(ChatBoundary::Enqueue, self.store.enqueue(&message))?;
         let _ = self.wake.try_send(());
         serde_json::to_string(&message).map_err(|_| CompanionError::Unexpected)
     }

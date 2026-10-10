@@ -148,6 +148,12 @@ Successful responses with invalid schemas remain terminal protocol failures.
 The bounded in-memory HTTP evidence ring records only fixed operation names,
 status codes and classifications, never URLs, credentials or response bodies.
 Native bridge failures emit those records under the TokitoHttp log tag.
+HTTP success is not evidence of a local chat enqueue: chat history, run reads,
+validation and SQLite acknowledgement are separate boundaries. Fixed native
+`TokitoChatBoundary` operation/result labels and the bounded evidence ring
+distinguish these stages without logging exception text or user content.
+**Why:** successful history reads can precede a failed local Send; treating their
+200 statuses as proof of message transmission hides the actual failing layer.
 Chat send errors and recovery actions remain adjacent to the composer, outside
 history scrolling. Send eligibility includes exact session, sheet, queue and
 in-flight state; unavailable actions cannot appear as unexplained no-ops.

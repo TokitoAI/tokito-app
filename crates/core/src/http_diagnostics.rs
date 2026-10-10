@@ -12,6 +12,37 @@ struct Diagnostic {
     classification: &'static str,
 }
 static EVENTS: OnceLock<Mutex<VecDeque<Diagnostic>>> = OnceLock::new();
+/// Fixed local boundaries only: no caller-controlled text enters the ring.
+pub enum ChatBoundary {
+    Validation,
+    SheetValidation,
+    KindValidation,
+    Enqueue,
+    FirstEnqueue,
+    HistoryCache,
+    HistoryAck,
+}
+pub fn chat_boundary<T, E>(boundary: ChatBoundary, result: Result<T, E>) -> Result<T, E> {
+    let operation = match boundary {
+        ChatBoundary::Validation => "chat_validation",
+        ChatBoundary::SheetValidation => "chat_sheet_validation",
+        ChatBoundary::KindValidation => "chat_kind_validation",
+        ChatBoundary::Enqueue => "chat_enqueue",
+        ChatBoundary::FirstEnqueue => "chat_first_enqueue",
+        ChatBoundary::HistoryCache => "chat_history_cache",
+        ChatBoundary::HistoryAck => "chat_history_ack",
+    };
+    record(
+        operation,
+        0,
+        if result.is_ok() {
+            "completed"
+        } else {
+            "rejected"
+        },
+    );
+    result
+}
 pub(crate) fn record(operation: &'static str, status: u16, classification: &'static str) {
     if let Ok(mut events) = EVENTS.get_or_init(|| Mutex::new(VecDeque::new())).lock() {
         if events.len() == 32 {
@@ -60,6 +91,23 @@ mod tests {
         matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
     };
+    #[test]
+    fn local_boundary_preserves_results_without_recording_error_text() {
+        assert_eq!(
+            chat_boundary(ChatBoundary::Enqueue, Ok::<_, &str>(41)),
+            Ok(41)
+        );
+        assert_eq!(
+            chat_boundary::<(), _>(ChatBoundary::Validation, Err("PRIVATE DRAFT")),
+            Err("PRIVATE DRAFT")
+        );
+        // Inspect without draining other workers' evidence. All fields are
+        // compile-time constants; neither successful values nor errors enter it.
+        let events = EVENTS.get().unwrap().lock().unwrap();
+        let json = serde_json::to_string(&events.iter().collect::<Vec<_>>()).unwrap();
+        assert!(!json.contains("PRIVATE DRAFT"));
+        assert!(events.len() <= 32);
+    }
     #[tokio::test]
     async fn transient_responses_are_not_malformed_protocol_and_do_not_expose_body() {
         let server = MockServer::start().await;

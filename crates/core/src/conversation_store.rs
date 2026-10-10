@@ -44,7 +44,14 @@ pub struct ConversationStore {
 
 fn db_error(error: rusqlite::Error) -> CloudError {
     // A SQLite error can contain user content/SQL. Keep it out of UI and logs.
-    let _ = error;
+    let classification = match error.sqlite_error_code() {
+        Some(rusqlite::ErrorCode::ConstraintViolation) => "constraint",
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => "busy",
+        Some(rusqlite::ErrorCode::DiskFull) => "storage_full",
+        Some(rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase) => "corrupt",
+        _ => "storage_failure",
+    };
+    crate::http_diagnostics::record("chat_storage", 0, classification);
     CloudError::Unavailable
 }
 

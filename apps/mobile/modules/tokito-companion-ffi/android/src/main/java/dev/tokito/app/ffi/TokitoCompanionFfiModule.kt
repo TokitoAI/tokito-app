@@ -185,19 +185,19 @@ class TokitoCompanionFfiModule : Module() {
     }
     Function("newConversationCommand") { UUID.randomUUID().toString() }
     AsyncFunction("startConversation") { sessionId: String, command: String, project: String, design: String, content: String, version: String, kind: String, activeSheetId: String? ->
-      runFfi {
+      runFfi(operation = "chat_start") {
         val title = content.substring(0, content.offsetByCodePoints(0, minOf(60, content.codePointCount(0, content.length))))
         conversation(sessionId).startConversation(command, project, design, title, content, version.toULong(), kind, activeSheetId)
       }
     }
     AsyncFunction("conversationHistory") { sessionId: String, project: String, design: String, thread: String, before: String? ->
-      runFfi { conversation(sessionId).history(project, design, thread, before?.toULong()) }
+      runFfi(operation = "chat_history") { conversation(sessionId).history(project, design, thread, before?.toULong()) }
     }
     AsyncFunction("cachedConversationHistory") { sessionId: String, thread: String, after: String ->
       runFfi { conversation(sessionId).cachedHistory(thread, after.toULong()) }
     }
     AsyncFunction("sendConversationMessage") { sessionId: String, project: String, design: String, thread: String, content: String, version: String, kind: String, activeSheetId: String? ->
-      runFfi { conversation(sessionId).send(project, design, thread, content, version.toULong(), kind, activeSheetId) }
+      runFfi(operation = "chat_send") { conversation(sessionId).send(project, design, thread, content, version.toULong(), kind, activeSheetId) }
     }
     AsyncFunction("cancelConversationRun") { sessionId: String, run: String ->
       runFfi { conversation(sessionId).cancel(run) }
@@ -221,7 +221,7 @@ class TokitoCompanionFfiModule : Module() {
       runFfi { conversation(sessionId).restoreBlockedMessage(messageId) }
     }
     AsyncFunction("watchConversationRun") { sessionId: String, run: String, after: String, watchId: String ->
-      runFfi {
+      runFfi(operation = "chat_watch") {
         val lease = authorization.capture()
         require(watchId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         runs.remove(watchId)?.second?.stop()
@@ -236,7 +236,9 @@ class TokitoCompanionFfiModule : Module() {
         watchId
       }
     }
-    AsyncFunction("stopConversationRunWatch") { watchId: String -> runs.remove(watchId)?.second?.stop() }
+    AsyncFunction("stopConversationRunWatch") { watchId: String ->
+      runFfi(operation = "chat_stop_watch") { runs.remove(watchId)?.second?.stop(); Unit }
+    }
 
     AsyncFunction("otpRequest") { baseUrl: String, email: String ->
       runFfi(null) { CompanionClient(baseUrl).otpRequest(email) }
@@ -502,19 +504,26 @@ class TokitoCompanionFfiModule : Module() {
     }
   }
 
-  private fun <T> runFfi(lease: AuthorizationEpoch.Lease? = authorization.capture(), block: () -> T): T {
+  private fun <T> runFfi(lease: AuthorizationEpoch.Lease? = authorization.capture(), operation: String = "native_call", block: () -> T): T {
     return try {
-      block()
+      block().also {
+        if (operation != "native_call") Log.i("TokitoChatBoundary", "$operation completed")
+      }
     } catch (err: CompanionException) {
       // Stable codes for TS (class simple name: Cooldown, Unauthorized, Network, …)
       val code = err::class.java.simpleName
       val diagnostics = uniffi.tokito_companion_ffi.drainHttpDiagnostics()
       if (diagnostics != "[]") Log.w("TokitoHttp", diagnostics)
       if (err is CompanionException.Unauthorized) revoked(lease)
-      Log.w(TAG, "UniFFI call failed: $code (${err.message})")
+      Log.w("TokitoChatBoundary", "$operation rejected: $code")
+      Log.w(TAG, "UniFFI call failed: $code")
       throw CodedException(code, err.message ?: code, err)
     } catch (err: Exception) {
-      Log.e(TAG, "Native bridge call failed: ${err::class.java.name}: ${err.message}", err)
+      val diagnostics = uniffi.tokito_companion_ffi.drainHttpDiagnostics()
+      if (diagnostics != "[]") Log.w("TokitoHttp", diagnostics)
+      // Exception text can contain caller data; only fixed operation names and
+      // exception classes belong in diagnostics.
+      Log.e("TokitoChatBoundary", "$operation bridge_rejected: ${err::class.java.simpleName}")
       if (err.message?.contains("UniFFI API checksum mismatch") == true) {
         throw CodedException(
           "NativeCompatibility",
