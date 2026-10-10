@@ -9,6 +9,7 @@ The documentation is split by authority and purpose:
 | [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) | User outcomes, scope, and non-goals |
 | [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) | Typed tools, observations, errors, and versioning |
 | [MODEL_STRATEGY.md](MODEL_STRATEGY.md) | Model composition, export, backend, and lifecycle |
+| [DATASET_RAG.md](DATASET_RAG.md) | Multiboard source ingestion, local evidence retrieval, Qwen validation and separate AR gates |
 | [VOICE_RUNTIME.md](VOICE_RUNTIME.md) | Implemented offline STT/TTS boundary and verification path |
 | [DIALOGUE_RUNTIME.md](DIALOGUE_RUNTIME.md) | Implemented local LLM, typed outcomes, and deterministic proposal policy |
 | [RELEASE.md](RELEASE.md) | Android versioning, signing, verification, and publication contract |
