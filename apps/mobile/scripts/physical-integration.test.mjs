@@ -42,6 +42,7 @@ test("release signing script forces optimization and remains idempotent", async 
   const root = await mkdtemp(path.join(os.tmpdir(), "tokito-release-"));
   try {
     await mkdir(path.join(root, "android/app"), { recursive: true });
+    await mkdir(path.join(root, "private-signing"));
     await writeFile(path.join(root, "android/app/build.gradle"), `android {
   signingConfigs {
     debug {
@@ -60,6 +61,7 @@ test("release signing script forces optimization and remains idempotent", async 
       ANDROID_UPLOAD_KEYSTORE_BASE64: Buffer.from("test-only-keystore").toString("base64"),
       ANDROID_UPLOAD_STORE_PASSWORD: "test-only", ANDROID_UPLOAD_KEY_ALIAS: "test-only",
       ANDROID_UPLOAD_KEY_PASSWORD: "test-only",
+      TOKITO_RELEASE_SIGNING_DIR: path.join(root, "private-signing"),
     };
     const script = fileURLToPath(new URL("./configure-android-release.mjs", import.meta.url));
     const run = () => spawnSync(process.execPath, [script], { cwd: root, env, encoding: "utf8" });
