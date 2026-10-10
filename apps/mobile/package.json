@@ -32,6 +32,7 @@
     "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "marked": "18.1.0",
     "phosphor-react-native": "^3.0.6",
     "react": "^19.2.3",
     "react-native": "0.86.3",

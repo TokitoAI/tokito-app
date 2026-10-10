@@ -4,8 +4,8 @@ export type ChatThread = { id: string; title: string; project_id: string; design
 export type ChatRun = { run_id: string; thread_id: string; project_id: string; design_id: string; status: string };
 export type ChatHistory = { thread: ChatThread; messages: ChatRow[]; olderCursor: number | null; latestRun: ChatRun | null };
 export type Proposal = { turnId: string; payload: Record<string, unknown> };
-export type RunView = { cursor: number; text: string; activity: string | null; proposals: Proposal[]; error: string | null; done: boolean };
-export const emptyRun = (): RunView => ({ cursor: 0, text: "", activity: null, proposals: [], error: null, done: false });
+export type RunView = { cursor: number; text: string; completedText: string; draftText: string; activity: string | null; proposals: Proposal[]; error: string | null; done: boolean };
+export const emptyRun = (): RunView => ({ cursor: 0, text: "", completedText: "", draftText: "", activity: null, proposals: [], error: null, done: false });
 const MAX_JSON = 2 * 1024 * 1024;
 const MAX_TEXT = 512 * 1024;
 
@@ -51,6 +51,20 @@ export function parseHistory(json: string): ChatHistory {
 export function isActive(run: ChatRun | null): boolean {
   return run !== null && (run.status === "running" || run.status === "cancel_requested");
 }
+export function belongsToDisplayedRun(eventRun: unknown, displayedRun: string | null): boolean {
+  return displayedRun !== null && eventRun === displayedRun;
+}
+export function chatHistoryProjection(rows: ChatRow[], run: ChatRun | null, savedRun: string | null): { rows: ChatRow[]; hasSavedAnswer: boolean } {
+  return {
+    rows: run !== null && savedRun !== run.run_id ? rows.filter(row => row.role !== "assistant" || row.runId !== run.run_id) : rows,
+    hasSavedAnswer: run !== null && savedRun === run.run_id && rows.some(row => row.role === "assistant" && row.runId === run.run_id),
+  };
+}
+function responseText(completed: string, draft: string): string {
+  const text = completed && draft ? `${completed}\n\n${draft}` : completed || draft;
+  if (text.length > MAX_TEXT) throw new Error("Response exceeds the display limit; reopen the saved conversation");
+  return text;
+}
 
 /** Activity is summarized; raw tool arguments/results stay out of main chat. */
 export function reduceRun(previous: RunView, raw: unknown): RunView {
@@ -62,11 +76,13 @@ export function reduceRun(previous: RunView, raw: unknown): RunView {
   const next = { ...previous, cursor: seq };
   switch (event.type) {
     case "assistant_text_delta": {
-      const text = previous.text + string(event.token);
-      if (text.length > MAX_TEXT) throw new Error("Response exceeds the display limit; reopen the saved conversation");
-      return { ...next, text, activity: null };
+      const draftText = previous.draftText + string(event.token);
+      return { ...next, text: responseText(previous.completedText, draftText), draftText, activity: null };
     }
-    case "assistant_text_done": return { ...next, text: string(event.body), activity: null };
+    case "assistant_text_done": {
+      const completedText = responseText(previous.completedText, string(event.body));
+      return { ...next, text: completedText, completedText, draftText: "", activity: null };
+    }
     case "tool_call": return { ...next, activity: "Checking project details…" };
     case "tool_result": return { ...next, activity: "Preparing the response…" };
     case "progress": return { ...next, activity: "Working on your design…" };

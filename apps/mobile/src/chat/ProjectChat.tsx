@@ -4,25 +4,32 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable,
 import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 import { ConversationClient } from "./conversationClient";
 import { chatFailure, ConversationScope } from "./conversationState";
-import { emptyRun, isActive, object, parseRun, reduceRun, string, type ChatRow, type ChatRun, type ChatThread, type RunView } from "./conversationModel";
+import { belongsToDisplayedRun, chatHistoryProjection, emptyRun, isActive, object, parseRun, reduceRun, string, type ChatRow, type ChatRun, type ChatThread, type RunView } from "./conversationModel";
 import { tokens } from "../theme";
 import { ErrorText, PrimaryButton } from "../ui/primitives";
 import { selectedSheet, type ChatSheet } from "./sheetContext";
+import { ChatMarkdown } from "./ChatMarkdownView";
+import { ChatScrollIntent } from "./chatScroll";
+import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 
-type Props = { baseUrl: string; token: string; project: string; design: string; version: number; sheets: ChatSheet[] };
-export function ProjectChat({ baseUrl, token, project, design, version, sheets }: Props): JSX.Element {
+type Props = { baseUrl: string; token: string; project: string; design: string; version: number; sheets: ChatSheet[]; onReview: () => void };
+export function ProjectChat({ baseUrl, token, project, design, version, sheets, onReview }: Props): JSX.Element {
+  const { owner } = useRealtimeWorkspace();
   const [sheetChoice, setSheetChoice] = useState<string | null>(null);
   const activeSheetId = selectedSheet(sheets, sheetChoice);
   const needsSheet = version > 0 && activeSheetId === null;
   const connection = useRef<ConversationClient | null>(null);
   const selected = useRef<string | null>(null);
   const list = useRef<FlatList<ChatRow>>(null);
-  const atBottom = useRef(true);
+  const scrollIntent = useRef(new ChatScrollIntent());
+  const [showLatest, setShowLatest] = useState(false);
+  const displayedRun = useRef<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [thread, setThread] = useState<string | null>(null);
   const [rows, setRows] = useState<ChatRow[]>([]);
   const [older, setOlder] = useState<number | null>(null);
   const [run, setRun] = useState<ChatRun | null>(null);
+  const [savedRun, setSavedRun] = useState<string | null>(null);
   const [view, setView] = useState<RunView>(emptyRun);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(true);
@@ -48,6 +55,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
     setOlder(page.olderCursor);
     setRows(prior => before === null ? page.messages : [...page.messages, ...prior.filter(r => !page.messages.some(m => m.id === r.id))]);
     if (before === null) {
+      scrollIntent.current.open(); setShowLatest(false);
       const [pending, recovered] = await Promise.all([client.queued(id), client.recoveredDraft(id)]);
       if (connection.current !== client || selected.current !== id || !scope.current.current(ticket) || request !== historyRequest.current) return;
       setBlocked(pending?.blocked ? pending : null);
@@ -57,13 +65,17 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
         setNotice(pending.blocked ? null : "Message saved. Waiting for a connection…");
       }
       if (recovered !== null && !scope.current.draft(id)) updateDraft(recovered);
-      setRun(page.latestRun);
+      const currentRun = pending && pending.runId !== page.latestRun?.run_id ? null : page.latestRun;
+      setRun(currentRun);
+      setSavedRun(currentRun && !isActive(currentRun) ? currentRun.run_id : null);
       setView(emptyRun());
-      if (page.latestRun !== null) await client.watch(page.latestRun.run_id);
+      displayedRun.current = currentRun?.run_id ?? null;
+      if (currentRun !== null) await client.watch(currentRun.run_id);
     }
   }
 
   useEffect(() => {
+    if (owner === null) return;
     const id = ++epoch.current;
     let client: ConversationClient;
     try { client = new ConversationClient(getTokitoCompanionFfi()); }
@@ -76,7 +88,8 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
     sendingTicket.current = null;
     setDraft(scope.current.draft(null)); setReady(false); setSending(false); setBlocked(null); setNotice(null);
     selected.current = null;
-    setThread(null); setRows([]); setRun(null); setView(emptyRun()); setBusy(true); setError(null);
+    displayedRun.current = null; setSavedRun(null); scrollIntent.current.open(); setShowLatest(false);
+    setThread(null); setRows([]); setOlder(null); setRun(null); setView(emptyRun()); setBusy(true); setError(null);
     const current = () => epoch.current === id && connection.current === client;
     void client.open(baseUrl, token, change => {
       if (!current()) return;
@@ -86,23 +99,27 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
         acceptedMessage.current = accepted.run_id;
         historyRequest.current++;
         setRun(accepted); setNotice(null); setSending(false);
+        setSavedRun(null);
+        displayedRun.current = accepted.run_id;
         setView(emptyRun());
         const ticket = scope.current.ticket();
         void client.watch(accepted.run_id).catch(error => { if (current() && scope.current.current(ticket)) setError(chatFailure(error)); });
       } else if (change.type === "event") {
+        if (!belongsToDisplayedRun(change.run_id, displayedRun.current)) return;
         setView(previous => {
           try { return reduceRun(previous, change.event); }
           catch { return { ...previous, error: "Live response could not be displayed. Reopen this conversation to recover it." }; }
         });
       } else if (change.type === "settled") {
         const settled = parseRun(change.run);
-        if (settled.thread_id !== selected.current) return;
+        if (settled.thread_id !== selected.current || settled.run_id !== displayedRun.current) return;
         setRun(settled); setSending(false); setNotice(null);
         const ticket = scope.current.ticket();
         const request = ++historyRequest.current;
         void client.history(project, design, settled.thread_id).then(page => {
           if (current() && scope.current.current(ticket) && request === historyRequest.current && selected.current === settled.thread_id) {
             setRows(prior => [...prior.filter(row => !page.messages.some(message => message.id === row.id)), ...page.messages]);
+            setSavedRun(settled.run_id);
           }
         }).catch(error => { if (current() && scope.current.current(ticket)) setError(chatFailure(error)); });
       } else if (change.type === "offline" || change.type === "reconnecting") setNotice("Connection interrupted. Retrying without sending twice…");
@@ -115,7 +132,7 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
       }
       else if (change.type === "unauthorized") { setSending(false); setError("Your session expired. Sign in again to continue."); }
       else { setSending(false); setError("Chat could not update. Reopen the conversation to recover your saved messages."); }
-    }).then(async () => {
+    }, owner).then(async () => {
       if (!current()) return;
       const items = await client.threads(project, design);
       if (!current()) return;
@@ -127,13 +144,14 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
       .finally(() => { if (current()) setBusy(false); });
     return () => { epoch.current++; connection.current = null; void client.close().catch(() => {}); };
     // The session owns its callbacks for this exact account/project scope.
-  }, [baseUrl, token, project, design, retry]);
+  }, [baseUrl, token, project, design, retry, owner]);
 
   async function choose(id: string | null): Promise<void> {
     const client = connection.current;
     if (!client) return;
     const ticket = scope.current.next();
     sendingTicket.current = null;
+    displayedRun.current = null; setSavedRun(null); scrollIntent.current.open(); setShowLatest(false);
     setDraft(scope.current.draft(id));
     selected.current = id; acceptedMessage.current = null; setThread(id); setRows([]); setOlder(null); setView(emptyRun()); setRun(null); setError(null); setNotice(null); setBlocked(null); setSending(false); setBusy(true);
     try { await client.stopWatching(); if (scope.current.current(ticket) && id !== null) await load(client, id); }
@@ -148,7 +166,12 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
     const ticket = scope.current.ticket();
     sendingTicket.current = ticket;
     setSending(true); setError(null);
+    // Stop projecting the previous run before the new queued user turn exists.
+    displayedRun.current = null; setSavedRun(null); setRun(null); setView(emptyRun());
+    scrollIntent.current.latest(); setShowLatest(false);
     try {
+      await client.stopWatching();
+      if (connection.current !== client || !scope.current.current(ticket)) return;
       let id = selected.current;
       if (id === null) {
         const created = await client.create(project, design, content.slice(0, 80));
@@ -163,12 +186,14 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
       if (connection.current !== client || !scope.current.current(ticket) || selected.current !== id) return;
       const request = object(pending.request);
       setRows(items => items.some(item => item.id === request.message_id) ? items : [...items, { id: string(request.message_id), runId: string(request.run_id), role: "user", content }]);
-      setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…"); atBottom.current = true;
+      setDraft(scope.current.draft(id)); if (acceptedMessage.current !== request.run_id) setNotice("Message saved. Connecting…");
     } catch (error) { if (connection.current === client && scope.current.current(ticket)) { setSending(false); setError(chatFailure(error)); } }
     finally { if (sendingTicket.current === ticket) sendingTicket.current = null; }
   }
   const active = sending || isActive(run);
-  const hasSavedAnswer = run !== null && rows.some(r => r.role === "assistant" && r.runId === run.run_id);
+  // While replaying an active run, its durable prefaces belong to the single
+  // live card. Once settled, the saved server messages replace that card.
+  const { rows: displayedRows, hasSavedAnswer } = chatHistoryProjection(rows, run, savedRun);
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     {sheets.length > 1 ? <View style={styles.toolbar}><Text style={styles.muted}>Work on sheet</Text><ScrollView horizontal contentContainerStyle={styles.threadList}>{sheets.map(sheet => <Pressable key={sheet.id} accessibilityRole="radio" accessibilityState={{ selected: activeSheetId === sheet.id }} disabled={active} onPress={() => setSheetChoice(sheet.id)} style={[styles.thread, activeSheetId === sheet.id && styles.selected]}><Text style={styles.threadText}>{sheet.name}</Text></Pressable>)}</ScrollView></View> : null}
     {needsSheet && sheets.length === 0 ? <Text style={styles.muted}>Waiting for the design’s sheets to sync before editing.</Text> : null}
@@ -191,19 +216,27 @@ export function ProjectChat({ baseUrl, token, project, design, version, sheets }
         setRows(previous => previous.filter(row => row.id !== message.id));
       }).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); });
     }} /></View> : null}
-    <FlatList ref={list} data={rows} keyExtractor={r => r.id} style={styles.history} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}
-      onScroll={e => { const n = e.nativeEvent; atBottom.current = n.contentSize.height - n.layoutMeasurement.height - n.contentOffset.y < 100; }} scrollEventThrottle={100}
-      onContentSizeChange={() => { if (atBottom.current) list.current?.scrollToEnd({ animated: false }); }}
-      ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { const client = connection.current; const ticket = scope.current.ticket(); if (client && thread) void load(client, thread, older).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
+    <FlatList ref={list} data={displayedRows} keyExtractor={r => r.id} style={styles.history} contentContainerStyle={styles.messages} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}
+      onScrollBeginDrag={() => scrollIntent.current.drag()}
+      onScrollEndDrag={() => scrollIntent.current.end()}
+      onMomentumScrollBegin={() => scrollIntent.current.drag()}
+      onMomentumScrollEnd={() => scrollIntent.current.end()}
+      onScroll={e => { const n = e.nativeEvent; scrollIntent.current.scroll(n.contentSize.height, n.layoutMeasurement.height, n.contentOffset.y); setShowLatest(!scrollIntent.current.following); }} scrollEventThrottle={100}
+      onLayout={() => { if (scrollIntent.current.following) list.current?.scrollToEnd({ animated: false }); }}
+      onContentSizeChange={() => { if (scrollIntent.current.following) list.current?.scrollToEnd({ animated: false }); }}
+      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+      ListHeaderComponent={older !== null ? <Pressable accessibilityRole="button" style={styles.retry} onPress={() => { scrollIntent.current.earlier(); setShowLatest(true); const client = connection.current; const ticket = scope.current.ticket(); if (client && thread) void load(client, thread, older).catch(error => { if (connection.current === client && scope.current.current(ticket)) setError(chatFailure(error)); }); }}><Text style={styles.link}>Earlier messages</Text></Pressable> : null}
       ListEmptyComponent={busy ? <ActivityIndicator color={tokens.accent} style={styles.empty} /> : <View style={styles.empty}><Text style={styles.emptyTitle}>What would you like to build?</Text><Text style={styles.muted}>Ask about this design or describe a change. You review changes before they are applied.</Text></View>}
-      renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" && styles.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text><Text selectable style={styles.body}>{item.content}</Text></View>}
-      ListFooterComponent={<View>{!hasSavedAnswer && (view.text || active) ? <View style={styles.bubble}><Text style={styles.author}>Tokito</Text>{view.text ? <Text selectable style={styles.body}>{view.text}</Text> : <Text style={styles.muted}>{view.activity || "Working on your design…"}</Text>}</View> : null}{view.error ? <ErrorText>{view.error}</ErrorText> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
+      renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" && styles.user]}><Text style={styles.author}>{item.role === "user" ? "You" : "Tokito"}</Text>{item.role === "assistant" ? <ChatMarkdown content={item.content} /> : <Text selectable style={styles.body}>{item.content}</Text>}</View>}
+      ListFooterComponent={<View style={styles.footer}>{!hasSavedAnswer && (view.text || active) ? <View style={styles.bubble}><Text style={styles.author}>Tokito</Text>{view.text ? <ChatMarkdown content={view.text} /> : <Text style={styles.muted}>{view.activity || (sending ? "Waiting to send…" : "Working on your design…")}</Text>}{view.text && active && view.activity ? <View style={styles.activity}><ActivityIndicator size="small" color={tokens.accent} /><Text style={styles.muted}>{view.activity}</Text></View> : null}</View> : null}{view.proposals.map(proposal => <View key={proposal.turnId} style={styles.proposal}><Text style={styles.proposalTitle}>Changes prepared</Text><Text style={styles.muted}>{Array.isArray(proposal.payload.ops) ? `${proposal.payload.ops.length} proposed changes. ` : ""}Review before applying to this design.</Text><PrimaryButton label="Review changes" onPress={onReview} /></View>)}{view.error ? <View style={styles.feedback}><ErrorText>{view.error}</ErrorText></View> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}</View>}
     />
+    {showLatest ? <Pressable accessibilityRole="button" style={styles.latest} onPress={() => { scrollIntent.current.latest(); setShowLatest(false); list.current?.scrollToEnd({ animated: true }); }}><Text style={styles.link}>Latest messages ↓</Text></Pressable> : null}
     <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={draft} onChangeText={updateDraft} multiline maxLength={65536} placeholder="Ask about this design…" placeholderTextColor={tokens.text2} style={styles.input} />
       {isActive(run) ? <PrimaryButton label="Stop" onPress={() => { const c = connection.current; const ticket = scope.current.ticket(); if (c && run) void c.cancel(run.run_id).then(result => { if (connection.current === c && scope.current.current(ticket)) setRun(result); }).catch(error => { if (connection.current === c && scope.current.current(ticket)) setError(chatFailure(error)); }); }} /> : <PrimaryButton label="Send" disabled={!ready || busy || sending || blocked !== null || !draft.trim()} onPress={() => void send()} />}
     </View>
   </KeyboardAvoidingView>;
 }
 const styles = StyleSheet.create({
+  footer: { gap: 12 }, activity: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 }, proposal: { padding: 16, gap: 12, borderWidth: 1, borderColor: tokens.borderStrong, borderRadius: tokens.radiusMd, backgroundColor: tokens.card }, proposalTitle: { color: tokens.text, fontSize: 16, fontWeight: "600" }, latest: { minHeight: 44, paddingHorizontal: 16, justifyContent: "center", alignSelf: "center", backgroundColor: tokens.bgChrome, borderRadius: tokens.radiusLg, borderWidth: 1, borderColor: tokens.border, marginVertical: 4 },
   root: { flex: 1, minHeight: 0, backgroundColor: tokens.bg }, toolbar: { borderBottomWidth: 1, borderBottomColor: tokens.border }, threadList: { padding: 8, gap: 8 }, thread: { minHeight: 44, maxWidth: 220, paddingHorizontal: 12, justifyContent: "center", borderRadius: tokens.radiusSm }, selected: { backgroundColor: tokens.card }, threadText: { color: tokens.text2, fontSize: 14 }, link: { color: tokens.accent, fontSize: 14, fontWeight: "600" }, history: { flex: 1 }, messages: { padding: 16, gap: 18, width: "100%", maxWidth: 1100, alignSelf: "center", flexGrow: 1 }, bubble: { alignSelf: "flex-start", maxWidth: "94%", padding: 16, borderRadius: tokens.radiusMd, backgroundColor: tokens.card, marginBottom: 4 }, user: { alignSelf: "flex-end", maxWidth: "85%", backgroundColor: tokens.accentSoft }, author: { fontSize: 12, color: tokens.text2, fontWeight: "600", marginBottom: 6 }, body: { color: tokens.text, fontSize: 15, lineHeight: 23 }, muted: { color: tokens.text2, fontSize: 14, lineHeight: 21 }, empty: { padding: 24, gap: 12, marginTop: 24 }, emptyTitle: { color: tokens.text, fontSize: 23, fontWeight: "600" }, feedback: { padding: 12, borderBottomWidth: 1, borderBottomColor: tokens.border }, retry: { minHeight: 44, justifyContent: "center", alignSelf: "flex-start", paddingHorizontal: 12 }, composer: { flexDirection: "row", alignItems: "flex-end", gap: 12, padding: 12, borderTopWidth: 1, borderTopColor: tokens.border, backgroundColor: tokens.bgChrome }, input: { flex: 1, minHeight: 48, maxHeight: 160, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: tokens.card, borderWidth: 1, borderColor: tokens.borderStrong, borderRadius: tokens.radiusMd, color: tokens.text, fontSize: 15, lineHeight: 22, textAlignVertical: "top" },
 });

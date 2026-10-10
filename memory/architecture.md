@@ -26,6 +26,15 @@ is not a measured or visually verified fact. Keep this distinction in the dialog
 protocol and the native bench entry point.
 
 Shared Cloud conversation history and generation run journals are server-owned.
+Phone chat opens at the latest turn, but only a reader drag can disable live
+scroll following. Earlier-message pagination preserves the reading anchor;
+the Latest action restores following. Streamed output belongs to its exact
+run ID: stop the previous watch before queueing a new user message, and ignore
+late events for older runs. Tool-separated response rounds preserve completed
+prefaces instead of replacing or duplicating them. Render assistant Markdown
+from tokens into native components, never HTML/WebView execution or remote
+image loads. Prepared-change cards navigate to the existing server-backed
+Review flow; a card is not evidence that changes were applied.
 Ordinary project chat uses the conversational planner regardless of schematic
 revision, matching desktop. Existing geometry does not turn a question into a
 prepared edit: the schematic/BOM editor agents are only for explicit edit flows.
@@ -89,6 +98,13 @@ HTTP receipt: that would skip unrelated preceding events. A resource revision
 has immutable content; contradictory same-revision payloads fail atomically.
 
 Sync startup emits the account-scoped persisted resources before connecting.
+The workspace activates a native ownership lease synchronously before starting
+any asynchronous worker. Queue, conversation, review, and sync startup require
+that exact owner; matching credentials alone cannot acquire or replace ownership.
+Account changes invalidate the old lease before IO, and worker installation is
+guarded atomically after IO. A late startup or authorization failure from a retired
+workspace cannot stop the current account. Only workspace disposal deactivates
+the lease; callback changes and transport retries do not create new ownership.
 All signed-in routes retain the same workspace provider, including model
 management; navigation must not stop project synchronization. Cold start restores
 the verified session automatically. Transient identity/startup failures retry on
