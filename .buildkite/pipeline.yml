@@ -36,3 +36,4 @@ steps:
     timeout_in_minutes: 60
     artifact_paths:
       - "ci-out/tokito-app-release-unsigned-arm64.apk"
+      - "ci-out/tokito-app-r8-mapping.txt"

@@ -14,7 +14,7 @@
     "audit": "node scripts/audit-gate.mjs",
     "audit:test": "node --test scripts/audit-gate.test.mjs scripts/dependency-patches.test.mjs",
     "release:validate": "node scripts/release-identity.mjs",
-    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/physicalSync.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
+    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/*.test.ts src/navigation/*.test.ts src/chat/*.test.ts src/review/*.test.ts src/viewer/*.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
     "forbid-js": "node scripts/forbid-js.mjs"
   },
   "engines": {
@@ -32,6 +32,7 @@
     "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "marked": "18.1.0",
     "phosphor-react-native": "^3.0.6",
     "react": "^19.2.3",
     "react-native": "0.86.3",

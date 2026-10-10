@@ -1,16 +1,21 @@
 import type { JSX } from "react";
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { ArrowLeft, Camera, ChatCircleDots, Circuitry, ClipboardText, Sparkle } from "phosphor-react-native";
-import type { BomLine, ProjectDetail, Proposal } from "../api/cloudHttp";
+import type { ProjectDetail } from "../api/cloudHttp";
 import type { CloudClient } from "../native/bridge";
-import { CompanionError } from "../native/types";
+import { projectFailure } from "../sync/projectFailure";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { TABLET_MIN_WIDTH, tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton, SectionLabel } from "../ui/primitives";
+import { ProjectChat } from "../chat/ProjectChat";
+import { ProjectReview } from "../review/ProjectReview";
+import { chatSheets } from "../chat/sheetContext";
+import { canonicalBom } from "../sync/canonicalBom";
+import { parentProjectSection, type ProjectSection } from "../navigation/backNavigation";
+import { useAndroidBack } from "../navigation/useAndroidBack";
+import { projectUpdatesLabel } from "../sync/statusLabel";
 
-type Section = "design" | "chat" | "review";
-type ChatMessage = { id: string; role: string; content: string; created_at?: string };
 
 export interface ProjectDetailScreenProps {
   client: CloudClient;
@@ -25,84 +30,58 @@ export interface ProjectDetailScreenProps {
 }
 
 export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSvg, onOpenLiveSchematic, onStartBench, showBack = true }: ProjectDetailScreenProps): JSX.Element {
-  const { width } = useWindowDimensions();
-  const tablet = width >= TABLET_MIN_WIDTH;
+  const { width, height } = useWindowDimensions();
+  const tablet = width >= TABLET_MIN_WIDTH && height >= 600;
   const realtime = useRealtimeWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
-  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
-  const [section, setSection] = useState<Section>("design");
-  const [chatDraft, setChatDraft] = useState("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [section, setSection] = useState<ProjectSection>("design");
+  useAndroidBack(() => {
+    const parent = parentProjectSection(section);
+    if (parent === null) return false;
+    setSection(parent);
+    return true;
+  }, 10);
+  const request = useRef(0);
 
   const liveProject = realtime.getResource(projectId, null, "project")?.payload as Record<string, unknown> | undefined;
-  const liveDesigns = realtime.resources
-    .filter((item) => item.project_id === projectId && item.resource === "design")
+  const designResources = realtime.resources.filter((item) => item.project_id === projectId && item.resource === "design");
+  const liveDesigns = designResources
     .map((item) => {
       const payload = item.payload as Record<string, unknown> & { deleted?: boolean };
       return { id: item.design_id ?? "", name: typeof payload.name === "string" ? payload.name : item.design_id ?? "Design", deleted: payload.deleted === true };
     })
     .filter((item) => item.id.length > 0 && !item.deleted);
   const snapshotDesigns = detail?.designs.map((item) => ({ id: item.id, name: item.name })) ?? [];
-  const designs = liveDesigns.length > 0 ? liveDesigns : snapshotDesigns;
-  const activeDesignId = selectedDesignId ?? designs[0]?.id ?? null;
+  const designs = designResources.length > 0 ? liveDesigns : snapshotDesigns;
+  const activeDesignId = designs.some(design => design.id === selectedDesignId) ? selectedDesignId : designs[0]?.id ?? null;
   const activeDesignName = designs.find((item) => item.id === activeDesignId)?.name ?? "Design";
-  const bomPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom")?.payload as { lines?: BomLine[] } | undefined;
-  const displayedBom = bomPayload?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
-  const chatPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "chat")?.payload as { messages?: ChatMessage[] } | undefined;
-  const chatMessages = chatPayload?.messages ?? [];
-  const suggestionPayload = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "suggestions")?.payload as { items?: Proposal[] } | undefined;
-  const displayedProposals = suggestionPayload?.items?.filter((item) => item.status === "pending") ?? proposals;
-  const hasLiveSchematic = activeDesignId !== null && realtime.getResource(projectId, activeDesignId, "schematic") !== undefined;
+  const bomResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "bom");
+  const schematicResource = activeDesignId === null ? undefined : realtime.getResource(projectId, activeDesignId, "schematic");
+  const projectedBom = bomResource === undefined ? null : canonicalBom(bomResource.payload, schematicResource?.payload);
+  const displayedBom = projectedBom?.lines ?? detail?.designs.find((item) => item.id === activeDesignId)?.bom_lines ?? [];
+  const bomKnown = bomResource !== undefined || detail?.designs.some(item => item.id === activeDesignId) === true;
+  const hasSnapshot = chatSheets(schematicResource?.payload).length > 0;
   const svgArtifacts = detail?.artifact_manifest.filter((item) => item.name.endsWith(".svg")) ?? [];
 
   const reload = useCallback(async () => {
+    const generation = ++request.current;
     setLoading(true);
     setError(null);
-    const [project, pending] = await Promise.allSettled([client.getProject(token, projectId), client.listProposals(token, projectId, "pending")]);
+    const [project] = await Promise.allSettled([client.getProject(token, projectId)]);
+    if (generation !== request.current) return;
     if (project.status === "fulfilled") setDetail(project.value);
-    else if (liveProject === undefined) setError(message(project.reason, "Failed to load project"));
-    if (pending.status === "fulfilled") setProposals(pending.value);
+    else setError(projectFailure(project.reason));
     setLoading(false);
-  }, [client, token, projectId, liveProject]);
+  }, [client, token, projectId]);
 
-  useEffect(() => { void reload(); }, [reload]);
-
-  async function sendChat(): Promise<void> {
-    const content = chatDraft.trim();
-    if (content.length === 0 || activeDesignId === null) return;
-    setChatDraft("");
-    try {
-      await realtime.update(projectId, activeDesignId, "chat", {
-        ...(chatPayload ?? {}),
-        messages: [...chatMessages, { id: `companion-${Date.now()}-${Math.random().toString(16).slice(2)}`, role: "user", content, created_at: new Date().toISOString() }],
-      });
-    } catch (cause) {
-      setChatDraft(content);
-      setError(message(cause, "Message could not be sent"));
-    }
-  }
-
-  async function decide(id: string, decision: "approve" | "reject"): Promise<void> {
-    setBusyId(id);
-    setError(null);
-    try {
-      if (suggestionPayload?.items && activeDesignId !== null) {
-        await realtime.update(projectId, activeDesignId, "suggestions", {
-          items: suggestionPayload.items.map((item) => item.id === id ? { ...item, status: decision === "approve" ? "approved" : "rejected", decision } : item),
-        });
-      } else {
-        await client.decideProposal(token, projectId, id, decision);
-        await reload();
-      }
-    } catch (cause) {
-      setError(message(cause, "Decision failed"));
-    } finally {
-      setBusyId(null);
-    }
-  }
+  useEffect(() => {
+    setDetail(null); setSelectedDesignId(null);
+    void reload();
+    return () => { request.current++; };
+  }, [reload]);
 
   const projectName = typeof liveProject?.name === "string" ? liveProject.name : detail?.name ?? "Project";
   return (
@@ -110,17 +89,17 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
       <View style={styles.header}>
         {showBack ? <Pressable accessibilityRole="button" accessibilityLabel="Back to projects" onPress={onBack} style={styles.back}><ArrowLeft size={21} color={tokens.text} /></Pressable> : null}
         <View style={styles.identity}><Text style={styles.eyebrow}>PROJECT</Text><Text style={styles.title} numberOfLines={1}>{projectName}</Text><Text style={styles.subtitle} numberOfLines={1}>{activeDesignName}</Text></View>
-        <View accessibilityLabel={`Sync ${realtime.status}`} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{realtime.status === "live" ? "Live" : "Syncing"}</Text></View>
+        <View accessibilityLabel={projectUpdatesLabel(realtime.status)} style={styles.liveBadge}><View style={[styles.liveDot, realtime.status !== "live" && styles.liveDotWaiting]} /><Text style={styles.liveText}>{projectUpdatesLabel(realtime.status, true)}</Text></View>
       </View>
       {designs.length > 1 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.designRail} contentContainerStyle={styles.designTabs}>{designs.map((design) => <Pressable key={design.id} accessibilityRole="tab" accessibilityState={{ selected: activeDesignId === design.id }} onPress={() => setSelectedDesignId(design.id)} style={[styles.designTab, activeDesignId === design.id && styles.designTabActive]}><Text style={[styles.designTabText, activeDesignId === design.id && styles.designTabTextActive]}>{design.name}</Text></Pressable>)}</ScrollView> : null}
       <View accessibilityRole="tablist" style={[styles.nav, tablet && styles.navTablet]}>
         <Tab label="Design" icon={<Circuitry size={20} color={section === "design" ? tokens.text : tokens.text2} />} selected={section === "design"} onPress={() => setSection("design")} />
         <Tab label="Chat" icon={<ChatCircleDots size={20} color={section === "chat" ? tokens.text : tokens.text2} />} selected={section === "chat"} onPress={() => setSection("chat")} />
-        <Tab label={displayedProposals.length > 0 ? `Review ${displayedProposals.length}` : "Review"} icon={<Sparkle size={20} color={section === "review" ? tokens.text : tokens.text2} />} selected={section === "review"} onPress={() => setSection("review")} />
+        <Tab label="Review" icon={<Sparkle size={20} color={section === "review" ? tokens.text : tokens.text2} />} selected={section === "review"} onPress={() => setSection("review")} />
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
+      {section === "chat" && activeDesignId !== null ? <ProjectChat key={`${projectId}:${activeDesignId}`} baseUrl={client.baseUrl()} token={token} project={projectId} design={activeDesignId} version={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} sheets={chatSheets(realtime.getResource(projectId, activeDesignId, "schematic")?.payload)} onReview={() => setSection("review")} /> : <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tablet && styles.contentTablet]}>
         {loading ? <ActivityIndicator color={tokens.accent} /> : null}
-        {error !== null ? <ErrorText>{error}</ErrorText> : null}
+        {error !== null ? <View style={{ gap: 8 }}><ErrorText>{error}</ErrorText><PrimaryButton label="Retry previews" onPress={() => { void reload(); }} disabled={loading} style={{ alignSelf: "flex-start" }} /></View> : null}
         {realtime.error !== null ? <ErrorText>{realtime.error}</ErrorText> : null}
         {section === "design" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
           <View style={[styles.designColumns, tablet && styles.designColumnsTablet]}>
@@ -130,34 +109,25 @@ export function ProjectDetailScreen({ client, token, projectId, onBack, onOpenSv
                 <View style={styles.flex}><Text style={styles.cardTitle}>Continue at the bench</Text><Muted>Open a private, on-device session with this project and design attached.</Muted></View>
                 <PrimaryButton label="Start" onPress={() => onStartBench(activeDesignId)} style={styles.benchAction} />
               </Card>
-              <Card onPress={hasLiveSchematic && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasLiveSchematic && styles.cardDisabled]}>
+              <Card onPress={hasSnapshot && activeDesignId !== null ? () => onOpenLiveSchematic(activeDesignId) : undefined} style={[styles.schematicCard, tablet && styles.schematicCardTablet, !hasSnapshot && styles.cardDisabled]}>
                 <View style={styles.schematicIcon}><Circuitry size={30} color={tokens.accent} /></View>
-                <View style={styles.flex}><Text style={styles.cardTitle}>{hasLiveSchematic ? "View schematic" : "No schematic available"}</Text><Muted>{hasLiveSchematic ? "Pan, zoom, and inspect this Cloud document." : "This Cloud workspace does not currently contain a schematic."}</Muted></View>
-                {hasLiveSchematic ? <Text style={styles.open}>View</Text> : null}
+                <View style={styles.flex}><Text style={styles.cardTitle}>{hasSnapshot ? "View schematic" : "No schematic yet"}</Text><Muted>{hasSnapshot ? "Inspect the current synchronized drawing." : "A drawing will appear when this design has a synchronized schematic."}</Muted></View>
+                {hasSnapshot ? <Text style={styles.open}>View</Text> : null}
               </Card>
               {svgArtifacts.length > 0 ? <View style={styles.sectionHead}><SectionLabel>Published previews</SectionLabel></View> : null}
               {svgArtifacts.map((artifact) => <Card key={artifact.name} onPress={() => onOpenSvg(artifact.name)} style={styles.previewCard}><Text style={styles.previewName} numberOfLines={1}>{artifact.name}</Text><Text style={styles.open}>View</Text></Card>)}
             </View>
             <View style={styles.bomPane}>
-              <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel><Text style={styles.count}>{displayedBom.length}</Text></View>
+              <View style={styles.sectionHead}><ClipboardText size={18} color={tokens.text} /><SectionLabel>Bill of materials</SectionLabel>{bomKnown ? <Text style={styles.count}>{displayedBom.length}</Text> : null}</View>
               <Text style={styles.help}>This Cloud bill of materials is read-only here.</Text>
-              {displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
-              {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty ?? line.quantity ?? 1}</Text></View>)}
+              {!bomKnown ? <Empty title={loading ? "Loading parts list…" : "Parts list unavailable"} body={loading ? "Waiting for the project's parts data." : "Refresh the project when your connection returns."} /> : projectedBom?.error ? <ErrorText>{projectedBom.error}</ErrorText> : displayedBom.length === 0 ? <Empty title="No BOM entries" body="This Cloud workspace does not currently contain BOM entries." /> : null}
+              {displayedBom.map((line, index) => <View key={`${line.ref}-${index}`} style={styles.bomRow}><View style={styles.refBadge}><Text style={styles.refText}>{line.ref}</Text></View><View style={styles.flex}><Text style={styles.bomValue}>{line.value || "Unspecified"}</Text><Text style={styles.bomFootprint}>{line.footprint || "No footprint"}</Text></View><Text style={styles.qty}>×{line.qty}</Text></View>)}
             </View>
           </View>
         </View> : null}
-        {section === "chat" ? <View style={[styles.panel, tablet && styles.chatPanelTablet]}>
-          <View style={styles.sectionHead}><ChatCircleDots size={18} color={tokens.text} /><SectionLabel>Design chat</SectionLabel></View>
-          {chatMessages.length === 0 ? <Empty title="Start a design conversation" body="Ask about this Cloud design." /> : null}
-          <View style={styles.chatHistory}>{chatMessages.map((item) => <View key={item.id} style={[styles.chatBubble, item.role === "user" && styles.chatBubbleUser]}><Text style={styles.chatRole}>{item.role === "user" ? "You" : "Tokito"}</Text><Text style={styles.chatText}>{item.content}</Text></View>)}</View>
-          {activeDesignId !== null ? <View style={styles.composer}><TextInput accessibilityLabel="Message Tokito" value={chatDraft} onChangeText={setChatDraft} placeholder="Ask about this design…" placeholderTextColor={tokens.text3} multiline style={styles.chatInput} /><PrimaryButton label="Send" disabled={chatDraft.trim().length === 0} onPress={() => void sendChat()} style={styles.send} /></View> : null}
-        </View> : null}
-        {section === "review" ? <View style={[styles.panel, tablet && styles.panelTablet]}>
-          <View style={styles.sectionHead}><Sparkle size={18} color={tokens.text} /><SectionLabel>AI proposals</SectionLabel></View><Text style={styles.help}>Review proposals owned by this Cloud workspace.</Text>
-          {displayedProposals.length === 0 && !loading ? <Empty title="All caught up" body="New proposals will appear here for explicit review." /> : null}
-          <View style={[styles.proposalGrid, tablet && styles.proposalGridTablet]}>{displayedProposals.map((item) => <Card key={item.id} style={[styles.proposalCard, tablet && styles.proposalCardTablet]}><Text style={styles.cardTitle}>{item.title}</Text><Muted>{item.summary}</Muted><View style={styles.actions}><PrimaryButton label="Approve" busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "approve")} style={styles.action} /><PrimaryButton label="Reject" danger busy={busyId === item.id} disabled={busyId === item.id} onPress={() => void decide(item.id, "reject")} style={styles.action} /></View></Card>)}</View>
-        </View> : null}
-      </ScrollView>
+        {section === "chat" ? <Empty title="Select a design first" body="Open a design in this project to start its conversation." /> : null}
+        {section === "review" ? activeDesignId === null ? <Empty title="Select a design first" body="Open a design to review its proposed changes." /> : <ProjectReview key={`${projectId}:${activeDesignId}`} base={client.baseUrl()} token={token} project={projectId} design={activeDesignId} revision={realtime.getResource(projectId, activeDesignId, "schematic")?.version ?? 0} bomRevision={realtime.getResource(projectId, activeDesignId, "bom")?.version ?? 0} summaryVersion={realtime.getResource(projectId, activeDesignId, "conversations")?.version ?? 0} /> : null}
+      </ScrollView>}
     </View>
   );
 }
@@ -166,7 +136,6 @@ function Tab({ label, icon, selected, onPress }: { label: string; icon: JSX.Elem
   return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.navItem, selected && styles.navItemActive]}>{icon}<Text style={[styles.navText, selected && styles.navTextActive]}>{label}</Text></Pressable>;
 }
 function Empty({ title, body }: { title: string; body: string }): JSX.Element { return <View style={styles.empty}><Text style={styles.emptyTitle}>{title}</Text><Muted>{body}</Muted></View>; }
-function message(cause: unknown, fallback: string): string { return cause instanceof CompanionError ? cause.message : cause instanceof Error ? cause.message : fallback; }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: tokens.bg },

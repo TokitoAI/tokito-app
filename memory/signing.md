@@ -21,6 +21,20 @@ Once Tokito App is released, this key becomes permanent release infrastructure.
 **How to apply:** `configure-android-release.mjs` after `expo prebuild`;
 `.buildkite/in-image/release-android.sh` verifies the APK is not debug-signed.
 
+Final application release builds use the current Expo properties
+`android.enableMinifyInReleaseBuilds=true` and
+`android.enableShrinkResourcesInReleaseBuilds=true`, with Android's optimized
+default ProGuard file. The source integration plugin enables the same settings
+for ordinary Buildkite APK QA; the signing script enforces them again after
+prebuild. An obsolete `enableProguardInReleaseBuilds` replacement is not proof
+that R8 ran. Verify the actual `minifyReleaseWithR8` task and mapping output;
+native libraries retain their consumer keep rules and do not shrink independently.
+
+JNA's Android AAR retains desktop AWT adapter references. Its consumer rules
+exclude only the four absent AWT types reported by R8, following upstream JNA
+Android guidance. Do not suppress all missing classes or add AWT dependencies
+to Android; UniFFI/JNA reflection symbols still need their explicit keep rules.
+
 The ordinary `linux` worker executes repository-controlled pull-request code
 and must never receive these values. A missing `release` agent or secret is a
 hard publication failure, not permission to reuse the build worker.

@@ -101,9 +101,11 @@ restricted to bounded plain-text conversation with no tool capabilities. The
 strict typed proposal parser remains available for a separately validated
 schema-constrained backend; it is not bypassed or weakened for QAIRT.
 
-The camera-call profile caps generated dialogue at 128 tokens and asks for at
-most two short spoken sentences. Both values are workflow build configuration,
-validated against the reusable runtime limits.
+The camera-call profile caps generated dialogue at 128 tokens. Conversational
+prompts consistently request one spoken sentence of at most 35 words. Qwen3
+non-thinking sampling follows its official profile, not greedy decoding. Format
+adherence and semantic quality require installed-device response review;
+token limits alone cannot enforce concise, correct speech.
 
 Verified assembly-context facts are retrieved locally before generation. Exact
 reference keys outrank deterministic bounded text overlap, every result retains

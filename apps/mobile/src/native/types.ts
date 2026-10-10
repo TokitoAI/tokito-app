@@ -90,4 +90,6 @@ export interface CompanionClientPort {
   otpVerify(email: string, code: string): Promise<Session>;
   oauthExchange(code: string): Promise<Session>;
   me(token: string): Promise<Account>;
+  resolveIdentity(token: string): Promise<{ account: Account; online: boolean }>;
+  forgetIdentity(token: string): Promise<void>;
 }

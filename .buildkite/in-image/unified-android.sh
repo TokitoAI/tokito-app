@@ -4,9 +4,11 @@ cd apps/mobile
 npm ci
 TOKITO_ANDROID_TARGETS=arm64-v8a ../../scripts/build-android-ffi.sh
 npx expo prebuild --platform android --clean --non-interactive
-./android/gradlew -p android :app:assembleRelease \
+./android/gradlew -p android :tokito-companion-ffi:testReleaseUnitTest :tokito-companion-ffi:lintRelease :app:lintRelease :app:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
 mkdir -p ../../ci-out
+test -s android/app/build/outputs/mapping/release/mapping.txt
+cp android/app/build/outputs/mapping/release/mapping.txt ../../ci-out/tokito-app-r8-mapping.txt
 apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
 test -n "$apk"
 cp "$apk" ../../ci-out/tokito-app-release-unsigned-arm64.apk

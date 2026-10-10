@@ -39,7 +39,7 @@ export type CloudClient = CompanionClientPort & {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; body: string }>;
-  startSync?(token: string, projectId?: string): Promise<string>;
+  startSync?(token: string, projectId: string | undefined, owner: string): Promise<string>;
   stopSync?(subscriptionId: string): Promise<void>;
   enqueueSyncCommand?(
     subscriptionId: string,
@@ -65,6 +65,7 @@ export type SyncResourceName =
   | "schematic"
   | "bom"
   | "chat"
+  | "conversations"
   | "suggestions"
   | "physical_sessions";
 
@@ -240,6 +241,20 @@ export class NativeCompanionClient implements CloudClient {
     }
   }
 
+  async resolveIdentity(token: string): Promise<{ account: Account; online: boolean }> {
+    try {
+      const result = JSON.parse(await this.native.resolveIdentity(this.base, token));
+      if (typeof result?.online !== "boolean") throw CompanionError.unexpected();
+      return { account: { email: requireString(result?.account?.email, "email"), plan: requireString(result?.account?.plan, "plan") }, online: result.online };
+    }
+    catch (err) { throw mapNativeError(err); }
+  }
+
+  async forgetIdentity(token: string): Promise<void> {
+    try { await this.native.forgetIdentity(this.base, token); }
+    catch (err) { throw mapNativeError(err); }
+  }
+
   async listProjects(token: string): Promise<ProjectListItem[]> {
     try {
       return await this.native.listProjects(this.base, token);
@@ -316,9 +331,9 @@ export class NativeCompanionClient implements CloudClient {
     }
   }
 
-  async startSync(token: string, projectId?: string): Promise<string> {
+  async startSync(token: string, projectId: string | undefined, owner: string): Promise<string> {
     try {
-      return await this.native.startSync(this.base, token, projectId ?? null);
+      return await this.native.startSync(this.base, token, projectId ?? null, owner);
     } catch (err) {
       throw mapNativeError(err);
     }

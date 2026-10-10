@@ -42,6 +42,7 @@ kotlin {
 
 dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    api("androidx.lifecycle:lifecycle-runtime:2.9.4")
     implementation("com.qualcomm.qti:geniex-android:0.3.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

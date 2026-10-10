@@ -14,13 +14,15 @@ npm run audit
 TOKITO_ANDROID_TARGETS=arm64-v8a ../../scripts/build-android-ffi.sh
 npx expo prebuild --platform android --clean --non-interactive
 node scripts/configure-android-release.mjs
-./android/gradlew -p android assembleRelease bundleRelease \
+./android/gradlew -p android :tokito-companion-ffi:testReleaseUnitTest :tokito-companion-ffi:lintRelease :app:lintRelease assembleRelease bundleRelease \
   -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
 
 apk="$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
 aab="$(find android/app/build/outputs/bundle/release -name '*.aab' -print -quit)"
 test -n "$apk" && test -n "$aab"
 mkdir -p ../../ci-out
+test -s android/app/build/outputs/mapping/release/mapping.txt
+cp android/app/build/outputs/mapping/release/mapping.txt "../../ci-out/Tokito-${tag}-r8-mapping.txt"
 apk_out="../../ci-out/Tokito-${tag}.apk"
 aab_out="../../ci-out/Tokito-${tag}.aab"
 cp "$apk" "$apk_out"
@@ -34,5 +36,5 @@ build_tools="$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 
 gh release create "$tag" \
   --title "Tokito ${tag}" \
-  --notes "Unified Tokito Android release ${tag}. Package: dev.tokito.companion. Upload-signed arm64 APK and Play AAB." \
+  --notes "Unified Tokito Android release ${tag}. Package: dev.tokito.app. Upload-signed arm64 APK and Play AAB." \
   "$apk_out" "$aab_out"

@@ -1,7 +1,8 @@
 import type { JSX } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   StyleSheet,
   Text,
@@ -13,7 +14,7 @@ import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-nati
 import Constants from "expo-constants";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
 import { createCloudClient, type CloudClient } from "./native/bridge";
-import { AuthService } from "./auth/AuthService";
+import { AuthOperationSuperseded, AuthService } from "./auth/AuthService";
 import type { AuthState } from "./auth/AuthService";
 import { SecureSessionStore } from "./auth/secureSessionStore";
 import { MemorySessionStore } from "./auth/sessionStore";
@@ -29,15 +30,11 @@ import { SignInScreen } from "./screens/SignInScreen";
 import { TokitoPhysical } from "../modules/tokito-physical/src";
 import { applySystemChrome } from "./systemChrome";
 import { RealtimeWorkspaceProvider } from "./sync/RealtimeWorkspace";
+import { retryableStartup } from "./sync/startupRetry";
 import { TABLET_MIN_WIDTH, tokens } from "./theme";
+import { parentRoute, parentSignedOutView, type Route } from "./navigation/backNavigation";
+import { useAndroidBack } from "./navigation/useAndroidBack";
 import { BrandTile } from "./ui/primitives";
-
-type Route =
-  | { name: "projects" }
-  | { name: "models" }
-  | { name: "project"; id: string }
-  | { name: "live_schematic"; projectId: string; designId: string }
-  | { name: "svg"; projectId: string; artifact: string };
 
 export type AppProps = {
   cloudBaseUrl?: string;
@@ -64,8 +61,8 @@ function AppContent({
   cloudBaseUrl = defaultCloudBaseUrl(),
   useMemoryStore = false,
 }: AppProps): JSX.Element {
-  const { width } = useWindowDimensions();
-  const tablet = width >= TABLET_MIN_WIDTH;
+  const { width, height } = useWindowDimensions();
+  const tablet = width >= TABLET_MIN_WIDTH && height >= 600;
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -99,11 +96,36 @@ function AppContent({
   const [signedOutView, setSignedOutView] = useState<"home" | "sign_in" | "models">("home");
   const [bootError, setBootError] = useState<string | null>(null);
   const [restoreBlocked, setRestoreBlocked] = useState(false);
+  const [retryRestore, setRetryRestore] = useState(false);
+  const restoreInFlight = useRef(false);
+  const restoreRequested = useRef(false);
+  const [restoreRequest, setRestoreRequest] = useState(0);
+  useAndroidBack(() => {
+    if (state.status === "signed_out") {
+      const parent = parentSignedOutView(signedOutView);
+      if (parent === null) return false;
+      setSignedOutView(parent);
+    } else {
+      const parent = parentRoute(route);
+      if (parent === null) return false;
+      setRoute(parent);
+    }
+    return true;
+  });
+  const handleAuthorizationRevoked = useCallback(() => {
+      restoreRequested.current = false;
+      setState({ status: "signed_out" }); setSignedOutView("sign_in");
+      setRetryRestore(false); setBootError("Your session expired. Sign in again to continue.");
+      void auth.signOut();
+  }, [auth]);
 
   const refresh = useCallback(async () => {
+    if (restoreInFlight.current) { restoreRequested.current = true; return; }
+    restoreInFlight.current = true;
     setBooting(true);
     setBootError(null);
     setRestoreBlocked(false);
+    setRetryRestore(false);
     try {
       const next = await auth.restore();
       setState(next);
@@ -112,6 +134,7 @@ function AppContent({
         setSignedOutView("home");
       }
     } catch (err) {
+      if (err instanceof AuthOperationSuperseded) return;
       const message =
         err instanceof CompanionError
           ? err.message
@@ -124,9 +147,15 @@ function AppContent({
         setRestoreBlocked(false);
       } else {
         setRestoreBlocked(true);
+        setRetryRestore(retryableStartup(err));
       }
     } finally {
+      restoreInFlight.current = false;
       setBooting(false);
+      if (restoreRequested.current) {
+        restoreRequested.current = false;
+        setRestoreRequest(request => request + 1);
+      }
     }
   }, [auth]);
 
@@ -144,7 +173,15 @@ function AppContent({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, restoreRequest]);
+
+  useEffect(() => {
+    if (!retryRestore || booting || signedOutView === "sign_in") return;
+    const retry = (): void => { void refresh(); };
+    const timer = setTimeout(retry, 30_000);
+    const foreground = AppState.addEventListener("change", next => { if (next === "active") retry(); });
+    return () => { clearTimeout(timer); foreground.remove(); };
+  }, [retryRestore, booting, signedOutView, refresh]);
 
   // Wait briefly for Inter; never block boot forever if fonts stall.
   if (!fontsReady || booting) {
@@ -200,18 +237,22 @@ function AppContent({
 
   if (route.name === "models") {
     return (
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <View style={styles.root}>
         <StatusBar style="light" />
         <ModelManagerScreen onBack={() => setRoute({ name: "projects" })} />
       </View>
+      </RealtimeWorkspaceProvider>
     );
   }
 
   if (route.name === "live_schematic") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <LiveSchematicViewerScreen
+          client={client}
+          token={token}
           projectId={route.projectId}
           designId={route.designId}
           onBack={() => setRoute({ name: "project", id: route.projectId })}
@@ -222,7 +263,7 @@ function AppContent({
 
   if (route.name === "svg") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <SchematicViewerScreen
           client={client}
@@ -239,7 +280,7 @@ function AppContent({
     const detailId = route.name === "project" ? route.id : null;
     const masterWidth = Math.min(330, Math.max(280, Math.floor(width * 0.28)));
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <View style={styles.split}>
         <StatusBar style="light" />
         <View style={[styles.master, { width: masterWidth }]}>
@@ -294,7 +335,7 @@ function AppContent({
 
   if (route.name === "project") {
     return (
-      <RealtimeWorkspaceProvider client={client} token={token}>
+      <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
         <StatusBar style="light" />
         <ProjectDetailScreen
           client={client}
@@ -314,7 +355,7 @@ function AppContent({
   }
 
   return (
-    <RealtimeWorkspaceProvider client={client} token={token}>
+    <RealtimeWorkspaceProvider client={client} token={token} onAuthorizationRevoked={handleAuthorizationRevoked}>
       <StatusBar style="light" />
       <ProjectListScreen
         client={client}

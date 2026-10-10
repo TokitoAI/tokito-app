@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -20,6 +20,8 @@ import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
 import { tokens } from "../theme";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
+import { formatProjectUpdatedAt, mergeProjectList } from "../sync/projectList";
+import { projectUpdatesLabel } from "../sync/statusLabel";
 import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 
 export interface ProjectListScreenProps {
@@ -50,16 +52,21 @@ export function ProjectListScreen({
 }: ProjectListScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [publishedProjects, setProjects] = useState<ProjectListItem[]>([]);
+  const request = useRef(0);
   const realtime = useRealtimeWorkspace();
+  const projects = useMemo(() => mergeProjectList(publishedProjects, realtime.resources), [publishedProjects, realtime.resources]);
 
   const reload = useCallback(async () => {
+    const generation = ++request.current;
     setLoading(true);
     setError(null);
     try {
       const list = await client.listProjects(token);
+      if (request.current !== generation) return;
       setProjects(list);
     } catch (err) {
+      if (request.current !== generation) return;
       setError(
         err instanceof CompanionError
           ? err.message
@@ -68,30 +75,15 @@ export function ProjectListScreen({
             : "Failed to load projects",
       );
     } finally {
-      setLoading(false);
+      if (request.current === generation) setLoading(false);
     }
   }, [client, token]);
 
   useEffect(() => {
+    setProjects([]);
     void reload();
+    return () => { request.current++; };
   }, [reload]);
-
-  useEffect(() => {
-    const projectResources = realtime.resources
-      .filter((item) => item.resource === "project" && item.design_id === null);
-    const live = projectResources
-      .map((item) => item.payload as Partial<ProjectListItem> & { deleted?: boolean })
-      .filter((item) => item.deleted !== true)
-      .filter((item): item is ProjectListItem =>
-        typeof item.id === "string" && typeof item.name === "string")
-      .map((item) => ({
-        id: item.id,
-        name: item.name,
-        slug: typeof item.slug === "string" ? item.slug : item.id,
-        updated_at: typeof item.updated_at === "string" ? item.updated_at : "live",
-      }));
-    if (projectResources.length > 0) setProjects(live);
-  }, [realtime.resources]);
 
   return (
     <View style={[styles.root, embedded && styles.rootEmbedded]}>
@@ -99,14 +91,14 @@ export function ProjectListScreen({
         <View style={styles.brandRow}>
           <BrandTile size={36} />
           <View style={styles.flex}>
-            <Text style={styles.brand}>Tokito</Text>
+            <Text style={styles.brand} numberOfLines={1}>Tokito</Text>
             <Text style={styles.sub} numberOfLines={1}>
               {accountEmail}
             </Text>
             <View style={styles.accountMeta}>
               <View style={styles.planPill}><Text style={styles.planText}>{accountPlan}</Text></View>
               <View style={[styles.syncDot, realtime.status === "live" && styles.syncDotLive]} />
-              <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>{realtime.status}</Text>
+              <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>{projectUpdatesLabel(realtime.status)}</Text>
             </View>
           </View>
         </View>
@@ -172,7 +164,7 @@ export function ProjectListScreen({
             >
               <Text style={styles.cardTitle}>{item.name}</Text>
               <Text style={styles.cardSlug} numberOfLines={1}>{item.slug}</Text>
-              <Text style={styles.cardMeta}>{formatUpdatedAt(item.updated_at)}</Text>
+              <Text style={styles.cardMeta}>{formatProjectUpdatedAt(item)}</Text>
             </Card>
           );
         }}
@@ -181,41 +173,27 @@ export function ProjectListScreen({
   );
 }
 
-function formatUpdatedAt(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return value === "live" ? "Updated just now" : "Synced project";
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return "Updated just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `Updated ${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Updated ${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `Updated ${days}d ago`;
-  return `Updated ${new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
-}
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: tokens.bg,
     paddingHorizontal: tokens.space5,
-    paddingTop: 56,
+    paddingTop: 16,
   },
   rootEmbedded: {
     backgroundColor: tokens.bgChrome,
     borderRightWidth: 1,
     borderRightColor: tokens.border,
-    paddingTop: 30,
+    paddingTop: 12,
     paddingHorizontal: tokens.space4,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    flexDirection: "column",
+    alignItems: "stretch",
     marginBottom: tokens.space4,
     gap: tokens.space3,
   },
-  brandRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: tokens.space3 },
+  brandRow: { width: "100%", flexShrink: 0, flexDirection: "row", alignItems: "center", gap: tokens.space3 },
   flex: { flex: 1 },
   brand: { color: tokens.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
   sub: { color: tokens.text2, marginTop: 2, fontSize: 12 },
@@ -226,7 +204,7 @@ const styles = StyleSheet.create({
   syncDotLive: { backgroundColor: tokens.success },
   sync: { color: tokens.text2, fontSize: 10, textTransform: "capitalize" },
   syncLive: { color: tokens.accent },
-  headerActions: { flexDirection: "row", gap: tokens.space1 },
+  headerActions: { flexDirection: "row", justifyContent: "flex-end", gap: tokens.space2 },
   iconBtn: {
     width: 40,
     height: 40,

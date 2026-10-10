@@ -1,8 +1,187 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const withTokitoPhysical = require("../plugins/withTokitoPhysical.js");
+const { optionalCamera, splitSplashStyles } = withTokitoPhysical;
+const { XML } = require("expo/config-plugins");
+
+test("physical session bridge uses explicit map decoding rather than reflective Record fields", async () => {
+  const module = await readFile(new URL("../modules/tokito-physical/android/src/main/java/dev/tokito/physical/bridge/TokitoPhysicalModule.kt", import.meta.url), "utf8");
+  assert.match(module, /sessionContext: Map<String, Any\?>\?/);
+  assert.doesNotMatch(module, /\bRecord\b|@Field/);
+  assert.ok(module.indexOf("PhysicalSessionInput.decode") < module.indexOf("val session = physicalRuntime.openSession()"));
+  const deviceTest = await readFile(new URL("../device-tests/dev/tokito/app/PhysicalSessionBridgeDeviceTest.kt", import.meta.url), "utf8");
+  assert.match(deviceTest, /Arguments::makeNativeMap/);
+  assert.match(deviceTest, /converter\.convert\(dynamic/);
+  assert.match(deviceTest, /RawTypeDescriptor\.Parameterized\(Map::class\.java, true, null, parameters\)/);
+  assert.doesNotMatch(deviceTest, /typeDescriptorOf|\bmapOf\(|\bto\b/);
+});
+
+test("paired release DEX linkage audit regression suite", () => {
+  const result = spawnSync(process.platform === "win32" ? "python" : "python3",
+    ["-B", "-m", "unittest", "scripts/test_release_test_abi.py"],
+    { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test("vendor JNI bean identities and private fields remain stable under R8", async () => {
+  const rules = await readFile(new URL("../../../physical-runtime/dialogue-runtime/consumer-rules.pro", import.meta.url), "utf8");
+  assert.match(rules, /-keep,includedescriptorclasses class com\.geniex\.sdk\.bean\.\*\* \{ \*; \}/);
+  assert.match(rules, /-keep,includedescriptorclasses class com\.geniex\.sdk\.jni\.\*\* \{ \*; \}/);
+  assert.doesNotMatch(rules, /^\s*-(?:dontoptimize|dontshrink|dontobfuscate)/m);
+});
+
+test("release signing script forces optimization and remains idempotent", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tokito-release-"));
+  try {
+    await mkdir(path.join(root, "android/app"), { recursive: true });
+    await writeFile(path.join(root, "android/app/build.gradle"), `android {
+  signingConfigs {
+    debug {
+      storeFile file('debug.keystore')
+    }
+  }
+  buildTypes {
+    release {
+      signingConfig signingConfigs.debug
+      minifyEnabled enableMinifyInReleaseBuilds
+    }
+  }
+}`);
+    await writeFile(path.join(root, "android/gradle.properties"), "android.enableMinifyInReleaseBuilds=false\n");
+    const env = { ...process.env,
+      ANDROID_UPLOAD_KEYSTORE_BASE64: Buffer.from("test-only-keystore").toString("base64"),
+      ANDROID_UPLOAD_STORE_PASSWORD: "test-only", ANDROID_UPLOAD_KEY_ALIAS: "test-only",
+      ANDROID_UPLOAD_KEY_PASSWORD: "test-only",
+    };
+    const script = fileURLToPath(new URL("./configure-android-release.mjs", import.meta.url));
+    const run = () => spawnSync(process.execPath, [script], { cwd: root, env, encoding: "utf8" });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const gradle = await readFile(path.join(root, "android/app/build.gradle"), "utf8");
+    const properties = await readFile(path.join(root, "android/gradle.properties"), "utf8");
+    assert.match(gradle, /signingConfig signingConfigs\.release/);
+    assert.equal(properties.match(/^android\.enableMinifyInReleaseBuilds=true$/gm)?.length, 1);
+    assert.equal(properties.match(/^android\.enableShrinkResourcesInReleaseBuilds=true$/gm)?.length, 1);
+    assert.equal(run().status, 0);
+    assert.equal(await readFile(path.join(root, "android/app/build.gradle"), "utf8"), gradle);
+    assert.equal(await readFile(path.join(root, "android/gradle.properties"), "utf8"), properties);
+    assert.equal(spawnSync(process.execPath, [script], {
+      cwd: root, env: { ...env, ANDROID_UPLOAD_KEY_PASSWORD: "" }, encoding: "utf8",
+    }).status, 1, "missing signing credentials must fail instead of selecting the debug key");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("final APK release optimization is generated without independently shrinking libraries", async () => {
+  const config = withTokitoPhysical({ name: "Tokito", slug: "tokito" });
+  const result = await config.mods.android.gradleProperties({ ...config, modRequest: {}, modResults: [
+    { type: "property", key: "android.enableMinifyInReleaseBuilds", value: "false" },
+  ] });
+  for (const key of ["android.enableMinifyInReleaseBuilds", "android.enableShrinkResourcesInReleaseBuilds"]) {
+    assert.equal(result.modResults.filter(item => item.key === key).length, 1);
+    assert.equal(result.modResults.find(item => item.key === key).value, "true");
+  }
+  const gradle = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: {
+    language: "groovy", contents: `dependencies {}\nproguardFiles getDefaultProguardFile('proguard-android.txt'), "proguard-rules.pro"`,
+  } });
+  assert.match(gradle.modResults.contents, /proguard-android-optimize\.txt/);
+  assert.match(gradle.modResults.contents, /proguard-release-abi\.pro/);
+  assert.doesNotMatch(gradle.modResults.contents, /proguard-android\.txt/);
+  const repeated = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: gradle.modResults });
+  assert.equal(repeated.modResults.contents, gradle.modResults.contents);
+});
+
+test("release instrumentation keeps only its cross-APK ABI without disabling R8", async () => {
+  const rules = await readFile(new URL("../proguard-release-abi.pro", import.meta.url), "utf8");
+  assert.doesNotMatch(rules, /^\s*-(?:dontoptimize|dontshrink|dontobfuscate)/m);
+  assert.doesNotMatch(rules, /class\s+(?:kotlin|kotlinx|dev\.tokito)\.\*\*/);
+  assert.match(rules, /-keep class kotlin\.jvm\.internal\.Intrinsics \{ \*; \}/);
+  assert.match(rules, /-keep class androidx\.tracing\.Trace \{ \*; \}/);
+  for (const facade of ["LazyKt", "collections.CollectionsKt", "collections.SetsKt", "text.StringsKt", "coroutines.intrinsics.IntrinsicsKt"]) {
+    assert.ok(rules.includes(`class kotlin.${facade}** { public *; protected *; }`));
+  }
+  assert.match(rules, /class dev\.tokito\.physical\.dialogue\.LocalBenchDialoguePolicy \{ public \*; \}/);
+  assert.match(rules, /java\.lang\.Object runBlocking\(\.\.\.\)/);
+  assert.match(rules, /java\.lang\.Object withTimeout\(\.\.\.\)/);
+  assert.match(rules, /ModelBundleRepository \{ public \*; \}/);
+  const config = withTokitoPhysical({ name: "Tokito", slug: "tokito" });
+  const base = `dependencies {}\nproguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"`;
+  const ordinary = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: { language: "groovy", contents: base } });
+  assert.equal(ordinary.modResults.contents.match(/proguard-release-abi\.pro/g).length, 1);
+  const repeated = await config.mods.android.appBuildGradle({ ...config, modRequest: {}, modResults: ordinary.modResults });
+  assert.equal(repeated.modResults.contents, ordinary.modResults.contents);
+});
+
+test("final generation mod writes the API-qualified splash after Expo's styles", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tokito-resources-"));
+  try {
+    const baseFile = path.join(root, "app/src/main/res/values/styles.xml");
+    const qualifiedFile = path.join(root, "app/src/main/res/values-v33/styles.xml");
+    await XML.writeXMLAsync({ path: baseFile, xml: { resources: { style: [{
+      $: { name: "Theme.App.SplashScreen", parent: "Theme.SplashScreen" },
+      item: [
+        { $: { name: "postSplashScreenTheme" }, _: "@style/AppTheme" },
+        { $: { name: "android:windowSplashScreenBehavior" }, _: "icon_preferred" },
+      ],
+    }] } } });
+    const config = withTokitoPhysical({ name: "Tokito", slug: "tokito" });
+    assert.equal(config.mods.android.styles, undefined, "must not run before Expo adds splash attributes");
+    const run = () => config.mods.android.finalized({ ...config,
+      modRequest: { platformProjectRoot: root, introspect: false },
+    });
+    await run();
+    const base = await XML.readXMLAsync({ path: baseFile });
+    const qualified = await XML.readXMLAsync({ path: qualifiedFile });
+    assert.equal(base.resources.style[0].item.length, 1);
+    assert.equal(qualified.resources.style[0].item.length, 2);
+    await run();
+    assert.deepEqual(await XML.readXMLAsync({ path: qualifiedFile }), qualified);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("camera capability is optional and generation is idempotent", () => {
+  const manifest = { manifest: { "uses-feature": [{ $: { "android:name": "android.hardware.bluetooth", "android:required": "true" } }] } };
+  optionalCamera(manifest);
+  const once = structuredClone(manifest);
+  optionalCamera(manifest);
+  assert.deepEqual(manifest, once);
+  assert.equal(manifest.manifest["uses-feature"][1].$["android:required"], "false");
+  assert.equal(manifest.manifest["uses-feature"][0].$["android:required"], "true");
+  manifest.manifest["uses-feature"][1].$["android:required"] = "true";
+  optionalCamera(manifest);
+  assert.deepEqual(manifest, once);
+});
+
+test("API 33 splash behavior preserves the complete theme without leaking to older APIs", () => {
+  const splash = { $: { name: "Theme.App.SplashScreen", parent: "Theme.SplashScreen" }, item: [
+    { $: { name: "windowSplashScreenBackground" }, _: "@color/splashscreen_background" },
+    { $: { name: "windowSplashScreenAnimatedIcon" }, _: "@drawable/splashscreen_logo" },
+    { $: { name: "postSplashScreenTheme" }, _: "@style/AppTheme" },
+    { $: { name: "android:windowSplashScreenBehavior" }, _: "icon_preferred" },
+  ] };
+  const expected = structuredClone(splash);
+  const base = { resources: { style: [splash, { $: { name: "AppTheme" } }] } };
+  const other = { $: { name: "Unrelated" } };
+  const qualified = { resources: { style: [other] } };
+  splitSplashStyles(base, qualified);
+  assert.deepEqual(qualified.resources.style, [other, expected]);
+  assert.equal(base.resources.style[0].item.length, 3);
+  const once = structuredClone({ base, qualified });
+  splitSplashStyles(base, qualified);
+  assert.deepEqual({ base, qualified }, once);
+  base.resources.style[0].item[0]._ = "@color/changed";
+  splitSplashStyles(base, qualified);
+  assert.equal(qualified.resources.style[1].item[0]._, "@color/changed");
+});
 
 const mobileDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = path.resolve(mobileDir, "../..");

@@ -10,6 +10,21 @@ successful release build and failed when opening the phone's model manager.
 **How to apply:** keep library `isMinifyEnabled = false` and check the installed
 release's bridge calls as well as build/unit checks.
 
+The optimized final APK and its release instrumentation APK share a narrow
+binary acceptance boundary in `apps/mobile/proguard-release-abi.pro`, applied
+unconditionally by the Expo plugin. Keep production R8 enabled; do not create
+a less-optimized test target or disable shrinking to get a passing benchmark.
+**Why:** AndroidTest applies the target name mapping but cannot reconstruct
+R8-reordered method parameters or narrowed constructor types. Intrinsics and
+the explicitly exercised runtime exports must keep their original signatures.
+Build the target and test APK together, install both exact outputs with `-r`,
+and run the installed runner directly to preserve admitted app-private models.
+The cross-APK method audit must not accept an unknown method merely because
+a class implements a platform interface. `Serializable` supplies no Regex split
+method; that shortcut hid a real R8-narrowed signature. Unknown inherited
+platform exports require explicit review. Test-only corpus parsing uses
+framework `StringTokenizer`, not extra production keep rules for Kotlin Regex.
+
 GenieX resolves plugins from `ApplicationInfo.nativeLibraryDir`, so the unified
 APK needs `expo.useLegacyPackaging=true` (native library extraction). A library
 module's packaging setting does not control the final Expo APK.
@@ -20,13 +35,206 @@ are not a runtime fallback. Installation validates files/configuration; device
 inference must be checked separately. Evaluation-only model licenses require
 the explicit local build property documented in `physical-runtime/docs/VOICE_RUNTIME.md`.
 
-Local conversation answers general electronics questions without a loaded board
-reference. Board-specific identities still require verified context; model output
-is not a measured or visually verified fact. Keep this distinction in the dialogue
-protocol and the native bench entry point.
+Production bench conversation returns admitted source records or an explicit
+abstention. General educational wording cannot bypass evidence admission. Raw
+local-model generation remains available to quality instrumentation, not the
+bench answer path; passing this safety boundary is not model factual accuracy.
 
-**Why:** routing every utterance through the board-reference index disabled general
-conversation even when the local LLM was installed and healthy.
+Shared Cloud conversation history and generation run journals are server-owned.
+Phone chat opens at the latest turn, but only a reader drag can disable live
+scroll following. Earlier-message pagination preserves the reading anchor;
+the Latest action restores following.
+Async history hydration follows measured content and viewport sizes rather
+than FlatList's estimated last-row geometry. Preserve visible-item anchors
+only while reading older messages: keeping that anchor during hydration can
+override the initial latest-message scroll. Footer-only streamed output must
+also follow even when there are no saved rows yet.
+Native follow commands are coalesced to the layout frame and re-read current
+content/viewport measurements. Saved-row layout and native scroll metrics must
+correct a scroll clamped during the streamed-footer-to-history transition.
+Never treat the old footer height as the final saved Markdown height or steal
+a reader drag to force the last answer visible. The Latest action is an
+immediate follow, not a synthetic reader momentum gesture.
+Use the underlying ScrollView responder's native `scrollToEnd`, not FlatList's
+estimated last-row offset, when following committed content. Android evaluates
+the current child bounds for that command even when JS retains old footer metrics.
+Composer input events carry their rendered conversation and native-input epoch.
+Retiring an acknowledged input prevents delayed Android edits from resurrecting
+a sent draft. A New-chat draft started during asynchronous history hydration
+must prevent automatic selection from splitting that draft across thread keys.
+Streamed output belongs to its exact run ID: stop the previous watch before
+queueing a new user message, and ignore
+late events for older runs. Tool-separated response rounds preserve completed
+prefaces instead of replacing or duplicating them. Render assistant Markdown
+from tokens into native components, never HTML/WebView execution or remote
+image loads. Prepared-change cards navigate to the existing server-backed
+Review flow; a card is not evidence that changes were applied.
+Assistant cards stretch to the available chat width; only user bubbles are
+right-aligned and width-bounded. Markdown documents contribute their natural
+height (`flexShrink: 0`), while list text flexes horizontally inside each row.
+**Why:** an intrinsically sized card plus a shrinking vertical document made
+long bullet lists narrow and allowed their text to overflow the rounded card.
+Ordinary project chat uses the conversational planner regardless of schematic
+revision, matching desktop. Existing geometry does not turn a question into a
+prepared edit: the schematic/BOM editor agents are only for explicit edit flows.
+**Why:** selecting the edit-only agent from revision alone prevented normal
+circuit reasoning and estimates in phone conversations.
+Mobile review sends selected operation indices against the server-captured
+proposal, never a replacement schematic or a local suggestion-status mutation.
+Approval/rejection command IDs and bodies are persisted before transmission;
+uncertain responses replay the exact command. A receipt is successful only when
+its run/event identity and all selected applied/unchanged indices match. Stale or
+invalid proposals are blocked for explicit review, not silently rebased.
+
+Account-wide review replay uses oldest-first pending commands, not the UI's
+newest-first display list. An uncertain command holds subsequent commands in
+the same project/design scope while unrelated scopes continue. Authentication
+rejection stops the entire account worker. Chat replay likewise continues past
+unavailable independent threads; missing threads and proposals become explicit
+blocked items rather than infinite retries. Retrying an uncertain transmission
+must preserve its exact durable command body and IDs.
+Definitively rejected conversation creation quarantines both the pending thread
+and its dependent draft in one transaction. Keep the unconfirmed conversation
+visible after restart. Explicit draft recovery retains its creation ID/body and
+unblocks that creation; transient network/rate-limit failures retry unchanged.
+New-conversation first sends use one native transaction for the thread, message,
+and immutable command receipt. The UI retains a command UUID and its original
+revision until receipt delivery; a background revision update does not silently
+change an uncertain command. Exact retries return original thread/message/run
+IDs even after acknowledgement. Changed intent conflicts. Confirmed deletion
+removes receipt content but retains a tombstone so retries cannot resurrect it.
+Receipt storage is bounded and fails closed rather than evicting retry identity.
+Run watchers wait locally while the message is queued and surface quarantined
+messages without requesting nonexistent runs. Once acknowledged, an actual
+server run snapshot plus durable event replay recovers acceptance which preceded
+the UI's receipt; never synthesize a running status to fill that race.
+**Why:** a project-specific outage must not starve another project's work, and
+display sorting must never silently reorder authoritative decisions.
+
+Multi-sheet chat explicitly selects a canonical synchronized sheet. A single
+sheet can be inferred from the actual document; multiple sheets must never
+default to the first entry. The chosen sheet ID is persisted with the queued
+message, so retries cannot change its edit context.
+Sheet IDs are opaque canonical identifiers, not UUIDs. Preserve their exact
+UTF-8 bytes through ordinary sends, atomic first-message receipts and replay;
+validate nonblank content, the 128-byte bound and absence of control characters.
+The API remains authoritative for membership in the captured document.
+**Why:** valid synchronized IDs such as named root/subsheets were rejected before
+local enqueue by a UUID-only mobile check, despite successful history requests.
+
+The native conversation session persists message IDs and streamed events before
+delivery; closing a viewer does not cancel a run. Only the explicit cancel API
+requests cancellation. The bridge shutdown method is named `shutdown`, not
+`close`: UniFFI already generates Kotlin `close()` for object disposal.
+
+Cloud chat caches and sync outboxes are scoped to the verified account and API
+origin; project-filtered sync journals additionally get independent cache paths.
+Unbound legacy sync files must not be replayed under a newly signed-in account.
+**Why:** sharing a cache across accounts can send a previous user's pending
+commands with a different bearer token. Never derive cache identity from an
+unverified UI email, and never use the bearer token as a persistent cache key.
+
+Project connection status describes the project-update transport, not chat
+availability or snapshot freshness. Published project indexes and journal
+resources are reconciled deterministically; journal tombstones must not be
+resurrected by a late index response. Missing update dates stay unknown, never
+"just now". A durable local enqueue is not a server commit: only confirmed
+journal events replace visible synchronized resources.
+Project list recency uses optional server `last_activity_at` Unix seconds,
+separate from project metadata/publication `updated_at`. Bootstrap/index supply
+committed activity and SSE contributes its original `created_at`; SQLite caches
+that metadata across restarts. Only confirmed resource activity affects sorting:
+reads, local enqueue and exact retries must not manufacture a new update time.
+Live JS resource replacement retains the maximum admitted activity independently
+of a newer content revision's timestamp, matching SQLite and bootstrap metadata.
+An older server clock stamp must not move a recently active project backwards.
+The FFI emits the admitted SQLite projection after applying HTTP bootstrap,
+not the raw response: otherwise an older server without activity metadata would
+erase the visible clock while the durable cache correctly retained it.
+The admission transaction returns its committed resources and cursor together;
+later writers cannot mix a newer resource view into an earlier bootstrap receipt.
+Missing activity retains a known metadata-date fallback or remains unknown.
+**Why:** schematic/BOM approval and chat change their own resources without
+renaming/publishing a project; metadata-only sorting left active projects old.
+
+Project detail reads the canonical server journal even when no legacy published
+snapshot exists. Canonical BOM `lines` reference `parts` by `part_id`; join those
+records and matching schematic references before rendering, never cast them to
+legacy `ref`/`value` rows. Quantities are floating-point through Rust, UniFFI and
+TypeScript so fractional material quantities are not truncated or invented.
+
+HTTP acknowledgements retain a durable snapshot lower bound separately from
+the SSE replay cursor. A bootstrap older than that bound is rejected even if
+it omits the acknowledged resource. Never advance the replay cursor from an
+HTTP receipt: that would skip unrelated preceding events. A resource revision
+has immutable content; contradictory same-revision payloads fail atomically.
+
+Sync startup emits the account-scoped persisted resources before connecting.
+The workspace activates a native ownership lease synchronously before starting
+any asynchronous worker. Queue, conversation, review, and sync startup require
+that exact owner; matching credentials alone cannot acquire or replace ownership.
+Account changes invalidate the old lease before IO, and worker installation is
+guarded atomically after IO. A late startup or authorization failure from a retired
+workspace cannot stop the current account. Only workspace disposal deactivates
+the lease; callback changes and transport retries do not create new ownership.
+All signed-in routes retain the same workspace provider, including model
+management; navigation must not stop project synchronization. Cold start restores
+the verified session automatically. Transient identity/startup failures retry on
+foreground and a bounded timer; authentication and malformed-protocol failures do
+not retry indefinitely. Native SSE/outbox workers own online recovery after startup.
+Android Back uses one shell listener with explicit section-before-route priority:
+Chat/Review return to Design, viewers return to their project, and projects/models
+return to their parent list; signed-out setup returns Home. Only root screens
+delegate exit to Android. Listener cleanup and current committed callbacks prevent
+stale navigation, without altering the native bench Activity's Back behavior.
+Connection badges distinguish connecting/reconnecting/unavailable/offline from
+connected; a cached bootstrap is not proof that the event stream is live.
+HTTP 429 and 5xx responses are transient, not malformed protocol;
+retry registration/bootstrap cancellably without changing queued command IDs.
+Successful responses with invalid schemas remain terminal protocol failures.
+The bounded in-memory HTTP evidence ring records only fixed operation names,
+status codes and classifications, never URLs, credentials or response bodies.
+Native bridge failures emit those records under the TokitoHttp log tag.
+HTTP success is not evidence of a local chat enqueue: chat history, run reads,
+validation and SQLite acknowledgement are separate boundaries. Fixed native
+`TokitoChatBoundary` operation/result labels and the bounded evidence ring
+distinguish these stages without logging exception text or user content.
+**Why:** successful history reads can precede a failed local Send; treating their
+200 statuses as proof of message transmission hides the actual failing layer.
+Chat send errors and recovery actions remain adjacent to the composer, outside
+history scrolling. Send eligibility includes exact session, sheet, queue and
+in-flight state; unavailable actions cannot appear as unexplained no-ops.
+Device registration and a consistent bootstrap must succeed before the outbox
+or SSE worker starts. Network/service outages retry cancellably, keeping queued
+commands intact; protocol/authentication failures stop instead of inventing a
+successful connection. Cached account restore is specified in `auth-contract.md`.
+
+**How to apply:** scope native callbacks to their subscription, reject older
+resource revisions, guard late HTTP responses after navigation, and preserve
+the published snapshot's provenance. Never approximate schematic symbols with
+generic boxes to make an unavailable preview appear successful.
+
+The current schematic viewer uses the revision-bound canonical preview endpoint,
+not legacy published artifacts or getProject success. Rust verifies project,
+design, sheet, revision and SHA-256 before passing SVG to the inert image viewer.
+The UI chooses actual synchronized sheets, rejects late responses after navigation,
+and labels a retained older drawing stale while requesting the new revision.
+
+Verified previews persist in a bounded SQLite cache (16 drawings, 32 MiB),
+scoped to the server-verified account and API origin, project, design, sheet and
+exact revision. Reopening requires an unexpired verified identity binding and
+revalidates the SVG digest; an authorization rejection revokes that binding.
+The canonical source digest is immutable for a cached revision. Authenticated
+responses may replace derived SVG bytes with a validated renderer update only
+when that source digest is unchanged; renderer upgrades are not document edits.
+Cached content is labelled saved, never presented as proof of a live connection.
+Revision updates replace the inert image while preserving normalized pan/zoom;
+changing design or sheet resets the viewport. An unavailable BOM is not an empty
+BOM: show unknown state until canonical or successful published data is present.
+
+**Why:** actual optimized-device general-electronics evaluation produced repeated
+factual contradictions. Runtime availability and valid output formatting cannot
+authorize unverified technical advice.
 
 Voice barge-in detection starts with audio playback, not TTS generation. Cancelling
 generation intentionally completes as interrupted speech rather than a synthesis
@@ -46,6 +254,17 @@ low-rate lifecycle state, typed observations, and failures. Frames, audio,
 tensors, and high-rate tracking stay native.
 
 Physical sessions are locally authoritative in `PhysicalSessionStore`.
+The Expo session-start input uses a nullable `Map<String, Any?>`, decoded by
+`PhysicalSessionInput` before allocating a session. Preserve absent/null fields,
+opaque identifier bytes and canonical parent constraints; reject unknown keys,
+non-string values, controls and values over 1024 UTF-8 bytes.
+**Why:** immutable annotated Expo Record properties fell back to reflection in
+the optimized APK and rejected conversion before opening the bench. That
+reflection path dereferences `javaField!!`; Record
+class keep rules alone do not supply missing Kotlin introspection metadata.
+The device gate exercises real ReadableNativeMap/Expo conversion, not only the
+decoder; keep production R8 enabled.
+
 Stable session, observation, and evidence IDs plus optimistic session revisions
 are persisted before the native bench opens. A record enters Cloud sync only
 after explicit per-record authorization. The Expo control plane merges complete
@@ -64,4 +283,19 @@ the `tokito-physical` Expo module, and verify the combined APK in CI. The
 minimum Android SDK is 27. LiteRT is pinned to 1.4.1 because Expo 57's Pika
 compiler supports Kotlin 2.1.x while LiteRT 2.2 metadata requires Kotlin 2.3;
 do not upgrade either side independently without building the unified APK.
+
+Android generated resources must pass the final application release lint gate,
+not only the native-library gate. The Physical integration plugin qualifies
+Android 13's splash behavior in `values-v33` after Expo finishes generating its
+styles, preserving the full splash theme. Camera hardware is optional at the
+manifest level; Cloud project review must remain installable without a camera.
+**How to apply:** maintain these transformations in the Expo source plugin,
+never patch only ignored generated Android files or suppress API-level errors.
+
+Chat Send diagnostics use fixed stage/status/category vocabulary only. Native
+HTTP success does not prove JS receipt validation, durable queue projection, or
+watch startup succeeded. Preserve the separate native/receipt/queued/watch
+boundaries; never log prompt text, credentials, project/run identity, raw JSON,
+or exception messages. These diagnostics do not turn queueing into server
+acceptance or claim end-to-end success before actual UI QA.
 

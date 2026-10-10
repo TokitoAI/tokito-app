@@ -5,6 +5,14 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod conversations;
+mod identity;
+mod preview;
+pub use identity::ResolvedIdentity;
+mod reviews;
+pub use conversations::{ConversationListener, ConversationSession, RunSubscription};
+pub use reviews::ReviewSession;
+
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
@@ -18,6 +26,12 @@ use tokito_companion_core::{
 };
 
 uniffi::setup_scaffolding!();
+
+/// Bounded status/classification only; never credentials or response bodies.
+#[uniffi::export]
+pub fn drain_http_diagnostics() -> String {
+    tokito_companion_core::http_diagnostics::drain()
+}
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
@@ -45,15 +59,15 @@ pub struct Account {
     pub plan: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct BomLine {
     pub r#ref: String,
     pub value: String,
     pub footprint: String,
-    pub qty: i64,
+    pub qty: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct DesignSummary {
     pub id: String,
     pub name: String,
@@ -75,9 +89,10 @@ pub struct ProjectListItem {
     pub name: String,
     pub slug: String,
     pub updated_at: String,
+    pub last_activity_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct ProjectDetail {
     pub id: String,
     pub name: String,
@@ -190,17 +205,14 @@ impl SyncSubscription {
         validate_resource_scope(&resource, design_id.as_deref())?;
         let payload =
             serde_json::from_str(&payload_json).map_err(|_| CompanionError::Unexpected)?;
-        let base_version =
-            self.store
-                .next_base_version(&project_id, design_id.as_deref(), &resource)?;
         let command_id = uuid::Uuid::new_v4().to_string();
-        self.store.enqueue(&SyncCommand {
+        self.store.enqueue_next(&SyncCommand {
             device_id: self.device_id.clone(),
             command_id: command_id.clone(),
             project_id,
             design_id,
             resource,
-            base_version,
+            base_version: 0,
             payload,
         })?;
         let _ = self.wake_outbox.send(());
@@ -275,6 +287,7 @@ fn map_project_list(p: tokito_companion_core::ProjectListItem) -> ProjectListIte
         name: p.name,
         slug: p.slug,
         updated_at: p.updated_at,
+        last_activity_at: p.last_activity_at,
     }
 }
 
@@ -461,16 +474,28 @@ impl CompanionClient {
         if state_path.trim().is_empty() || device_id.trim().is_empty() {
             return Err(CompanionError::Unexpected);
         }
+        let base_url = tokito_companion_core::conversations::origin(&self.base_url)?;
+        let verified = identity::identity_store(&state_path)?;
+        let account = runtime()
+            .block_on(verified.resolve(&base_url, &token))?
+            .account;
+        // Never reopen an unbound legacy outbox under a different account.
+        // Project-filtered journals need independent cursors as well.
+        use sha2::{Digest, Sha256};
+        let owner = format!(
+            "{base_url}|{}|{}",
+            account.email.to_lowercase(),
+            project_id.as_deref().unwrap_or("workspace")
+        );
+        let key = format!("{:x}", Sha256::digest(owner.as_bytes()));
+        let state_path = Path::new(&state_path).with_file_name(format!("sync-{key}.sqlite3"));
         listener.on_status("connecting".into());
-        let store = Arc::new(SyncStateStore::open(Path::new(&state_path))?);
-        let bootstrap = runtime().block_on(async {
-            register_device(&self.base_url, &token, &device_id, &device_label, &platform).await?;
-            bootstrap_realtime(&self.base_url, &token, project_id.as_deref()).await
-        })?;
-        store.apply_bootstrap(&bootstrap, project_id.as_deref())?;
+        let store = Arc::new(SyncStateStore::open(&state_path)?);
+        let cached = store.resources(project_id.as_deref())?;
         let resources_json =
-            serde_json::to_string(&bootstrap.resources).map_err(|_| CompanionError::Unexpected)?;
-        listener.on_bootstrap(bootstrap.cursor, resources_json);
+            serde_json::to_string(&cached).map_err(|_| CompanionError::Unexpected)?;
+        listener.on_bootstrap(store.cursor()?, resources_json);
+        replay_sync_conflicts(&store, listener.as_ref())?;
 
         let (stop_tx, stop_rx) = watch::channel(false);
         let (wake_tx, wake_rx) = mpsc::unbounded_channel();
@@ -478,15 +503,15 @@ impl CompanionClient {
             stop: stop_tx.clone(),
             wake_outbox: wake_tx,
             store: Arc::clone(&store),
-            device_id,
+            device_id: device_id.clone(),
         });
 
-        let base_url = self.base_url.clone();
         runtime().spawn(run_sync_session(
             base_url,
             token,
+            state_path.to_string_lossy().into_owned(),
             project_id,
-            bootstrap.cursor,
+            (device_id, device_label, platform),
             store,
             listener,
             stop_tx,
@@ -497,18 +522,86 @@ impl CompanionClient {
     }
 }
 
+fn admit_sync_bootstrap(
+    store: &SyncStateStore,
+    snapshot: &tokito_companion_core::SyncBootstrap,
+    project_id: Option<&str>,
+    listener: &dyn SyncListener,
+) -> Result<(), CloudError> {
+    let admitted = store.apply_bootstrap(snapshot, project_id)?;
+    // Admission preserves prior committed activity missing from older servers.
+    // Send that exact durable projection, not the unmerged HTTP snapshot.
+    let json = serde_json::to_string(&admitted.resources).map_err(|_| CloudError::Unexpected)?;
+    listener.on_bootstrap(admitted.cursor, json);
+    Ok(())
+}
+
+fn replay_sync_conflicts(
+    store: &SyncStateStore,
+    listener: &dyn SyncListener,
+) -> Result<(), CloudError> {
+    for conflict in store.conflicts()? {
+        let command_json =
+            serde_json::to_string(&conflict.command).map_err(|_| CloudError::Unexpected)?;
+        listener.on_conflict(
+            command_json,
+            conflict.current_version,
+            conflict.current_payload_json,
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_sync_session(
     base_url: String,
     token: String,
+    identity_path: String,
     project_id: Option<String>,
-    cursor: u64,
+    device: (String, String, String),
     store: Arc<SyncStateStore>,
     listener: Arc<dyn SyncListener>,
     stop_tx: watch::Sender<bool>,
-    stop_rx: watch::Receiver<bool>,
+    mut stop_rx: watch::Receiver<bool>,
     wake_rx: mpsc::UnboundedReceiver<()>,
 ) {
+    // Reconnection must finish registration and a consistent bootstrap before
+    // any queued writes or SSE replay. Cached reads remain available meanwhile.
+    let cursor = loop {
+        if *stop_rx.borrow() {
+            return;
+        }
+        let connect = async {
+            register_device(&base_url, &token, &device.0, &device.1, &device.2).await?;
+            let snapshot = bootstrap_realtime(&base_url, &token, project_id.as_deref()).await?;
+            admit_sync_bootstrap(&store, &snapshot, project_id.as_deref(), listener.as_ref())?;
+            Ok::<u64, CloudError>(snapshot.cursor)
+        };
+        let result = tokio::select! {
+            result = connect => result,
+            _ = stop_rx.changed() => return,
+        };
+        match result {
+            Ok(cursor) => break cursor,
+            Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::RateLimited) => {
+                listener.on_status("reconnecting".into())
+            }
+            Err(error) => {
+                if matches!(error, CloudError::Unauthorized) {
+                    let _ = identity::identity_store(&identity_path)
+                        .and_then(|store| store.revoke(&base_url, &token).map_err(Into::into));
+                }
+                let _ = stop_tx.send(true);
+                listener.on_error(error.to_string());
+                listener.on_status("stopped".into());
+                return;
+            }
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {},
+            _ = stop_rx.changed() => return,
+        }
+    };
     let stream_store = Arc::clone(&store);
     let stream_listener = Arc::clone(&listener);
     let status_listener = Arc::clone(&listener);
@@ -544,6 +637,10 @@ async fn run_sync_session(
     };
     let _ = stop_tx.send(true);
     if let Err(error) = result {
+        if matches!(error, CloudError::Unauthorized) {
+            let _ = identity::identity_store(&identity_path)
+                .and_then(|store| store.revoke(&base_url, &token).map_err(Into::into));
+        }
         listener.on_error(error.to_string());
     }
     listener.on_status("stopped".into());
@@ -561,6 +658,14 @@ async fn run_outbox(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         for command in store.pending()? {
+            if *stop.borrow() {
+                return Ok(());
+            }
+            // SSE acknowledgements and conflicts may invalidate this batch
+            // while the preceding command was in flight.
+            if !store.is_pending(&command.command_id)? {
+                continue;
+            }
             match submit_sync_command(base_url, token, &command).await {
                 Ok(event) => store.apply_ack(&event)?,
                 Err(CloudError::Conflict {
@@ -571,9 +676,15 @@ async fn run_outbox(
                     let command_json =
                         serde_json::to_string(&command).map_err(|_| CloudError::Unexpected)?;
                     listener.on_conflict(command_json, current_version, current_payload);
+                    break;
                 }
                 Err(CloudError::Unauthorized) => return Err(CloudError::Unauthorized),
-                Err(CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected) => {
+                Err(
+                    CloudError::Network(_)
+                    | CloudError::Unavailable
+                    | CloudError::RateLimited
+                    | CloudError::Unexpected,
+                ) => {
                     break;
                 }
                 Err(error) => return Err(error),
@@ -605,6 +716,269 @@ mod tests {
     use super::*;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[derive(Debug, Default)]
+    struct RecoveryListener(std::sync::Mutex<Vec<(String, u64, String)>>);
+
+    impl SyncListener for RecoveryListener {
+        fn on_status(&self, _: String) {}
+        fn on_bootstrap(&self, _: u64, _: String) {}
+        fn on_event(&self, _: String) {}
+        fn on_conflict(&self, command: String, version: u64, payload: String) {
+            self.0.lock().unwrap().push((command, version, payload));
+        }
+        fn on_error(&self, _: String) {}
+    }
+
+    #[derive(Debug, Default)]
+    struct BootstrapListener(std::sync::Mutex<Vec<(u64, String)>>);
+
+    impl SyncListener for BootstrapListener {
+        fn on_status(&self, _: String) {}
+        fn on_bootstrap(&self, cursor: u64, json: String) {
+            self.0.lock().unwrap().push((cursor, json));
+        }
+        fn on_event(&self, _: String) {}
+        fn on_conflict(&self, _: String, _: u64, _: String) {}
+        fn on_error(&self, _: String) {}
+    }
+
+    #[test]
+    fn bootstrap_listener_receives_admitted_activity_and_scoped_authoritative_content() {
+        use tokito_companion_core::{SyncBootstrap, SyncEvent, SyncResource};
+        let store = SyncStateStore::open(Path::new(":memory:")).unwrap();
+        store
+            .apply_event(&SyncEvent {
+                seq: 1,
+                command_id: "chat".into(),
+                actor_device_id: "desktop".into(),
+                project_id: "p".into(),
+                design_id: Some("d".into()),
+                resource: "chat".into(),
+                version: 1,
+                payload: serde_json::json!({"messages": ["saved"]}),
+                created_at: 100,
+            })
+            .unwrap();
+        let unrelated = SyncResource {
+            project_id: "other".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 1,
+            payload: serde_json::json!({"name":"Untouched"}),
+            last_activity_at: Some(200),
+        };
+        let chat = store.resources(Some("p")).unwrap().remove(0);
+        store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 1,
+                    resources: vec![chat.clone(), unrelated.clone()],
+                },
+                None,
+            )
+            .unwrap();
+        let tombstone = SyncResource {
+            project_id: "p".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 2,
+            payload: serde_json::json!({"deleted":true}),
+            last_activity_at: None,
+        };
+        let listener = BootstrapListener::default();
+        for activity in [None, Some(90)] {
+            let incoming = SyncResource {
+                last_activity_at: activity,
+                ..chat.clone()
+            };
+            let snapshot = SyncBootstrap {
+                cursor: 1,
+                resources: vec![incoming.clone(), tombstone.clone()],
+            };
+            admit_sync_bootstrap(&store, &snapshot, Some("p"), &listener).unwrap();
+            let events = listener.0.lock().unwrap();
+            let (cursor, json) = events.last().unwrap();
+            let emitted: Vec<SyncResource> = serde_json::from_str(json).unwrap();
+            assert_eq!(*cursor, 1);
+            assert_eq!(store.cursor().unwrap(), 1);
+            assert_eq!(emitted.len(), 2);
+            let emitted_chat = emitted
+                .iter()
+                .find(|resource| resource.resource == "chat")
+                .unwrap();
+            assert_eq!(emitted_chat.last_activity_at, Some(100));
+            assert_eq!(emitted_chat.payload, incoming.payload);
+            assert_eq!(emitted_chat.version, incoming.version);
+            assert!(emitted.contains(&tombstone));
+            assert_eq!(
+                store.resources(Some("other")).unwrap(),
+                vec![unrelated.clone()]
+            );
+            assert_eq!(snapshot.resources[0].last_activity_at, activity);
+        }
+        let count = listener.0.lock().unwrap().len();
+        assert!(admit_sync_bootstrap(
+            &store,
+            &SyncBootstrap {
+                cursor: 0,
+                resources: vec![]
+            },
+            None,
+            &listener
+        )
+        .is_err());
+        assert_eq!(listener.0.lock().unwrap().len(), count);
+        assert_eq!(store.cursor().unwrap(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn offline_sync_does_not_transmit_outbox_before_registration_and_is_cancellable() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let store = Arc::new(SyncStateStore::open(Path::new(":memory:")).unwrap());
+        store
+            .enqueue_next(&SyncCommand {
+                device_id: "device".into(),
+                command_id: "pending".into(),
+                project_id: "project".into(),
+                design_id: Some("design".into()),
+                resource: "chat".into(),
+                base_version: 0,
+                payload: serde_json::json!({"text":"keep me"}),
+            })
+            .unwrap();
+        let (stop, receiver) = watch::channel(false);
+        let (_wake, wake_rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(run_sync_session(
+            server.uri(),
+            "token".into(),
+            String::new(),
+            None,
+            ("device".into(), "Test".into(), "android".into()),
+            store.clone(),
+            Arc::new(RecoveryListener::default()),
+            stop.clone(),
+            receiver,
+            wake_rx,
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if !server.received_requests().await.unwrap().is_empty() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.pending().unwrap().len(), 1);
+        assert!(server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|request| request.url.path().ends_with("/devices")));
+    }
+
+    #[test]
+    fn startup_replays_persisted_conflicts_to_the_ui() {
+        let path = std::env::temp_dir().join(format!(
+            "tokito-sync-replay-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            store
+                .enqueue_next(&SyncCommand {
+                    device_id: "device".into(),
+                    command_id: "edit".into(),
+                    project_id: "project".into(),
+                    design_id: Some("design".into()),
+                    resource: "chat".into(),
+                    base_version: 0,
+                    payload: serde_json::json!({}),
+                })
+                .unwrap();
+            store.mark_conflict("edit", 8, "{\"remote\":true}").unwrap();
+        }
+        {
+            let store = SyncStateStore::open(&path).unwrap();
+            let listener = RecoveryListener::default();
+            replay_sync_conflicts(&store, &listener).unwrap();
+            let events = listener.0.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            let command: SyncCommand = serde_json::from_str(&events[0].0).unwrap();
+            assert_eq!(command.command_id, "edit");
+            assert_eq!(events[0].1, 8);
+            assert_eq!(events[0].2, "{\"remote\":true}");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn sync_authorization_rejection_revokes_offline_identity() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/auth/me"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"email":"qa@example.test","plan":"free"})),
+            )
+            .mount(&server)
+            .await;
+        let dir = std::env::temp_dir().join(format!("identity-sync-{}", uuid::Uuid::new_v4()));
+        let state_path = dir.join("sync.sqlite3").to_string_lossy().into_owned();
+        let token = "header.eyJleHAiOjQxMDI0NDQ4MDB9.signature";
+        let identities = identity::identity_store(&state_path).unwrap();
+        assert!(
+            identities
+                .resolve(&server.uri(), token)
+                .await
+                .unwrap()
+                .online
+        );
+        assert!(identities
+            .cached_account(&server.uri(), token)
+            .unwrap()
+            .is_some());
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        let store = Arc::new(SyncStateStore::open(Path::new(":memory:")).unwrap());
+        let (stop, receiver) = watch::channel(false);
+        let (_wake, wake_rx) = mpsc::unbounded_channel();
+        run_sync_session(
+            server.uri(),
+            token.into(),
+            state_path,
+            None,
+            ("device".into(), "Test".into(), "android".into()),
+            store,
+            Arc::new(RecoveryListener::default()),
+            stop.clone(),
+            receiver,
+            wake_rx,
+        )
+        .await;
+        assert!(*stop.borrow());
+        assert!(identities
+            .cached_account(&server.uri(), token)
+            .unwrap()
+            .is_none());
+        drop(identities);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn blocking_otp_verify_round_trip() {

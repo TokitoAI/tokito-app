@@ -52,6 +52,9 @@ Natural-language confidence is never a substitute for a typed result.
     cloud inference, cloud speech, or remote reasoning service.
 12. Local generative-model output cannot bypass typed tools, deterministic
     measurement parsing, confidence gates, or evidence requirements.
+13. Production local technical advice requires admitted source evidence. An
+    unmatched question abstains, including explicit general educational intent;
+    changing the wording cannot authorize an unverified model answer.
 
 ## 3. Runtime boundary
 
@@ -284,6 +287,11 @@ shipping hot path uses Android-native orchestration and native inference. See
 - Interactive requests outrank background verification but cannot starve
   lifecycle/cleanup work.
 - Deadlines propagate to capture, preprocessing, inference, and postprocessing.
+- Model initialization has a bounded caller deadline. Blocking vendor creation
+  may finish later, but cancelled/closed ownership cannot admit its result;
+  late models are disposed off the UI thread. Another initialization cannot
+  accumulate behind a still-finishing native load. Cancellation must propagate
+  through host preparation rather than become apparent readiness.
 - Thermal degradation reduces capture/inference frequency or capability and is
   emitted as a state change; it never silently changes accuracy thresholds.
 - Out-of-memory risk causes preflight rejection or controlled degradation, not

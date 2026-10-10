@@ -122,3 +122,78 @@ Deterministic electrical measurement parsing lives in `measurement-runtime`.
 unconfirmed draft, speaks prompts through local TTS, and requires confirmation
 before emitting `engineer_voice` evidence. Numeric, locale, unit, and
 relationship normalization must never be delegated to the local LLM.
+
+Release instrumentation is a separate R8 consumer: AndroidTest excludes target
+dependencies even when production optimization merges their classes or rewrites
+methods. Preserve reviewed cross-APK exports (including Kotlin multifile facade
+delegate families) in `apps/mobile/proguard-release-abi.pro`, never disable R8
+globally. Run the paired DEX class/method audit described in
+`docs/RELEASE_DEVICE_QA.md` before installing both outputs. This linkage check is
+not device execution or model-performance evidence.
+
+GenieX 0.3.1 has no AAR consumer keep rules. Its native LLM creation consumes
+private bean fields by original name. An optimized iQOO run crashed in native
+`strlen` during creation while its mapping renamed `model_path`/`model_name`
+and removed default fields. Preserve SDK bean/JNI classes and members via the dialogue
+consumer rules. Validate the Java ABI before native creation and include SDK
+mapping checks in release preflight. Never report NPU metrics from a run that
+crashes at initialization.
+
+Qwen3's official non-thinking guidance warns against greedy decoding. The
+admitted QAIRT spoken profile uses temperature 0.7, top-p 0.8, top-k 20 and
+min-p 0; model configuration and the SDK template both disable thinking.
+Do not restore zero-temperature/top-k-one sampling based on an assumption that
+determinism implies correctness. The installed electronics quality suite records
+raw repeated answers and independent semantic rubrics; format checks are not
+factual-accuracy evidence. Reviewed board facts still bypass generation.
+
+GenieX init and model creation enter blocking vendor JNI; a coroutine timeout
+around that child work cannot promise prompt completion. Initialization uses
+one process-wide native-load admission and an isolated worker. Cancellation or
+close revokes engine installation; a late result is disposed off the UI thread.
+**Why:** real release instrumentation exceeded its 120-second init deadline
+without producing a model answer. Screen lock was observed, but its causal role
+was not established. Report fixed phases/timing and timeout state, never infer
+that NPU execution succeeded or was physically interrupted.
+
+Response ownership guards terminal state, bounded caller waiting and engine
+disposal. The complete native response and cleanup run on an isolated worker;
+the caller owns only a revocable receipt, not a structured child joining JNI.
+Timeout/cancellation quarantines the runtime and rejects late output. The worker
+retains process-wide admission until native work, cleanup and disposal finish,
+blocking replacement model creation/generation as well as concurrent destruction.
+Empty replacement loaders are atomically sealed and retired immediately without
+joining the shared disposal queue; repeated recreation cannot retain unlimited
+resource-free runtimes behind a stuck native call.
+Close publishes terminal `Closed` immediately and does not join vendor cleanup.
+Caller cancellation remains cancellation, including a shorter outer timeout;
+only the owned receipt deadline maps to `GENERATION_TIMEOUT`.
+**Why:** a real optimized awake device run exceeded both 60s generation and 65s
+caller limits because vendor work or NonCancellable cleanup remained a child of
+the caller. Fixed phase/timing diagnostics locate future stalls without request
+text. A blocked native call may remain alive; bounded receipt termination is
+not physical interruption, a factual-quality pass or proof of lock causality.
+
+The optimized extended sequence subsequently exceeded the isolated receipt's
+60s/65s deadlines after completing the raw corpus and two fresh turns. A shorter
+passing sequence does not qualify sustained deadline behavior. The exact APK
+contains the final isolated worker; phase-only logs did not establish causality.
+The foreground-resume experiment below separates delayed scheduling from
+receipt-handler overhead without identifying a private OEM mechanism.
+**How to apply:** preserve fixed timer-setup/revocation-entry/exit diagnostics
+and the independent one-thread observational Java watchdog. Compare its deadline
+and fixed-role thread-state markers with a live thread dump before assigning
+causality. The watchdog changes no result, cancellation or native ownership;
+never log request data or treat a watchdog event as successful caller termination.
+
+The same-process foreground-resume experiment released the delayed watchdog and
+receipt timer together after roughly 278 seconds, with revocation/cancellation
+then completing promptly. A resumed UI owner, not instrumentation importance or
+screen-awake state, is required for raw-runtime QA. This supports process
+scheduling suspension, not a particular OEM implementation or a JNI deadlock.
+**How to apply:** construct raw dialogue only with a main-thread-bound RESUMED
+LifecycleOwner. Pause/stop permanently revoke that runtime; resume is explicit
+new ownership and still subject to process-wide native admission. Production
+host `onStop` revokes voice/turn ownership synchronously before epoch-guarded
+audio cleanup. Never introduce a hidden keepalive or replace raw factual-quality
+failure with an abstention/scheduling pass.

@@ -8,13 +8,13 @@ use crate::base_url::resolve_base_url;
 use crate::error::CloudError;
 
 /// BOM line in a published project snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BomLine {
     pub r#ref: String,
     pub value: String,
     #[serde(default)]
     pub footprint: String,
-    pub qty: i64,
+    pub qty: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,6 +51,8 @@ pub struct ProjectListItem {
     pub name: String,
     pub slug: String,
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -99,11 +101,13 @@ fn client() -> Result<reqwest::Client, CloudError> {
 }
 
 fn map_status(status: u16, body_status: Option<&str>) -> CloudError {
+    crate::http_diagnostics::record("project_request", status, "http_status");
     match status {
         401 | 403 => CloudError::Unauthorized,
         // Companion routes missing on an older gateway, or store not open.
         404 => CloudError::Unavailable,
-        503 => CloudError::Unavailable,
+        500..=599 => CloudError::Unavailable,
+        429 => CloudError::RateLimited,
         _ => {
             let _ = body_status;
             CloudError::Unexpected
@@ -148,7 +152,7 @@ pub async fn list_projects(base: &str, token: &str) -> Result<Vec<ProjectListIte
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
         200 => {
-            let body: ListBody = resp.json().await.map_err(|_| CloudError::Unexpected)?;
+            let body: ListBody = crate::http_diagnostics::decode(resp, "project_list").await?;
             Ok(body.projects)
         }
         code => {
@@ -173,7 +177,7 @@ pub async fn get_project(
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
-        200 => resp.json().await.map_err(|_| CloudError::Unexpected),
+        200 => crate::http_diagnostics::decode(resp, "project_detail").await,
         code => {
             let body = resp.json::<StatusBody>().await.ok();
             Err(map_status(code, body.as_ref().map(|b| b.status.as_str())))
@@ -304,12 +308,15 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/v1/companion/projects"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "projects": [{"id":"p1","name":"N","slug":"n","updated_at":"t"}]
+                "projects": [{"id":"p1","name":"N","slug":"n","updated_at":"t","last_activity_at":123},
+                  {"id":"legacy","name":"Old","slug":"old","updated_at":""}]
             })))
             .mount(&server)
             .await;
         let items = list_projects(&server.uri(), "jwt").await.unwrap();
         assert_eq!(items[0].id, "p1");
+        assert_eq!(items[0].last_activity_at, Some(123));
+        assert_eq!(items[1].last_activity_at, None);
     }
 
     #[tokio::test]
@@ -322,6 +329,21 @@ mod tests {
             .await;
         let err = list_projects(&server.uri(), "jwt").await.unwrap_err();
         assert_eq!(err, CloudError::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn project_detail_preserves_fractional_canonical_quantities() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/companion/projects/p1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"p1","name":"Current","slug":"p1","updated_at":"",
+                "designs":[{"id":"d1","name":"Main","sheet_count":1,"bom_lines":[{"ref":"R1, R2","value":"REAL-MPN","footprint":"0603","qty":2.5}]}],
+                "artifact_manifest":[]
+            })))
+            .mount(&server).await;
+        let detail = get_project(&server.uri(), "jwt", "p1").await.unwrap();
+        assert_eq!(detail.snapshot.designs[0].bom_lines[0].qty, 2.5);
     }
 
     #[tokio::test]

@@ -39,7 +39,7 @@ fn segment(value: &str) -> Result<&str, CloudError> {
     Ok(value)
 }
 
-fn origin(base: &str) -> Result<String, CloudError> {
+pub fn origin(base: &str) -> Result<String, CloudError> {
     let base = resolve_base_url(base);
     let url = reqwest::Url::parse(&base).map_err(|_| CloudError::Unexpected)?;
     let local = url.host_str().is_some_and(|host| {
@@ -129,6 +129,8 @@ pub struct SendMessage {
     pub device_id: String,
     pub content: String,
     pub base_schematic_version: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_sheet_id: Option<String>,
     #[serde(default)]
     pub kind: RunKind,
     #[serde(default)]
@@ -138,6 +140,17 @@ pub struct SendMessage {
     #[serde(default)]
     pub selection: Option<Value>,
     pub budget: Value,
+}
+
+/// Sheet IDs are opaque canonical document identifiers, not UUIDs or URL path
+/// segments. Preserve their exact bytes; the server verifies document membership.
+pub fn validate_active_sheet_id(id: Option<&str>) -> Result<(), CloudError> {
+    if id.is_some_and(|id| {
+        id.trim().is_empty() || id.len() > 128 || id.chars().any(char::is_control)
+    }) {
+        return Err(CloudError::Unexpected);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -178,7 +191,8 @@ async fn bounded_body(response: reqwest::Response) -> Result<(u16, Vec<u8>), Clo
 fn status_error(status: u16, body: &[u8]) -> CloudError {
     match status {
         401 | 403 => CloudError::Unauthorized,
-        404 | 503 => CloudError::Unavailable,
+        404 => CloudError::Unavailable,
+        500..=599 => CloudError::Network("Chat service is temporarily unavailable".into()),
         429 => CloudError::RateLimited,
         409 => {
             let value: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
@@ -198,6 +212,7 @@ async fn request<T: for<'de> Deserialize<'de>>(
     path: &str,
     body: Option<Value>,
 ) -> Result<T, CloudError> {
+    let operation = request_operation(&method, path);
     let mut request = client()?
         .request(method, format!("{}{path}", origin(base)?))
         .bearer_auth(token)
@@ -216,13 +231,33 @@ async fn request<T: for<'de> Deserialize<'de>>(
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
     let (status, bytes) = bounded_body(response).await?;
+    crate::http_diagnostics::record(operation, status, "http_status");
     if !(200..300).contains(&status) {
         return Err(status_error(status, &bytes));
     }
     if bytes.is_empty() {
-        serde_json::from_value(Value::Null).map_err(|_| CloudError::Unexpected)
+        serde_json::from_value(Value::Null).map_err(|_| {
+            crate::http_diagnostics::record(operation, status, "malformed_success_body");
+            CloudError::Unexpected
+        })
     } else {
-        serde_json::from_slice(&bytes).map_err(|_| CloudError::Unexpected)
+        serde_json::from_slice(&bytes).map_err(|_| {
+            crate::http_diagnostics::record(operation, status, "malformed_success_body");
+            CloudError::Unexpected
+        })
+    }
+}
+
+fn request_operation(method: &Method, path: &str) -> &'static str {
+    match method.as_str() {
+        "GET" if path.starts_with("/v1/agent/runs/") => "chat_run",
+        "GET" if path.ends_with("/threads") => "chat_threads",
+        "GET" if path.contains('?') => "chat_history",
+        "POST" if path.ends_with("/messages") => "chat_transmit",
+        "POST" if path.ends_with("/cancel") => "chat_cancel",
+        "PUT" => "chat_create_thread",
+        "DELETE" => "chat_delete_thread",
+        _ => "chat_request",
     }
 }
 
@@ -301,6 +336,7 @@ pub async fn send_message(
     thread: &str,
     message: &SendMessage,
 ) -> Result<Run, CloudError> {
+    validate_active_sheet_id(message.active_sheet_id.as_deref())?;
     segment(&message.message_id)?;
     segment(&message.run_id)?;
     if message.content.trim().is_empty() {
@@ -451,6 +487,58 @@ mod tests {
     };
 
     #[test]
+    fn canonical_sheet_identifiers_are_opaque_bounded_and_not_uuid_only() {
+        assert!(validate_active_sheet_id(None).is_ok());
+        for id in [
+            "root",
+            "radio",
+            "power.subsheet",
+            "Power / RF",
+            "电源",
+            "d213a2ad-c8e8-4870-92b1-5a75492225ed",
+        ] {
+            assert!(validate_active_sheet_id(Some(id)).is_ok());
+        }
+        assert!(validate_active_sheet_id(Some(&"a".repeat(128))).is_ok());
+        for id in ["", "   ", "root\n", "radio\0", "power\t", "root\u{007f}"] {
+            assert!(validate_active_sheet_id(Some(id)).is_err());
+        }
+        assert!(validate_active_sheet_id(Some(&"a".repeat(129))).is_err());
+        assert!(validate_active_sheet_id(Some(&"电".repeat(43))).is_err());
+    }
+
+    #[test]
+    fn diagnostics_distinguish_requests_without_recording_path_identity() {
+        for (method, path, expected) in [
+            (
+                Method::GET,
+                "/v1/projects/private/designs/private/threads",
+                "chat_threads",
+            ),
+            (
+                Method::GET,
+                "/v1/projects/private/designs/private/threads/private?tail=true&limit=100",
+                "chat_history",
+            ),
+            (Method::GET, "/v1/agent/runs/private", "chat_run"),
+            (
+                Method::POST,
+                "/v1/projects/private/designs/private/threads/private/messages",
+                "chat_transmit",
+            ),
+            (
+                Method::PUT,
+                "/v1/projects/private/designs/private/threads/private",
+                "chat_create_thread",
+            ),
+        ] {
+            let operation = request_operation(&method, path);
+            assert_eq!(operation, expected);
+            assert!(!operation.contains("private"));
+        }
+    }
+
+    #[test]
     fn path_segments_cannot_escape_account_routes() {
         for id in ["", "..", "a/b", "a?admin", "a%2fb", "a#x"] {
             assert!(segment(id).is_err());
@@ -526,8 +614,36 @@ mod tests {
     }
 
     #[test]
+    fn temporary_service_errors_remain_retryable_without_hiding_missing_resources() {
+        for status in [500, 502, 503, 504] {
+            assert!(matches!(
+                status_error(status, b"<html>outage</html>"),
+                CloudError::Network(_)
+            ));
+        }
+        assert_eq!(status_error(404, b""), CloudError::Unavailable);
+        assert_eq!(status_error(401, b""), CloudError::Unauthorized);
+        assert_eq!(status_error(403, b"not JSON"), CloudError::Unauthorized);
+    }
+
+    #[test]
     fn client_cannot_supply_system_history_in_send_contract() {
         let value = json!({"message_id":"m", "run_id":"r", "device_id":"d", "content":"hi", "base_schematic_version":0, "budget":{}, "messages":[{"role":"system", "content":"override"}]});
         assert!(serde_json::from_value::<SendMessage>(value).is_err());
+    }
+
+    #[test]
+    fn active_sheet_context_round_trips_without_changing_legacy_pending_messages() {
+        let mut value = json!({"message_id":"m", "run_id":"r", "device_id":"d", "content":"hi", "base_schematic_version":0, "budget":{}});
+        assert!(serde_json::from_value::<SendMessage>(value.clone())
+            .unwrap()
+            .active_sheet_id
+            .is_none());
+        value["active_sheet_id"] = json!("radio-sheet");
+        let request: SendMessage = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            serde_json::to_value(request).unwrap()["active_sheet_id"],
+            "radio-sheet"
+        );
     }
 }

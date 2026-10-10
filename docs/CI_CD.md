@@ -21,10 +21,21 @@ not by a mutable tag, and authenticates only long enough to pull it.
    forbidden-JS boundary, typecheck, lint, and tests.
 3. Physical-runtime Python contract tests and Rust tests.
 4. Physical Android unit tests, lint, and debug assembly.
-5. Unified arm64 APK assembly and package-content verification.
+5. Native Cloud bridge release unit tests and lint, final application release
+   lint, unified arm64 APK assembly, and package-content verification.
 
 The unified APK gate depends on the first four. Its standalone unsigned release APK is retained as a
 Buildkite artifact for manual QA.
+
+Release APK QA enables final-application code/resource shrinking and Android's
+optimized R8 defaults through the source Expo integration plugin. This is the
+same optimization mode enforced by publication signing configuration. Native
+libraries remain unshrunk independently and supply consumer keep rules.
+Inspect the actual R8 task and mapping artifacts; a release build name alone
+does not demonstrate that optimization ran. On-device bridge and local-model
+checks are still required after an optimized build succeeds.
+Both APK gates fail if the R8 mapping is absent or empty and retain it as a
+Buildkite artifact for deobfuscating that exact build's crash stack traces.
 
 ## Release flow
 
@@ -47,16 +58,18 @@ The unified app has optional device acceptance instrumentation under
 `apps/mobile/device-tests`. After importing signed bundles in Local models, build
 `:app:assembleRelease :app:assembleReleaseAndroidTest` with
 `-Ptokito.deviceTests=true`, install both APKs, and run
-`adb shell am instrument -w -r -e class dev.tokito.app.LocalModelsDeviceTest
-dev.tokito.app.test/androidx.test.runner.AndroidJUnitRunner`.
+the installed runner using the explicit packaged baseline method selection in
+`docs/RELEASE_DEVICE_QA.md`.
 This runs model resolution, multiple actual NPU generations, and speech playback
 inside `dev.tokito.app`. Model files stay in that app's private storage; the
 instrumentation APK has no production launcher. Local candidate models may
 also require `-Ptokito.models.allowEvaluation=true` as documented by the voice
 runtime. Do not set that property in publication builds.
 
-Keep the device awake and unlocked during instrumentation. Tests foreground the
-launcher; an OEM may suspend background NPU work while locked. Restore any temporary
-USB stay-awake setting afterward. Inspect the instrumentation summary, not only the
+Keep the device unlocked with the actual target Activity RESUMED during instrumentation.
+Raw runtime tests bind to that owner; losing foreground closes/cancels the runtime.
+An awake display or instrumentation importance does not prevent process suspension.
+Do not add hidden keepalives or override OEM power policy to claim a deadline pass.
+Inspect the instrumentation summary, not only the
 ADB exit code: ADB can exit zero when tests failed. These checks do not certify
 held-out physical-board recognition or authorize candidate-model redistribution.

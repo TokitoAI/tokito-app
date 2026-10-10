@@ -3,7 +3,58 @@ const {
   withProjectBuildGradle,
   withGradleProperties,
   withSettingsGradle,
+  withAndroidManifest,
+  withFinalizedMod,
+  XML,
 } = require("expo/config-plugins");
+const path = require("node:path");
+
+function optionalCamera(manifest) {
+  const features = manifest.manifest["uses-feature"] ??= [];
+  const camera = features.find((feature) => feature.$?.["android:name"] === "android.hardware.camera");
+  if (camera) camera.$["android:required"] = "false";
+  else features.push({ $: { "android:name": "android.hardware.camera", "android:required": "false" } });
+  return manifest;
+}
+
+function splitSplashStyles(base, qualified) {
+  const splash = base.resources.style?.find((style) => style.$?.name === "Theme.App.SplashScreen");
+  if (!splash) throw new Error("Tokito requires Expo's generated splash theme");
+  const api33Name = "android:windowSplashScreenBehavior";
+  const previous = qualified.resources.style?.find((style) => style.$?.name === splash.$.name);
+  const behavior = splash.item?.find((item) => item.$?.name === api33Name)
+    ?? previous?.item?.find((item) => item.$?.name === api33Name);
+  splash.item = (splash.item ?? []).filter((item) => item.$?.name !== api33Name);
+  qualified.resources.style = (qualified.resources.style ?? []).filter((style) => style.$?.name !== splash.$.name);
+  if (behavior) {
+    // Qualified styles replace, rather than extend, the same-named default style.
+    // Copy every common attribute so the API 33 override keeps the real splash.
+    const override = structuredClone(splash);
+    override.item.push(structuredClone(behavior));
+    qualified.resources.style.push(override);
+    qualified.resources.$ = { ...base.resources.$, ...qualified.resources.$ };
+  }
+  return { base, qualified };
+}
+
+function withCompatibleAndroidResources(config) {
+  config = withAndroidManifest(config, (result) => {
+    result.modResults = optionalCamera(result.modResults);
+    return result;
+  });
+  return withFinalizedMod(config, ["android", async (result) => {
+    if (result.modRequest.introspect) return result;
+    const file = path.join(result.modRequest.platformProjectRoot, "app/src/main/res/values-v33/styles.xml");
+    const baseFile = path.join(result.modRequest.platformProjectRoot, "app/src/main/res/values/styles.xml");
+    const base = await XML.readXMLAsync({ path: baseFile });
+    const qualified = await XML.readXMLAsync({ path: file, fallback: "<resources/>" });
+    qualified.resources ||= {};
+    splitSplashStyles(base, qualified);
+    await XML.writeXMLAsync({ path: baseFile, xml: base });
+    await XML.writeXMLAsync({ path: file, xml: qualified });
+    return result;
+  }]);
+}
 
 const SETTINGS_MARKER = "// tokito-physical: generated integration";
 const DEPENDENCY_MARKER = "// tokito-physical: native shell dependency";
@@ -51,6 +102,22 @@ function withPhysicalDependency(config) {
     if (result.modResults.language !== "groovy") {
       throw new Error("Tokito Physical currently requires a Groovy Android app build.gradle");
     }
+    // The non-optimizing Android default includes -dontoptimize. Final APK
+    // release optimization must use the optimized default, not library R8.
+    result.modResults.contents = result.modResults.contents.replace(
+      /getDefaultProguardFile\((["'])proguard-android\.txt\1\)/g,
+      'getDefaultProguardFile("proguard-android-optimize.txt")',
+    );
+    // Both ordinary releases and device-test targets use the exact same narrow
+    // cross-APK ABI. Never create a differently optimized "test release".
+    if (!result.modResults.contents.includes("../../proguard-release-abi.pro")) {
+      const configured = result.modResults.contents.replace(
+        /(proguardFiles\s+getDefaultProguardFile\(["']proguard-android-optimize\.txt["']\),\s*["']proguard-rules\.pro["'])/g,
+        '$1, "../../proguard-release-abi.pro"',
+      );
+      if (configured === result.modResults.contents) throw new Error("Tokito requires the final release ProGuard configuration before adding its device acceptance ABI");
+      result.modResults.contents = configured;
+    }
     if (!result.modResults.contents.includes(DEPENDENCY_MARKER)) {
       result.modResults.contents = result.modResults.contents.replace(
         /dependencies\s*\{/,
@@ -71,9 +138,23 @@ if (project.findProperty('tokito.deviceTests') == 'true') {
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation project(':dialogue-runtime')
     androidTestImplementation project(':voice-runtime')
+    androidTestImplementation project(':expo-modules-core')
+    androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'
   }
 }
 `;
+    }
+    if (!result.modResults.contents.includes("androidTestImplementation project(':expo-modules-core')")) {
+      result.modResults.contents = result.modResults.contents.replace(
+        "androidTestImplementation project(':voice-runtime')",
+        "androidTestImplementation project(':voice-runtime')\n    androidTestImplementation project(':expo-modules-core')",
+      );
+    }
+    if (!result.modResults.contents.includes("androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'")) {
+      result.modResults.contents = result.modResults.contents.replace(
+        "androidTestImplementation project(':expo-modules-core')",
+        "androidTestImplementation project(':expo-modules-core')\n    androidTestImplementation 'io.github.lukmccall.pika:pika-api:0.3.2'",
+      );
     }
     return result;
   });
@@ -107,6 +188,11 @@ allprojects {
 
 function withPhysicalMinSdk(config) {
   return withGradleProperties(config, (result) => {
+    for (const key of ["android.enableMinifyInReleaseBuilds", "android.enableShrinkResourcesInReleaseBuilds"]) {
+      const property = result.modResults.find((item) => item.key === key);
+      if (property) property.value = "true";
+      else result.modResults.push({ type: "property", key, value: "true" });
+    }
     // GenieX loads plugins by filesystem path from nativeLibraryDir.
     const packaging = result.modResults.find((item) => item.key === "expo.useLegacyPackaging");
     if (packaging) packaging.value = "true";
@@ -122,7 +208,9 @@ function withPhysicalMinSdk(config) {
 }
 
 module.exports = function withTokitoPhysical(config) {
-  return withPhysicalMinSdk(
+  return withCompatibleAndroidResources(withPhysicalMinSdk(
     withPhysicalRepository(withPhysicalDependency(withPhysicalSettings(config))),
-  );
+  ));
 };
+module.exports.optionalCamera = optionalCamera;
+module.exports.splitSplashStyles = splitSplashStyles;

@@ -3,6 +3,8 @@ import { requireNativeModule } from "expo-modules-core";
 export type NativeEventSubscription = { remove(): void };
 
 export type SyncNativeEventMap = {
+  onAuthorizationRevoked: { owner: string };
+  onConversationChange: { sessionId: string; watchId: string; payloadJson: string };
   onSyncStatus: { subscriptionId: string; status: string };
   onSyncBootstrap: { subscriptionId: string; cursor: string; resourcesJson: string };
   onSyncEvent: { subscriptionId: string; eventJson: string };
@@ -26,14 +28,45 @@ export type NativeAccount = {
   plan: string;
 };
 
-type TokitoCompanionFfiNative = {
+export type TokitoCompanionFfiNative = {
+  httpDiagnostics(): Promise<string>;
+  activateWorkspace(base: string, token: string, owner: string): void;
+  deactivateWorkspace(owner: string): void;
+  startQueues(base: string, token: string, owner: string): Promise<void>;
+  stopQueues(owner: string): Promise<void>;
+  getSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string>;
+  cachedSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string | null>;
+  openReviews(baseUrl: string, token: string, sessionId: string, owner: string): Promise<string>;
+  closeReviews(sessionId: string): Promise<void>;
+  loadReviews(sessionId: string, project: string, design: string): Promise<string>;
+  localReviewCommands(sessionId: string, project: string, design: string): Promise<string>;
+  decideReview(sessionId: string, project: string, design: string, run: string, eventSeq: string, action: string, selectedJson: string): Promise<string>;
+  openConversations(baseUrl: string, token: string, sessionId: string, owner: string): Promise<string>;
+  closeConversations(sessionId: string): Promise<void>;
+  conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
+  newConversationCommand(): string;
+  startConversation(sessionId: string, command: string, project: string, design: string, content: string, version: string, kind: string, activeSheetId: string | null): Promise<string>;
+  conversationHistory(sessionId: string, project: string, design: string, thread: string, before: string | null): Promise<string>;
+  cachedConversationHistory(sessionId: string, thread: string, after: string): Promise<string>;
+  sendConversationMessage(sessionId: string, project: string, design: string, thread: string, content: string, version: string, kind: string, activeSheetId: string | null): Promise<string>;
+  cancelConversationRun(sessionId: string, run: string): Promise<string>;
+  deleteConversation(sessionId: string, project: string, design: string, thread: string): Promise<void>;
+  discardBlockedMessage(sessionId: string, messageId: string): Promise<boolean>;
+  blockedConversationMessages(sessionId: string, thread: string): Promise<string>;
+  queuedConversationMessage(sessionId: string, thread: string): Promise<string>;
+  recoveredConversationDraft(sessionId: string, thread: string): Promise<string | null>;
+  restoreBlockedMessage(sessionId: string, messageId: string): Promise<string>;
+  watchConversationRun(sessionId: string, run: string, after: string, watchId: string): Promise<string>;
+  stopConversationRunWatch(watchId: string): Promise<void>;
   baseUrl(baseUrl: string): Promise<string>;
   otpRequest(baseUrl: string, email: string): Promise<void>;
   otpVerify(baseUrl: string, email: string, code: string): Promise<NativeSession>;
   oauthExchange(baseUrl: string, code: string): Promise<NativeSession>;
   me(baseUrl: string, token: string): Promise<NativeAccount>;
+  resolveIdentity(baseUrl: string, token: string): Promise<string>;
+  forgetIdentity(baseUrl: string, token: string): Promise<void>;
   listProjects(baseUrl: string, token: string): Promise<
-    Array<{ id: string; name: string; slug: string; updated_at: string }>
+    Array<{ id: string; name: string; slug: string; updated_at: string; last_activity_at?: number | null }>
   >;
   getProject(baseUrl: string, token: string, projectId: string): Promise<string>;
   listProposals(
@@ -56,7 +89,7 @@ type TokitoCompanionFfiNative = {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; bodyBase64: string }>;
-  startSync(baseUrl: string, token: string, projectId: string | null): Promise<string>;
+  startSync(baseUrl: string, token: string, projectId: string | null, owner: string): Promise<string>;
   stopSync(subscriptionId: string): Promise<void>;
   enqueueSyncCommand(
     subscriptionId: string,

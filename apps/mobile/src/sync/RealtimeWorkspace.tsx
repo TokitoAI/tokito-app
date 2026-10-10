@@ -1,9 +1,13 @@
 import type { JSX, PropsWithChildren } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
 import { mergePhysicalSessionSnapshot, type PhysicalSessionsPayload } from "./physicalSync";
+import { retryableStartup, startupRetryDelay } from "./startupRetry";
+import { ownsWorkspaceEvent } from "./workspaceOwnership";
+import { mergeCommittedResourceEvent } from "./resourceActivity";
+import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 
 export type SyncResource = {
   project_id: string;
@@ -11,6 +15,7 @@ export type SyncResource = {
   resource: SyncResourceName;
   version: number;
   payload: unknown;
+  last_activity_at?: number | null;
 };
 
 export type SyncEvent = SyncResource & {
@@ -35,6 +40,7 @@ export type SyncConflict = {
 export type SyncStatus = "disabled" | "connecting" | "live" | "reconnecting" | "stopped";
 
 type WorkspaceValue = {
+  owner: string | null;
   status: SyncStatus;
   error: string | null;
   resources: SyncResource[];
@@ -60,43 +66,108 @@ function parseJson<T>(value: string): T {
 export function RealtimeWorkspaceProvider({
   client,
   token,
+  onAuthorizationRevoked,
   children,
-}: PropsWithChildren<{ client: CloudClient; token: string }>): JSX.Element {
+}: PropsWithChildren<{ client: CloudClient; token: string; onAuthorizationRevoked: () => void }>): JSX.Element {
   const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>(client.startSync ? "connecting" : "disabled");
   const [error, setError] = useState<string | null>(null);
   const [resourceMap, setResourceMap] = useState<Map<string, SyncResource>>(new Map());
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const physicalDrain = useRef<Promise<void> | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
+  const workspaceScope = useMemo(() => ({ client, token }), [client, token]);
+  const [activation, setActivation] = useState<{ scope: typeof workspaceScope; owner: string } | null>(null);
+  const owner = activation?.scope === workspaceScope ? activation.owner : null;
+  useLayoutEffect(() => {
+    const native = getTokitoCompanionFfi();
+    const nextOwner = `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    native.activateWorkspace(client.baseUrl(), token, nextOwner);
+    setActivation({ scope: workspaceScope, owner: nextOwner });
+    return () => native.deactivateWorkspace(nextOwner);
+  }, [client, token, workspaceScope]);
 
   useEffect(() => {
+    if (owner === null) return;
+    const native = getTokitoCompanionFfi();
+    let disposed = false;
+    const revoked = native.addListener("onAuthorizationRevoked", event => {
+      if (ownsWorkspaceEvent(owner, event.owner, disposed)) onAuthorizationRevoked();
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const open = async (): Promise<void> => {
+      try { await native.startQueues(client.baseUrl(), token, owner); }
+      catch (cause) {
+        if (!disposed) {
+          setError(retryableStartup(cause)
+            ? "Saved messages and decisions are waiting for a connection."
+            : "Saved messages and decisions could not reconnect. Sign in again to resume.");
+          if (retryableStartup(cause)) timer = setTimeout(() => void open(), 5000);
+        }
+      }
+    };
+    void open();
+    return () => { disposed = true; revoked.remove(); clearTimeout(timer); };
+  }, [client, token, owner, onAuthorizationRevoked]);
+
+  useEffect(() => {
+    if (owner === null) return;
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
       setStatus("disabled");
       return;
     }
     let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let transientFailure = false;
+    const foreground = AppState.addEventListener("change", next => {
+      if (next === "active" && transientFailure && !disposed) {
+        transientFailure = false;
+        clearTimeout(retryTimer);
+        setStartupAttempt(value => value + 1);
+      }
+    });
     let activeId: string | null = null;
+    const earlyEvents: { subscriptionId: string; apply: () => void }[] = [];
+    let earlyOverflow = false;
+    setSubscriptionId(null);
+    setStatus("connecting");
+    setError(null);
+    setResourceMap(new Map());
+    setConflicts([]);
+    const receive = (subscriptionId: string, apply: () => void): void => {
+      if (disposed) return;
+      if (activeId === null) {
+        if (earlyEvents.length >= 256) { earlyOverflow = true; return; }
+        earlyEvents.push({ subscriptionId, apply }); return;
+      }
+      if (subscriptionId === activeId) apply();
+    };
     const subscriptions = [
       client.addSyncListener("onSyncStatus", (event) => {
-        if (!disposed) setStatus(event.status as SyncStatus);
+        receive(event.subscriptionId, () => setStatus(event.status as SyncStatus));
       }),
       client.addSyncListener("onSyncBootstrap", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const resources = parseJson<SyncResource[]>(event.resourcesJson);
         setResourceMap(new Map(resources.map((item) => [keyOf(item.project_id, item.design_id, item.resource), item])));
         setError(null);
+        });
       }),
       client.addSyncListener("onSyncEvent", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const item = parseJson<SyncEvent>(event.eventJson);
         setResourceMap((previous) => {
+          const current = previous.get(keyOf(item.project_id, item.design_id, item.resource));
+          const admitted = mergeCommittedResourceEvent(current, item);
+          if (admitted === current) return previous;
           const next = new Map(previous);
-          next.set(keyOf(item.project_id, item.design_id, item.resource), item);
+          next.set(keyOf(item.project_id, item.design_id, item.resource), admitted);
           return next;
+        });
         });
       }),
       client.addSyncListener("onSyncConflict", (event) => {
-        if (disposed) return;
+        receive(event.subscriptionId, () => {
         const command = parseJson<SyncConflict["command"]>(event.commandJson);
         setConflicts((previous) => [
           ...previous.filter((item) => item.command.command_id !== command.command_id),
@@ -106,30 +177,46 @@ export function RealtimeWorkspaceProvider({
             currentPayload: parseJson<unknown>(event.currentPayloadJson),
           },
         ]);
+        });
       }),
       client.addSyncListener("onSyncError", (event) => {
-        if (!disposed) setError(event.message);
+        receive(event.subscriptionId, () => setError(event.message));
       }),
     ];
-    void client.startSync(token).then((id) => {
+    void client.startSync(token, undefined, owner).then((id) => {
       if (disposed) {
         void client.stopSync?.(id);
         return;
       }
       activeId = id;
+      if (earlyOverflow) {
+        earlyEvents.length = 0;
+        setStatus("stopped");
+        setError("Project updates could not initialize. Reopen Cloud projects to retry.");
+        void client.stopSync?.(id);
+        return;
+      }
+      for (const event of earlyEvents.splice(0)) receive(event.subscriptionId, event.apply);
       setSubscriptionId(id);
     }).catch((cause: unknown) => {
       if (!disposed) {
-        setStatus("stopped");
+        transientFailure = retryableStartup(cause);
+        setStatus(transientFailure ? "reconnecting" : "stopped");
         setError(cause instanceof Error ? cause.message : String(cause));
+        if (transientFailure) retryTimer = setTimeout(() => {
+          if (!disposed) setStartupAttempt(value => value + 1);
+        }, startupRetryDelay(startupAttempt));
       }
     });
     return () => {
       disposed = true;
+      clearTimeout(retryTimer);
+      foreground.remove();
+      earlyEvents.length = 0;
       subscriptions.forEach((item) => item.remove());
       if (activeId !== null) void client.stopSync?.(activeId);
     };
-  }, [client, token]);
+  }, [client, token, owner, startupAttempt]);
 
   const getResource = useCallback(
     (projectId: string, designId: string | null, resource: SyncResourceName) =>
@@ -156,19 +243,7 @@ export function RealtimeWorkspaceProvider({
       resource,
       payload,
     );
-    setResourceMap((previous) => {
-      const next = new Map(previous);
-      const key = keyOf(projectId, designId, resource);
-      const existing = previous.get(key);
-      next.set(key, {
-        project_id: projectId,
-        design_id: designId,
-        resource,
-        version: existing?.version ?? 0,
-        payload,
-      });
-      return next;
-    });
+    // Queued is not committed: only the authoritative journal updates the view.
     return commandId;
   }, [client, subscriptionId]);
 
@@ -227,6 +302,7 @@ export function RealtimeWorkspaceProvider({
   }, [client, subscriptionId]);
 
   const value = useMemo<WorkspaceValue>(() => ({
+    owner,
     status,
     error,
     resources: [...resourceMap.values()],
@@ -234,7 +310,7 @@ export function RealtimeWorkspaceProvider({
     getResource,
     update,
     resolveConflict,
-  }), [status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
+  }), [owner, status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

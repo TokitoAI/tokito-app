@@ -14,6 +14,17 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceCallControllerTest {
+    @Test fun cancelledPreparationCannotLeaveCallActiveOrPrepared() = runTest {
+        val harness = Harness(this, prepareFailure = kotlinx.coroutines.CancellationException("stopped"))
+        repeat(2) {
+            try { harness.controller.start(); org.junit.Assert.fail("Cancellation was swallowed") }
+            catch (_: kotlinx.coroutines.CancellationException) { }
+            assertEquals(CallState.Idle, harness.controller.currentState())
+        }
+        assertEquals(2, harness.preparations)
+        assertEquals(0, harness.starts)
+    }
+
     @Test
     fun warmUpLoadsModelsBeforeFirstPress() = runTest {
         val harness = Harness(this)
@@ -138,6 +149,47 @@ class VoiceCallControllerTest {
     }
 
     private fun final(text: String, time: Long) = TranscriptSegment(text, true, time)
+
+    @Test fun backgroundRevokesTurnBeforeDeferredAudioCleanup() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val harness = Harness(this, responseGate = release)
+        harness.controller.start()
+        harness.controller.accept(final("pending turn", 10))
+        testScheduler.runCurrent()
+        harness.controller.revokeActiveTurn()
+        // No scheduler drain or suspend cleanup is needed to revoke ownership.
+        assertEquals(CallState.Idle, harness.controller.currentState())
+        harness.controller.accept(final("late transcript", 11))
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(harness.spoken.isEmpty())
+        assertEquals(listOf("pending turn"), harness.requests)
+        harness.controller.stop()
+        assertTrue(harness.stops > 0)
+    }
+
+    @Test fun delayedBackgroundCleanupCannotStopNewForegroundCall() = runTest {
+        val harness = Harness(this)
+        harness.controller.start()
+        val retired = harness.controller.revokeActiveTurn()
+        harness.controller.start()
+        harness.controller.cleanupRevokedTurn(retired)
+        assertEquals(0, harness.stops)
+        assertEquals(2, harness.starts)
+        assertEquals(CallState.Listening, harness.controller.currentState())
+    }
+
+    @Test fun stoppedPreparationCannotPublishListeningAfterResume() = runTest {
+        val prepare = CompletableDeferred<Unit>()
+        val harness = Harness(this, prepareGate = prepare)
+        launch { harness.controller.start() }
+        testScheduler.runCurrent()
+        harness.controller.revokeActiveTurn()
+        prepare.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(0, harness.starts)
+        assertEquals(CallState.Idle, harness.controller.currentState())
+    }
 
     private class Harness(
         scope: TestScope,

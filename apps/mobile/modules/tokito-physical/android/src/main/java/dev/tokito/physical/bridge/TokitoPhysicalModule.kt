@@ -6,26 +6,13 @@ import android.net.Uri
 import ai.tokito.physical.runtime.PhysicalRuntime
 import ai.tokito.physical.runtime.RuntimeConfiguration
 import dev.tokito.physical.MainActivity
-import dev.tokito.physical.session.PhysicalSessionContext as StoredSessionContext
+import dev.tokito.physical.session.PhysicalSessionInput
 import dev.tokito.physical.session.PhysicalSessionStore
 import dev.tokito.physical.model.ModelBundleRepository
 import dev.tokito.physical.model.ModelCapability
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import expo.modules.kotlin.records.Field
-import expo.modules.kotlin.records.Record
-
-class PhysicalSessionContext : Record {
-  @Field
-  val projectId: String? = null
-
-  @Field
-  val designId: String? = null
-
-  @Field
-  val contextRevision: String? = null
-}
 
 /**
  * Thin control-plane boundary for the native Physical experience.
@@ -56,19 +43,15 @@ class TokitoPhysicalModule : Module() {
       )
     }
 
-    AsyncFunction("openSession") { sessionContext: PhysicalSessionContext? ->
+    AsyncFunction("openSession") { sessionContext: Map<String, Any?>? ->
       val activity = appContext.currentActivity
         ?: throw CodedException("NoActivity", "Tokito must be visible to open a Physical session", null)
-      val session = physicalRuntime.openSession()
       val storedContext = try {
-        StoredSessionContext(
-          projectId = sessionContext?.projectId,
-          designId = sessionContext?.designId,
-          contextRevision = sessionContext?.contextRevision,
-        )
+        PhysicalSessionInput.decode(sessionContext)
       } catch (failure: IllegalArgumentException) {
         throw CodedException("InvalidSessionContext", failure.message ?: "Invalid session context", failure)
       }
+      val session = physicalRuntime.openSession()
       PhysicalSessionStore.open(activity).use { store ->
         store.startSession(storedContext, session.id)
         try {

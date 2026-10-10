@@ -24,6 +24,9 @@ pub struct SyncResource {
     pub resource: String,
     pub version: u64,
     pub payload: serde_json::Value,
+    /// Server-committed project activity, never a local queue/read timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -79,6 +82,7 @@ struct StatusBody {
 fn api_client() -> Result<reqwest::Client, CloudError> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| CloudError::Network(error.to_string()))
@@ -87,16 +91,19 @@ fn api_client() -> Result<reqwest::Client, CloudError> {
 fn stream_client() -> Result<reqwest::Client, CloudError> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| CloudError::Network(error.to_string()))
 }
 
 async fn response_error(response: reqwest::Response) -> CloudError {
     let status = response.status().as_u16();
+    crate::http_diagnostics::record("realtime_request", status, "http_status");
     let body = response.json::<StatusBody>().await.ok();
     match status {
         401 | 403 => CloudError::Unauthorized,
-        404 | 503 => CloudError::Unavailable,
+        404 | 500..=599 => CloudError::Unavailable,
+        429 => CloudError::RateLimited,
         409 => CloudError::Conflict {
             current_version: body
                 .as_ref()
@@ -125,7 +132,7 @@ pub async fn register_device(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "register_device").await
     } else {
         Err(response_error(response).await)
     }
@@ -147,7 +154,7 @@ pub async fn bootstrap_realtime(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "bootstrap").await
     } else {
         Err(response_error(response).await)
     }
@@ -166,7 +173,7 @@ pub async fn submit_sync_command(
         .await
         .map_err(|error| CloudError::Network(error.to_string()))?;
     if response.status().is_success() {
-        response.json().await.map_err(|_| CloudError::Unexpected)
+        crate::http_diagnostics::decode(response, "sync_command").await
     } else {
         Err(response_error(response).await)
     }
@@ -197,15 +204,14 @@ where
             base,
             token,
             project_id,
-            cursor,
+            &mut cursor,
             &mut stop,
             &mut on_event,
             &mut on_status,
         )
         .await
         {
-            Ok(next_cursor) => {
-                cursor = next_cursor;
+            Ok(()) => {
                 attempt = 0;
                 if *stop.borrow() {
                     break;
@@ -225,7 +231,10 @@ where
                 }
                 if !matches!(
                     error,
-                    CloudError::Network(_) | CloudError::Unavailable | CloudError::Unexpected
+                    CloudError::Network(_)
+                        | CloudError::Unavailable
+                        | CloudError::RateLimited
+                        | CloudError::Unexpected
                 ) {
                     return Err(error);
                 }
@@ -241,11 +250,11 @@ async fn stream_once<FE, FS>(
     base: &str,
     token: &str,
     project_id: Option<&str>,
-    cursor: u64,
+    cursor: &mut u64,
     stop: &mut watch::Receiver<bool>,
     on_event: &mut FE,
     on_status: &mut FS,
-) -> Result<u64, CloudError>
+) -> Result<(), CloudError>
 where
     FE: FnMut(SyncEvent) -> Result<(), CloudError>,
     FS: FnMut(RealtimeStatus),
@@ -258,32 +267,51 @@ where
     if let Some(project_id) = project_id {
         request = request.query(&[("project_id", project_id)]);
     }
-    let response = request
-        .send()
-        .await
-        .map_err(|error| CloudError::Network(error.to_string()))?;
+    let response = tokio::select! {
+        _ = stop.changed() => return Ok(()),
+        result = tokio::time::timeout(Duration::from_secs(30), request.send()) => result
+            .map_err(|_| CloudError::Network("Connection timed out".into()))?
+            .map_err(|error| CloudError::Network(error.to_string()))?,
+    };
     if !response.status().is_success() {
         return Err(response_error(response).await);
+    }
+    if !response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(';')
+                .next()
+                .is_some_and(|mime| mime.trim() == "text/event-stream")
+        })
+    {
+        return Err(CloudError::Network(
+            "server did not return an event stream".into(),
+        ));
     }
     on_status(RealtimeStatus::Live);
     let mut bytes = response.bytes_stream();
     let mut buffer = Vec::new();
-    let mut last = cursor;
     loop {
         tokio::select! {
             changed = stop.changed() => {
-                if changed.is_err() || *stop.borrow() { return Ok(last); }
+                if changed.is_err() || *stop.borrow() { return Ok(()); }
             }
-            chunk = bytes.next() => match chunk {
+            chunk = tokio::time::timeout(Duration::from_secs(75), bytes.next()) => match chunk
+                .map_err(|_| CloudError::Network("Live updates paused; reconnecting".into()))? {
                 Some(Ok(chunk)) => {
                     buffer.extend_from_slice(&chunk);
                     while let Some(end) = event_boundary(&buffer) {
+                        if end > 2 * 1024 * 1024 { return Err(CloudError::Unexpected); }
                         let frame = buffer.drain(..end).collect::<Vec<_>>();
                         drain_separator(&mut buffer);
                         if let Some(event) = parse_sse_frame(&frame)? {
-                            if event.seq > last {
-                                last = event.seq;
+                            if event.seq > *cursor {
+                                let next = event.seq;
                                 on_event(event)?;
+                                *cursor = next;
                             }
                         }
                     }
@@ -297,10 +325,12 @@ where
 }
 
 fn event_boundary(buffer: &[u8]) -> Option<usize> {
-    buffer
-        .windows(2)
-        .position(|window| window == b"\n\n")
-        .or_else(|| buffer.windows(4).position(|window| window == b"\r\n\r\n"))
+    let lf = buffer.windows(2).position(|window| window == b"\n\n");
+    let crlf = buffer.windows(4).position(|window| window == b"\r\n\r\n");
+    match (lf, crlf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 fn drain_separator(buffer: &mut Vec<u8>) {
@@ -339,6 +369,73 @@ fn parse_sse_frame(frame: &[u8]) -> Result<Option<SyncEvent>, CloudError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixed_line_endings_use_first_frame_boundary() {
+        assert_eq!(event_boundary(b"a\r\n\r\nb\n\n"), Some(1));
+    }
+
+    #[tokio::test]
+    async fn html_success_page_is_not_a_live_sync_connection() {
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw("<html>proxy</html>", "text/html"),
+            )
+            .mount(&server)
+            .await;
+        let (_tx, mut stop) = watch::channel(false);
+        let mut cursor = 0;
+        let mut live = false;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Ok(()),
+            &mut |status| live |= status == RealtimeStatus::Live
+        )
+        .await
+        .is_err());
+        assert!(!live);
+    }
+
+    #[tokio::test]
+    async fn broken_stream_keeps_only_committed_cursor_for_reconnect() {
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_raw(
+            "event: sync\ndata: {\"seq\":9,\"project_id\":\"p\",\"resource\":\"project\",\"version\":1,\"command_id\":\"c\",\"actor_device_id\":\"d\",\"payload\":{},\"created_at\":1}\n\nevent: sync\ndata: invalid\n\n", "text/event-stream")).mount(&server).await;
+        let (_tx, mut stop) = watch::channel(false);
+        let mut cursor = 8;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Ok(()),
+            &mut |_| {}
+        )
+        .await
+        .is_err());
+        assert_eq!(cursor, 9);
+        let mut cursor = 8;
+        assert!(stream_once(
+            &server.uri(),
+            "token",
+            None,
+            &mut cursor,
+            &mut stop,
+            &mut |_| Err(CloudError::Unavailable),
+            &mut |_| {}
+        )
+        .await
+        .is_err());
+        assert_eq!(cursor, 8);
+    }
 
     #[test]
     fn parses_split_safe_multiline_sse() {

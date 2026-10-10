@@ -19,14 +19,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.tokito.physical.databinding.ActivityMainBinding
-import dev.tokito.physical.dialogue.DialogueModelProvisioner
 import dev.tokito.physical.dialogue.BoardReferenceContext
-import dev.tokito.physical.dialogue.DialogueLimits
-import dev.tokito.physical.dialogue.DialogueOutcome
-import dev.tokito.physical.dialogue.DialogueRequest
 import dev.tokito.physical.dialogue.LocalBenchDialoguePolicy
-import dev.tokito.physical.dialogue.DialogueRuntimeState
-import dev.tokito.physical.dialogue.TokitoDialogueRuntime
 import dev.tokito.physical.model.DeviceResourceGovernor
 import dev.tokito.physical.voice.SpeechQueuePolicy
 import dev.tokito.physical.voice.TokitoVoiceRuntime
@@ -50,7 +44,6 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var voice: TokitoVoiceRuntime
-    private lateinit var dialogue: TokitoDialogueRuntime
     private lateinit var ar: ArSessionController
     private lateinit var call: VoiceCallController
     private lateinit var measurement: MeasurementVoiceSession
@@ -134,10 +127,6 @@ class MainActivity : AppCompatActivity() {
         resourceGovernor = DeviceResourceGovernor.android(this)
 
         voice = TokitoVoiceRuntime(this, VoiceRuntimeConfig())
-        dialogue = TokitoDialogueRuntime(
-            this,
-            DialogueLimits(maxPredictTokens = BuildConfig.DIALOGUE_MAX_PREDICT_TOKENS),
-        )
         ar = ArSessionController(this, binding.cameraSurface, ::renderArState)
         call = VoiceCallController(
             scope = lifecycleScope,
@@ -212,7 +201,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if (::call.isInitialized) lifecycleScope.launch { call.stop() }
+        if (::call.isInitialized) {
+            val retired = call.revokeActiveTurn()
+            lifecycleScope.launch { call.cleanupRevokedTurn(retired) }
+        }
         if (::ar.isInitialized) ar.stop()
         super.onStop()
     }
@@ -222,7 +214,6 @@ class MainActivity : AppCompatActivity() {
         debugUtteranceReceiver = null
         if (::call.isInitialized) call.close()
         if (::ar.isInitialized) ar.destroy()
-        if (::dialogue.isInitialized) dialogue.close()
         if (::voice.isInitialized) voice.close()
         if (::sessionStore.isInitialized) {
             if (isFinishing && !isChangingConfigurations) {
@@ -338,27 +329,8 @@ class MainActivity : AppCompatActivity() {
         ) {
             voice.initialize()
         }
-        if (dialogue.state.value !is DialogueRuntimeState.Ready) {
-            // General electronics conversation uses the local LLM. Reviewed
-            // board answers are deterministic and need no generation, so an
-            // unavailable dialogue bundle must not disable those or speech.
-            runCatching {
-                val model = withContext(Dispatchers.IO) {
-                    DialogueModelProvisioner.fromAdmittedBundle(File(filesDir, "models/dialogue/active"))
-                        .requireInstalled()
-                }
-                val modelBytes = model.artifacts.fold(0L) { total, artifact ->
-                    Math.addExact(total, artifact.sizeBytes)
-                }
-                requireHeavyWork("dialogue", Math.multiplyExact(modelBytes, 2))
-                dialogue.initialize(model)
-            }.onFailure { failure ->
-                android.util.Log.i(
-                    "TokitoDialogue",
-                    "local LLM bundle unavailable; responding with verified board data only: ${failure.message}",
-                )
-            }
-        }
+        // Admitted evidence and abstention need no unqualified generative model.
+        // Model preparation remains explicit in runtime quality evaluation.
     }
 
     private suspend fun prepareLocalVision() {
@@ -396,19 +368,6 @@ class MainActivity : AppCompatActivity() {
     private suspend fun respondLocally(utterance: String): String {
         val reference = boardReference
         val grounded = LocalBenchDialoguePolicy().answer(utterance, reference?.index)
-        if (grounded == null) {
-            // The dialogue policy asks for evidence when a question refers to
-            // an unidentified component. General electronics questions do not
-            // require a board-specific reference.
-            return when (val result = dialogue.respond(DialogueRequest(
-                utterance = utterance,
-                deadlineMs = BuildConfig.DIALOGUE_TURN_DEADLINE_MS,
-            ))) {
-                is DialogueOutcome.Response -> result.text
-                is DialogueOutcome.Clarification -> result.question
-                is DialogueOutcome.ToolProposal -> error("No physical tools were offered for this conversation")
-            }
-        }
         grounded.boardTarget?.let { target ->
             val accepted = ar.highlightBoardTarget(target)
             android.util.Log.i(
