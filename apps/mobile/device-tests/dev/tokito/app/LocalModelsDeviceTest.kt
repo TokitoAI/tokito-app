@@ -53,15 +53,17 @@ class LocalModelsDeviceTest {
                 putLong("tokito_qa_npu_load_ms", android.os.SystemClock.elapsedRealtime() - loadStart)
             })
             assertTrue(runtime.state.value is DialogueRuntimeState.Ready)
-            for (prompt in listOf(
+            for ((index, prompt) in listOf(
                 "In one sentence, explain what a resistor does.",
                 "In one sentence, explain how a capacitor stores energy.",
                 "In one sentence, explain the difference between voltage and current.",
-            )) {
+            ).withIndex()) {
+                android.util.Log.i("TokitoDeviceQA", "NPU repeat phase=case_start index=$index")
                 val generationStart = android.os.SystemClock.elapsedRealtime()
                 val response = withTimeout(65_000) {
                     runtime.respond(DialogueRequest(utterance = prompt, deadlineMs = 60_000))
                 }
+                android.util.Log.i("TokitoDeviceQA", "NPU repeat phase=receipt_returned index=$index")
                 assertTrue("Expected local generated response, got $response", response is DialogueOutcome.Response)
                 val answer = (response as DialogueOutcome.Response).text
                 assertTrue("Empty local output", answer.length > 12)

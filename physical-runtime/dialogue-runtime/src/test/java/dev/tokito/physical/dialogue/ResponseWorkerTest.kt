@@ -205,4 +205,32 @@ class ResponseWorkerTest {
             awaitReleased()
         }
     }
+
+    @Test fun revocationDiagnosticsBracketCancellationWithoutChangingDeadline() = runTest {
+        val entered = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val disposed = CountDownLatch(1)
+        val phases = java.util.concurrent.CopyOnWriteArrayList<ResponsePhase>()
+        val worker = ResponseWorker { disposed.countDown() }
+        try {
+            val caller = async { runCatching {
+                worker.execute(100, { phases += it }) { entered.countDown(); released.await(); "late" }
+            } }
+            runCurrent()
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            advanceTimeBy(101)
+            runCurrent()
+            assertEquals(DialogueFailureCode.GENERATION_TIMEOUT,
+                (caller.await().exceptionOrNull() as DialogueFailure).code)
+            assertEquals(ResponsePhase.TIMER_SETUP, phases.first())
+            assertTrue(phases.indexOf(ResponsePhase.REVOKE_ENTER) < phases.indexOf(ResponsePhase.REVOKE_EXIT))
+            assertEquals(1L, released.count)
+            assertTrue(worker.isQuarantined())
+        } finally {
+            released.countDown()
+            worker.close()
+            assertTrue(disposed.await(5, TimeUnit.SECONDS))
+            awaitReleased()
+        }
+    }
 }

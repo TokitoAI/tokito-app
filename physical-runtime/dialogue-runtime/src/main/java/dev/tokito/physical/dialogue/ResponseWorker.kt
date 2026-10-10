@@ -18,7 +18,7 @@ internal class ResponseWorker(
     private val retireEmpty: () -> Boolean = { false },
     private val dispose: () -> Unit,
 ) : AutoCloseable {
-    private class Attempt<T>(val receipt: CancellableContinuation<T>) {
+    private class Attempt<T>(val receipt: CancellableContinuation<T>, val phase: (ResponsePhase) -> Unit) {
         var job: Job? = null
         var revoked = false
     }
@@ -36,18 +36,25 @@ internal class ResponseWorker(
 
     fun isQuarantined(): Boolean = synchronized(lock) { quarantined }
 
-    suspend fun <T : Any> execute(deadlineMs: Long, block: suspend () -> T): T =
-        withTimeoutOrNull(deadlineMs) {
+    suspend fun <T : Any> execute(
+        deadlineMs: Long,
+        phase: (ResponsePhase) -> Unit = {},
+        block: suspend () -> T,
+    ): T {
+        diagnostic(phase, ResponsePhase.TIMER_SETUP)
+        return withTimeoutOrNull(deadlineMs) {
             suspendCancellableCoroutine { receipt ->
-                val attempt = Attempt(receipt)
+                val attempt = Attempt(receipt, phase)
                 synchronized(lock) {
                     check(!closed && !quarantined) { "Native response worker is unavailable" }
                     check(pending == null) { "A native response is already active" }
                     check(NativeDialogueAdmission.permit.tryAcquire()) { "Native dialogue work is still finishing" }
                     pending = attempt
                 }
+                diagnostic(phase, ResponsePhase.RECEIPT_SETUP)
                 receipt.invokeOnCancellation { revoke(attempt) }
                 worker.execute {
+                    diagnostic(phase, ResponsePhase.WORKER_ENTER)
                     var outcome: Result<T>? = null
                     try {
                         val result = runBlocking {
@@ -64,7 +71,10 @@ internal class ResponseWorker(
                     } finally {
                         synchronized(lock) { if (pending === attempt) pending = null }
                         // No caller can close the engine while this lease is active.
-                        try { disposeIfSafe() } finally { NativeDialogueAdmission.permit.release() }
+                        try { disposeIfSafe() } finally {
+                            NativeDialogueAdmission.permit.release()
+                            diagnostic(phase, ResponsePhase.WORKER_EXIT)
+                        }
                     }
                     val accepted = synchronized(lock) {
                         !attempt.revoked && !closed && receipt.isActive
@@ -76,19 +86,25 @@ internal class ResponseWorker(
                 }
             }
         } ?: throw DialogueFailure(DialogueFailureCode.GENERATION_TIMEOUT, "Local generation exceeded its deadline")
+    }
 
     private fun revoke(attempt: Attempt<*>) {
-        synchronized(lock) {
-            if (disposed) return
-            attempt.revoked = true
-            quarantined = true
-            val job = attempt.job
-            // Even cancellation handlers must not hold the UI/receipt timer.
-            cancellation.execute {
-                job?.cancel(CancellationException("Native response receipt revoked"))
-                scheduleIdleDisposal()
+        diagnostic(attempt.phase, ResponsePhase.REVOKE_ENTER)
+        try {
+            synchronized(lock) {
+                if (disposed) return
+                attempt.revoked = true
+                quarantined = true
+                val job = attempt.job
+                // Even cancellation handlers must not hold the UI/receipt timer.
+                cancellation.execute {
+                    diagnostic(attempt.phase, ResponsePhase.CANCEL_JOB_ENTER)
+                    job?.cancel(CancellationException("Native response receipt revoked"))
+                    diagnostic(attempt.phase, ResponsePhase.CANCEL_JOB_EXIT)
+                    scheduleIdleDisposal()
+                }
             }
-        }
+        } finally { diagnostic(attempt.phase, ResponsePhase.REVOKE_EXIT) }
     }
 
     private fun scheduleIdleDisposal() {
@@ -130,4 +146,14 @@ internal class ResponseWorker(
             attempt.receipt.cancel(CancellationException("Native response worker closed"))
         } else scheduleIdleDisposal()
     }
+}
+
+/** Fixed labels only; instrumentation must never change native ownership. */
+internal enum class ResponsePhase {
+    TIMER_SETUP, RECEIPT_SETUP, WORKER_ENTER, WORKER_EXIT,
+    REVOKE_ENTER, REVOKE_EXIT, CANCEL_JOB_ENTER, CANCEL_JOB_EXIT,
+}
+
+private fun diagnostic(sink: (ResponsePhase) -> Unit, phase: ResponsePhase) {
+    runCatching { sink(phase) }
 }

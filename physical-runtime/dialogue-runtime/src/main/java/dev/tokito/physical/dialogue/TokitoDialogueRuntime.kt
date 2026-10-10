@@ -148,8 +148,9 @@ class TokitoDialogueRuntime(
                 ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
             val started = android.os.SystemClock.elapsedRealtime()
             if (!lifecycle.publish { _state.value = DialogueRuntimeState.Generating }) ensureOpen()
+            val diagnostic = ResponseDiagnostics(request.deadlineMs) { Log.i(TAG, it) }
             try {
-                val outcome = responses.execute(request.deadlineMs) { respondOwned(request) }
+                val outcome = responses.execute(request.deadlineMs, diagnostic::phase) { respondOwned(request) }
                 lifecycle.publish { _state.value = ready }
                 outcome
             } catch (failure: CancellationException) {
@@ -171,7 +172,7 @@ class TokitoDialogueRuntime(
                 val wrapped = DialogueFailure(DialogueFailureCode.INVALID_MODEL_OUTPUT, "Local generation failed", failure)
                 lifecycle.publish { _state.value = DialogueRuntimeState.Failed(wrapped) }
                 throw wrapped
-            }
+            } finally { diagnostic.close() }
         }
     }
 

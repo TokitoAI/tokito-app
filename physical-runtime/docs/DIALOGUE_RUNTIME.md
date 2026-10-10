@@ -110,6 +110,21 @@ and cleanup without logging request or model text. These guarantees bound the
 awake caller's wait, not physical vendor interruption; a suspended process
 cannot run its timer until scheduled again. No alternate backend is attempted.
 
+Sustained hardware qualification of that receipt deadline remains unresolved.
+An expanded optimized-device sequence completed the raw 24-answer evaluation
+and two subsequent NPU turns, then the third turn exceeded both its 60-second
+owned deadline and 65-second caller deadline without a receipt-timeout log.
+The exact APK was verified to contain the isolated worker. A prior shorter
+nine-test sequence passed; it does not erase the expanded-run failure.
+Do not attribute this to lock state, JNI interruption, scheduling or a monitor
+without thread evidence. The response diagnostics log fixed setup/revocation
+phases and a process-wide, single-thread Java watchdog reports the deadline
+and fixed caller/native/cancellation thread states independently of the caller
+coroutine timer. It never cancels work, returns a result, or claims bounded
+completion. Its cancelled tasks are removed, and logs omit names, stacks,
+identities, prompts, answers and exception text. Keep this lifecycle acceptance
+gate separate from the known failed factual-quality evaluation.
+
 ## Local design retrieval
 
 `LocalDesignContextIndex` accepts records only after an assembly-context bundle

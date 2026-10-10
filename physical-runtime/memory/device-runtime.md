@@ -173,3 +173,13 @@ caller limits because vendor work or NonCancellable cleanup remained a child of
 the caller. Fixed phase/timing diagnostics locate future stalls without request
 text. A blocked native call may remain alive; bounded receipt termination is
 not physical interruption, a factual-quality pass or proof of lock causality.
+
+The optimized extended sequence subsequently exceeded the isolated receipt's
+60s/65s deadlines after completing the raw corpus and two fresh turns. A shorter
+passing sequence does not qualify sustained deadline behavior. The exact APK
+contains the final isolated worker; the remaining stall's cause is unresolved.
+**How to apply:** preserve fixed timer-setup/revocation-entry/exit diagnostics
+and the independent one-thread observational Java watchdog. Compare its deadline
+and fixed-role thread-state markers with a live thread dump before assigning
+causality. The watchdog changes no result, cancellation or native ownership;
+never log request data or treat a watchdog event as successful caller termination.
