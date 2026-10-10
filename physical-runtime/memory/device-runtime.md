@@ -256,3 +256,7 @@ are presentation wrappers only; unknown IDs and arbitrary prose still fail.
 **How to apply:** keep facts/aliases in the pinned dataset, not board-specific
 application branches. Test multiple references on the optimized installed APK,
 including local playback, and retain independent physical-identity gates.
+Evidence-ID selection uses deterministic top-1 decoding; the conversational
+Qwen sampler remains separate. Do not use creative sampling for authoritative
+ID classification: stochastic empty selections can incorrectly claim that an
+available reference has no evidence.

@@ -243,7 +243,11 @@ class TokitoDialogueRuntime(
                     "nonThinkingPrefix=${formattedText.endsWith("<think>\n\n</think>\n\n")}")
                 val generation = GenerationConfig(
                     maxTokens = limits.maxPredictTokens,
-                    samplerConfig = if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
+                    samplerConfig = if (request.knowledgeSelection != null) {
+                        // Evidence-ID classification is not creative conversation.
+                        // Do not randomly drop verified evidence at temperature 0.7.
+                        SamplerConfig(temperature = 0f, topP = 1f, topK = 1, minP = 0f)
+                    } else if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
                         SamplerConfig(grammarString = TOKITO_DIALOGUE_GRAMMAR)
                     } else {
                         conversationalSampler(activeRuntime)
