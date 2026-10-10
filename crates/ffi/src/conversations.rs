@@ -1,7 +1,7 @@
 //! Durable Cloud conversations. Local inference never participates in this path.
 use crate::{runtime, CompanionClient, CompanionError};
 use sha2::{Digest, Sha256};
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{collections::HashSet, path::Path, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, watch};
 use tokito_companion_core::{
     conversation_store::{ConversationStore, PendingMessage},
@@ -442,11 +442,16 @@ async fn outbox(
                 }
                 Err(_) => {
                     emit(listener.as_ref(), serde_json::json!({"type":"offline"}));
-                    break;
+                    // One unavailable thread cannot starve another project.
+                    continue;
                 }
             }
         }
+        let mut deferred_threads = HashSet::new();
         for message in pending {
+            if deferred_threads.contains(&message.thread_id) {
+                continue;
+            }
             if store.thread_pending(&message.thread_id).unwrap_or(true) {
                 continue;
             }
@@ -478,7 +483,11 @@ async fn outbox(
                     );
                     return;
                 }
-                Err(error @ (CloudError::Conflict { .. } | CloudError::Unexpected)) => {
+                Err(
+                    error @ (CloudError::Conflict { .. }
+                    | CloudError::Unexpected
+                    | CloudError::Unavailable),
+                ) => {
                     if store
                         .block(&message.request.message_id, "revision_or_request_conflict")
                         .is_err()
@@ -491,12 +500,13 @@ async fn outbox(
                     );
                 }
                 Err(_) => {
+                    deferred_threads.insert(message.thread_id.clone());
                     delay = (delay * 2).min(30);
                     emit(
                         listener.as_ref(),
                         serde_json::json!({"type":"offline","message_id":message.request.message_id}),
                     );
-                    break;
+                    continue;
                 }
             }
         }
@@ -598,6 +608,108 @@ mod tests {
                 .unwrap()
                 .push(serde_json::from_str(&payload_json).unwrap());
         }
+    }
+
+    #[tokio::test]
+    async fn unavailable_threads_do_not_starve_other_messages_and_missing_threads_are_blocked() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/v1/companion/devices"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"device","label":"test","platform":"android","last_seen_at":1})))
+            .mount(&server).await;
+        for (thread, status) in [("a", 503), ("b", 404)] {
+            Mock::given(method("POST"))
+                .and(path(format!(
+                    "/v1/projects/p/designs/d/threads/{thread}/messages"
+                )))
+                .respond_with(ResponseTemplate::new(status))
+                .expect(1..)
+                .mount(&server)
+                .await;
+        }
+        Mock::given(method("POST")).and(path("/v1/projects/p/designs/d/threads/c/messages"))
+            .respond_with(|request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"run_id":body["run_id"],"message_id":body["message_id"],"project_id":"p","design_id":"d","thread_id":"c","status":"running","created_at":1,"updated_at":1}))
+            }).expect(1).mount(&server).await;
+        let store = Arc::new(ConversationStore::open(Path::new(":memory:"), "account").unwrap());
+        let (stop, _) = watch::channel(false);
+        let (wake, wake_rx) = mpsc::channel(1);
+        let listener = Arc::new(Listener::default());
+        let session = ConversationSession {
+            base: server.uri(),
+            token: "token".into(),
+            device: "device".into(),
+            store: store.clone(),
+            stop: stop.clone(),
+            wake,
+            listener: listener.clone(),
+            identity_path: String::new(),
+        };
+        for thread in ["a", "b", "c"] {
+            session
+                .send(
+                    "p".into(),
+                    "d".into(),
+                    thread.into(),
+                    "Queued draft".into(),
+                    0,
+                    "planner".into(),
+                    None,
+                )
+                .unwrap();
+        }
+        let worker = tokio::spawn(outbox(
+            server.uri(),
+            "token".into(),
+            ("device".into(), String::new()),
+            store.clone(),
+            stop.clone(),
+            wake_rx,
+            listener.clone(),
+        ));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if listener
+                    .0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event["type"] == "accepted")
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send_replace(true);
+        worker.await.unwrap();
+        assert_eq!(store.pending().unwrap().len(), 1);
+        assert_eq!(store.pending().unwrap()[0].thread_id, "a");
+        assert_eq!(store.blocked("b").unwrap().len(), 1);
+        assert!(store.blocked("c").unwrap().is_empty());
+        assert!(store.queued_for_thread("c").unwrap().is_none());
+        let requests = server.received_requests().await.unwrap();
+        let retries: Vec<_> = requests
+            .iter()
+            .filter(|request| request.url.path().ends_with("/a/messages"))
+            .collect();
+        assert!(!retries.is_empty());
+        assert!(
+            retries
+                .iter()
+                .all(|request| request.body == retries[0].body),
+            "retries must preserve exact command identity"
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.url.path().ends_with("/b/messages"))
+                .count(),
+            1,
+            "a missing thread must not be automatically retried"
+        );
     }
 
     #[test]

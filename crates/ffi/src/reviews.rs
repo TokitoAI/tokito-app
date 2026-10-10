@@ -18,6 +18,80 @@ mod tests {
     };
 
     #[test]
+    fn one_unavailable_review_scope_does_not_starve_other_projects_but_auth_stops_all() {
+        for status in [503, 401] {
+            let server = runtime().block_on(MockServer::start());
+            let dir =
+                std::env::temp_dir().join(format!("review-fairness-{}", uuid::Uuid::new_v4()));
+            let session = ReviewSession {
+                base: server.uri(),
+                token: "token".into(),
+                device: "device".into(),
+                store: ReviewStore::open(&dir.join("reviews.sqlite3"), "account").unwrap(),
+                closed: AtomicBool::new(false),
+                registered: AtomicBool::new(true),
+                identity_path: dir.to_string_lossy().into_owned(),
+            };
+            for (project, run, id) in [
+                ("a", "first", "m1"),
+                ("a", "second", "m2"),
+                ("b", "third", "m3"),
+            ] {
+                session
+                    .store
+                    .enqueue(
+                        project,
+                        "d",
+                        "reject",
+                        ReviewRequest {
+                            command_id: id.into(),
+                            device_id: "device".into(),
+                            run_id: run.into(),
+                            event_seq: 1,
+                            selected_indices: vec![],
+                        },
+                    )
+                    .unwrap();
+            }
+            runtime().block_on(async {
+                Mock::given(method("POST")).and(path("/v1/projects/a/designs/d/proposals/reject"))
+                    .and(wiremock::matchers::body_partial_json(serde_json::json!({"command_id":"m1"})))
+                    .respond_with(ResponseTemplate::new(status)).expect(1).mount(&server).await;
+                Mock::given(method("POST")).and(path("/v1/projects/b/designs/d/proposals/reject"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                        "command_id":"m3", "run_id":"third", "event_seq":1, "result":{"status":"rejected"}
+                    }))).expect(if status == 503 { 1 } else { 0 }).mount(&server).await;
+            });
+            let error = session.replay_pending().unwrap_err();
+            assert_eq!(matches!(error, CompanionError::Unauthorized), status == 401);
+            let held = session.store.list("a", "d").unwrap();
+            assert!(held.iter().all(|command| command.state == "pending"));
+            assert_eq!(
+                session.store.list("b", "d").unwrap()[0].state,
+                if status == 503 {
+                    "confirmed"
+                } else {
+                    "pending"
+                }
+            );
+            let requests = runtime().block_on(server.received_requests()).unwrap();
+            assert!(
+                !requests
+                    .iter()
+                    .any(
+                        |request| serde_json::from_slice::<serde_json::Value>(&request.body)
+                            .unwrap()["command_id"]
+                            == "m2"
+                    ),
+                "later command in a failed scope must not overtake"
+            );
+            session.shutdown();
+            drop(session);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
     fn unavailable_registration_keeps_exact_review_command_across_offline_restart() {
         let server = runtime().block_on(MockServer::start());
         runtime().block_on(async {
@@ -192,12 +266,7 @@ impl ReviewSession {
         }
     }
     fn replay(&self, project: &str, design: &str) -> Result<(), CompanionError> {
-        for command in self
-            .store
-            .list(project, design)?
-            .into_iter()
-            .filter(|c| c.state == "pending")
-        {
+        for command in self.store.pending_in_scope(project, design)? {
             self.ensure_open()?;
             self.ensure_registered()?;
             let (state, result) = runtime()
@@ -213,10 +282,20 @@ impl ReviewSession {
 impl ReviewSession {
     pub fn replay_pending(&self) -> Result<(), CompanionError> {
         self.ensure_open()?;
+        let mut first_error = None;
         for (project, design) in self.store.pending_scopes()? {
-            self.replay(&project, &design)?;
+            if let Err(error) = self.replay(&project, &design) {
+                // An uncertain command holds later commands in its own scope,
+                // not commands in unrelated projects. Authorization is global.
+                if matches!(error, CompanionError::Unauthorized) {
+                    return Err(error);
+                }
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
     pub fn shutdown(&self) {
         self.closed.store(true, Ordering::Release);

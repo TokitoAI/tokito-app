@@ -153,6 +153,20 @@ impl ReviewStore {
             .map_err(db);
         rows
     }
+    /// Delivery order is oldest first, independently of the newest-first UI list.
+    pub fn pending_in_scope(
+        &self,
+        project: &str,
+        design: &str,
+    ) -> Result<Vec<ReviewCommand>, CloudError> {
+        let conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
+        let mut stmt = conn.prepare("SELECT body FROM review_commands WHERE project=?1 AND design=?2 AND state='pending' ORDER BY rowid").map_err(db)?;
+        let rows = stmt
+            .query_map(params![project, design], |row| row.get::<_, String>(0))
+            .map_err(db)?;
+        rows.map(|row| serde_json::from_str(&row.map_err(db)?).map_err(|_| CloudError::Unexpected))
+            .collect()
+    }
     pub fn cache_proposals(
         &self,
         project: &str,
@@ -343,14 +357,25 @@ pub async fn submit(
     token: &str,
     command: &ReviewCommand,
 ) -> Result<(&'static str, Value), CloudError> {
-    let (status, value) = http(
+    let response = http(
         base,
         token,
         &command.project,
         &command.design,
         Some(command),
     )
-    .await?;
+    .await;
+    let (status, value) = match response {
+        // A removed project/design/proposal cannot recover by automatic retry.
+        // Preserve its command and expose an explicit blocked decision instead.
+        Err(CloudError::Unavailable) => {
+            return Ok((
+                "blocked",
+                serde_json::json!({"error":{"code":"proposal_unavailable"}}),
+            ))
+        }
+        other => other?,
+    };
     match status {
         200 => {
             if value["command_id"] != command.request.command_id
@@ -479,6 +504,18 @@ mod tests {
         assert_eq!(
             submit(&server.uri(), "token", &command).await.unwrap().0,
             "blocked"
+        );
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("private upstream details"))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            submit(&server.uri(), "token", &command).await.unwrap(),
+            (
+                "blocked",
+                serde_json::json!({"error":{"code":"proposal_unavailable"}})
+            )
         );
     }
     #[tokio::test]

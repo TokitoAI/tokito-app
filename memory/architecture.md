@@ -33,6 +33,16 @@ uncertain responses replay the exact command. A receipt is successful only when
 its run/event identity and all selected applied/unchanged indices match. Stale or
 invalid proposals are blocked for explicit review, not silently rebased.
 
+Account-wide review replay uses oldest-first pending commands, not the UI's
+newest-first display list. An uncertain command holds subsequent commands in
+the same project/design scope while unrelated scopes continue. Authentication
+rejection stops the entire account worker. Chat replay likewise continues past
+unavailable independent threads; missing threads and proposals become explicit
+blocked items rather than infinite retries. Retrying an uncertain transmission
+must preserve its exact durable command body and IDs.
+**Why:** a project-specific outage must not starve another project's work, and
+display sorting must never silently reorder authoritative decisions.
+
 Multi-sheet chat explicitly selects a canonical synchronized sheet. A single
 sheet can be inferred from the actual document; multiple sheets must never
 default to the first entry. The chosen sheet ID is persisted with the queued
