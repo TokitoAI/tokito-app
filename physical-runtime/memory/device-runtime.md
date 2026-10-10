@@ -138,3 +138,11 @@ and removed default fields. Preserve SDK bean/JNI classes and members via the di
 consumer rules. Validate the Java ABI before native creation and include SDK
 mapping checks in release preflight. Never report NPU metrics from a run that
 crashes at initialization.
+
+Qwen3's official non-thinking guidance warns against greedy decoding. The
+admitted QAIRT spoken profile uses temperature 0.7, top-p 0.8, top-k 20 and
+min-p 0; model configuration and the SDK template both disable thinking.
+Do not restore zero-temperature/top-k-one sampling based on an assumption that
+determinism implies correctness. The installed electronics quality suite records
+raw repeated answers and independent semantic rubrics; format checks are not
+factual-accuracy evidence. Reviewed board facts still bypass generation.

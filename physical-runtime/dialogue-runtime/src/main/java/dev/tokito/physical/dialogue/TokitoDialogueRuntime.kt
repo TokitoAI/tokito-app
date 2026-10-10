@@ -127,16 +127,16 @@ class TokitoDialogueRuntime(
                     null,
                     false,
                 ).getOrThrow()
+                Log.i(TAG, "Local template: chatmlSystem=${templated.formattedText.contains("<|im_start|>system")}, " +
+                    "chatmlUser=${templated.formattedText.contains("<|im_start|>user")}, " +
+                    "chatmlAssistant=${templated.formattedText.contains("<|im_start|>assistant")}, " +
+                    "nonThinkingPrefix=${templated.formattedText.endsWith("<think>\n\n</think>\n\n")}")
                 val generation = GenerationConfig(
                     maxTokens = limits.maxPredictTokens,
                     samplerConfig = if (toolMode && activeRuntime == DialogueRuntime.LLAMA_CPP) {
                         SamplerConfig(grammarString = TOKITO_DIALOGUE_GRAMMAR)
                     } else {
-                        SamplerConfig(
-                            temperature = 0f,
-                            topP = 1f,
-                            topK = 1,
-                        )
+                        conversationalSampler(activeRuntime)
                     },
                 )
                 buildString {
@@ -294,6 +294,14 @@ class TokitoDialogueRuntime(
 
 internal fun supportsDialogueRuntime(abis: Array<String>): Boolean =
     abis.any { it == "arm64-v8a" }
+
+/** The admitted QAIRT profile is Qwen3 non-thinking; greedy decoding is not its recommended profile. */
+internal fun conversationalSampler(runtime: DialogueRuntime?): SamplerConfig =
+    if (runtime == DialogueRuntime.QAIRT) {
+        SamplerConfig(temperature = 0.7f, topP = 0.8f, topK = 20, minP = 0f)
+    } else {
+        SamplerConfig(temperature = 0f, topP = 1f, topK = 1)
+    }
 
 internal fun requireDialogueMode(runtime: DialogueRuntime?, toolMode: Boolean) {
     if (toolMode && runtime != DialogueRuntime.LLAMA_CPP) {

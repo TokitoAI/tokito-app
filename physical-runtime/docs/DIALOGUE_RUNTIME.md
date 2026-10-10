@@ -57,7 +57,15 @@ this boundary; debug-only inference does not prove a minified release safe.
 Inputs are bounded conversation turns, compact observation summaries, optional
 retrieved design evidence, and host-declared capabilities. Raw camera frames and
 audio never enter the text prompt. Generation is serialized, cancellable,
-deadline-bound, output-limited, and deterministic for the active profile.
+deadline-bound and output-limited. The admitted Qwen3 QAIRT conversational
+profile uses non-thinking sampling (temperature 0.7, top-p 0.8, top-k 20,
+min-p 0), following the [official model guidance](https://huggingface.co/Qwen/Qwen3-1.7B).
+It is not deterministic greedy generation. Thinking is disabled in model
+configuration and the SDK chat-template call; use the admitted template rather
+than hand-building ChatML. Boolean diagnostics expose template markers without
+logging conversation content. Both spoken prompts request one sentence of at
+most 35 words; output limits are fail-safes, not automatic summarization.
+Never truncate a long answer and claim it is a complete factual response.
 
 Conversation output is limited to plain spoken text. Control payloads, JSON
 objects, tool tags, control characters, empty output, and oversized output are
@@ -164,4 +172,10 @@ The build requires a 64-bit JDK 17 and an Android SDK containing API 35. The
 unit suite covers model inventory admission, path containment, protocol
 bounds, strict output shapes, capability authorization, deterministic local
 retrieval, evidence retention, and no-match behavior. Device instrumentation
-runs five bounded turns against the admitted NPU bundle.
+runs bounded turns against the admitted NPU bundle. The unified release's
+`LocalModelsDeviceTest.localElectronicsQualityEvidence` records 12 additional
+general-electronics cases twice, predeclared semantic rubrics, raw answers,
+timing, and spoken-format checks. It is execution/adherence testing plus review
+evidence, not an automatic semantic accuracy score. Review all answers for
+contradictions and unsupported claims before claiming local-model quality;
+passing three definitions or a JNI load gate is insufficient.
