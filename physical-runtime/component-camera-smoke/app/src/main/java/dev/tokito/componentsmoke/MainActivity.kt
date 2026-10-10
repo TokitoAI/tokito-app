@@ -120,7 +120,9 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
             manager.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     if (!active || destroyed || owner != epoch) { device.close(); return }
-                    opening = false; camera = device; beginPreview(device, owner)
+                    opening = false; camera = device
+                    try { beginPreview(device, owner) }
+                    catch (error: Exception) { closeCamera(); status.text = "Camera unavailable: ${error.message}" }
                 }
                 override fun onDisconnected(device: CameraDevice) {
                     device.close(); if (owner == epoch) closeCamera()
@@ -139,11 +141,13 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
             override fun onConfigured(value: CameraCaptureSession) {
                 if (!active || destroyed || owner != epoch || camera !== device) { value.close(); return }
                 session = value
-                val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                    addTarget(surface); set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                }.build()
-                value.setRepeatingRequest(request, null, mainHandler)
-                scheduleAnalysis(owner)
+                try {
+                    val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(surface); set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                    }.build()
+                    value.setRepeatingRequest(request, null, mainHandler)
+                    scheduleAnalysis(owner)
+                } catch (error: Exception) { closeCamera(); status.text = "Camera unavailable: ${error.message}" }
             }
             override fun onConfigureFailed(value: CameraCaptureSession) {
                 value.close(); if (owner == epoch) { closeCamera(); status.text = "Camera configuration failed" }
@@ -156,7 +160,7 @@ class MainActivity : Activity(), TextureView.SurfaceTextureListener {
             if (!active || destroyed || owner != epoch) return@postDelayed
             val detector = runtime
             val claimed = detector != null && analyzing.compareAndSet(false, true)
-            val bitmap = if (claimed) preview.bitmap else null
+            val bitmap = if (claimed) runCatching { preview.bitmap }.getOrNull() else null
             if (bitmap != null && detector != null) {
                 inference.execute {
                     try { runCatching { detector.analyze(bitmap) }.onSuccess { result ->
