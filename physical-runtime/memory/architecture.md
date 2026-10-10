@@ -18,13 +18,14 @@
 Reviewed board answers use `LocalBenchDialoguePolicy` and admitted record text
 directly. Do not restore a generative rephrase gate based only on matching
 identifiers/numbers: that gate accepted contradictory qualitative claims and
-spent an NPU turn on an already known answer. General electronics conversation
-remains a separate bounded local-model path. Exact component-reference matches
+spent an NPU turn on an already known answer. Production general electronics
+questions also require admitted evidence or abstain. Exact component-reference matches
 outrank unrelated alias/placement matches without discarding aggregate evidence.
 Unmatched active-bench questions conservatively request evidence; lexical
-retrieval failure is not proof of general intent. Explicit general educational
-questions can use the model, but references and board-relative wording cannot
-bypass grounding. Retrieval is structured/lexical, not an embedding index.
+retrieval failure is not permission to generate advice. Educational wording
+cannot bypass grounding. Raw model evaluation remains separate and cannot count
+production abstention as an accurate answer. Retrieval is structured/lexical,
+not an embedding index.
 
 **How to apply:** keep policy tests for injected instructions, unknown references,
 contradictory voltage claims, and context-free general questions. Cloud-synced

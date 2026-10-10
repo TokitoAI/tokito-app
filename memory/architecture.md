@@ -35,10 +35,10 @@ are not a runtime fallback. Installation validates files/configuration; device
 inference must be checked separately. Evaluation-only model licenses require
 the explicit local build property documented in `physical-runtime/docs/VOICE_RUNTIME.md`.
 
-Local conversation answers general electronics questions without a loaded board
-reference. Board-specific identities still require verified context; model output
-is not a measured or visually verified fact. Keep this distinction in the dialogue
-protocol and the native bench entry point.
+Production bench conversation returns admitted source records or an explicit
+abstention. General educational wording cannot bypass evidence admission. Raw
+local-model generation remains available to quality instrumentation, not the
+bench answer path; passing this safety boundary is not model factual accuracy.
 
 Shared Cloud conversation history and generation run journals are server-owned.
 Phone chat opens at the latest turn, but only a reader drag can disable live
@@ -209,8 +209,9 @@ Revision updates replace the inert image while preserving normalized pan/zoom;
 changing design or sheet resets the viewport. An unavailable BOM is not an empty
 BOM: show unknown state until canonical or successful published data is present.
 
-**Why:** routing every utterance through the board-reference index disabled general
-conversation even when the local LLM was installed and healthy.
+**Why:** actual optimized-device general-electronics evaluation produced repeated
+factual contradictions. Runtime availability and valid output formatting cannot
+authorize unverified technical advice.
 
 Voice barge-in detection starts with audio playback, not TTS generation. Cancelling
 generation intentionally completes as interrupted speech rather than a synthesis

@@ -131,13 +131,10 @@ or token-rate improvement is claimed without an exact-device report.
 
 An explicit unknown reference or unresolved board-specific question returns a
 clarification, not a general-knowledge answer about the user's board. General
-electronics questions remain available through the local LLM without a board
-reference. In an active bench session an unmatched question is conservatively
-board-bound, not evidence of general intent. Only explicit educational phrasing
-(for example "Explain capacitance", "How does a resistor work?", or "In general,
-...") may select the general local-model route; explicit component references
-and deictic board wording still require evidence. The guard validates input
-bounds before either route. This is structured/lexical retrieval, not vector
+electronics questions also require admitted evidence in production. The bench
+entry point has no raw-model fallback: unmatched questions return an explicit
+abstention, even when prefixed with educational or general-intent wording.
+The guard validates input bounds before retrieval. This is structured/lexical retrieval, not vector
 search, and embeddings are not required to enforce that boundary.
 A bounded, ambiguity-gated edit-distance recovery may match an ASR-corrupted
 phrase against aliases carried by the signed board reference; otherwise the
@@ -193,3 +190,13 @@ timing, and spoken-format checks. It is execution/adherence testing plus review
 evidence, not an automatic semantic accuracy score. Review all answers for
 contradictions and unsupported claims before claiming local-model quality;
 passing three definitions or a JNI load gate is insufficient.
+
+The optimized e21f5e9 device evaluation completed 24 raw answers in 50.548
+seconds. All failed the spoken-format check, and independent review found
+repeated fundamental factual contradictions in both rounds. Those raw results
+remain failed; production evidence-bound abstention is a separate safety test,
+not an accuracy improvement. No benchmark prompt, sampling profile, rubric or
+raw-model route is replaced by the production policy.
+See [LOCAL_ELECTRONICS_QA.md](LOCAL_ELECTRONICS_QA.md) for the reviewed failure
+examples. Production voice preparation does not eagerly load this unqualified
+model; admitted source answers, speech and vision remain available independently.

@@ -4,6 +4,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -17,17 +20,21 @@ class InitializationWorkerTest {
         override fun close() { closes.incrementAndGet(); disposed.countDown() }
     }
 
-    @Test fun timeoutReturnsWhileNativeLoadIsBlockedAndLateResultIsDisposed() = runBlocking {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun timeoutReturnsWhileNativeLoadIsBlockedAndLateResultIsDisposed() = runTest {
         val worker = InitializationWorker<Resource>()
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
         val result = Resource()
         try {
-            val loading = async(Dispatchers.Default) {
+            val loading = async {
                 try { worker.load(100) { started.countDown(); release.await(); result }; false }
                 catch (_: TimeoutCancellationException) { true }
             }
-            assertTrue(started.await(2, TimeUnit.SECONDS))
+            runCurrent()
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            advanceTimeBy(101)
+            runCurrent()
             assertTrue(withTimeout(2_000) { loading.await() })
             assertNull(worker.current())
             assertEquals(1L, release.count)
@@ -40,7 +47,7 @@ class InitializationWorkerTest {
             } finally { replacement.close() }
             release.countDown()
             assertTrue(result.disposed.await(2, TimeUnit.SECONDS))
-            awaitFinished(worker)
+            withContext(Dispatchers.Default) { awaitFinished(worker) }
             assertEquals(1, result.closes.get())
             assertNull(worker.current())
         } finally { release.countDown(); worker.close() }
