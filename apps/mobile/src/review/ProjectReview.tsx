@@ -5,8 +5,10 @@ import { getTokitoCompanionFfi } from "../../modules/tokito-companion-ffi/src";
 import { tokens } from "../theme";
 import { Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
 import { ReviewClient, parseReceipt, reviewFailure, type Proposal, type Receipt, type ReviewCommand } from "./reviewClient";
+import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 
 export function ProjectReview({ base, token, project, design, revision, bomRevision, summaryVersion }: { base: string; token: string; project: string; design: string; revision: number; bomRevision: number; summaryVersion: number }): JSX.Element {
+  const { owner } = useRealtimeWorkspace();
   const client = useRef<ReviewClient | null>(null);
   const request = useRef(0);
   const operation = useRef(false);
@@ -29,14 +31,15 @@ export function ProjectReview({ base, token, project, design, revision, bomRevis
     finally { if (client.current === current && ticket === request.current) { operation.current = false; setBusy(false); if (refreshQueued.current) { refreshQueued.current = false; void refresh(current); } } }
   }
   useEffect(() => {
+    if (owner === null) return;
     const current = new ReviewClient(getTokitoCompanionFfi()); client.current = current;
     operation.current = false;
     refreshQueued.current = false;
     setReady(false); setProposals([]); setCommands([]); setError(null); setReceipt(null); setCached(false);
-    void current.open(base, token).then(async () => { if (client.current !== current) return; setReady(true); await refresh(current); }).catch(() => { if (client.current === current) setError("Review service could not be opened. Check your connection and sign-in, then retry."); });
+    void current.open(base, token, owner).then(async () => { if (client.current !== current) return; setReady(true); await refresh(current); }).catch(() => { if (client.current === current) setError("Review service could not be opened. Check your connection and sign-in, then retry."); });
     return () => { client.current = null; request.current++; void current.close(); };
     // Retry deliberately recreates the authenticated native session.
-  }, [base, token, project, design, retry]);
+  }, [base, token, owner, project, design, retry]);
   useEffect(() => { if (ready && client.current) void refresh(client.current); }, [summaryVersion]);
   async function decide(proposal: Proposal, action: "apply" | "reject", selection: number[]): Promise<void> {
     const current = client.current; if (!current || operation.current) return;

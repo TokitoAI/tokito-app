@@ -1,5 +1,5 @@
 import type { JSX, PropsWithChildren } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { TokitoPhysical } from "../../modules/tokito-physical/src";
 import type { CloudClient, SyncResourceName } from "../native/bridge";
@@ -38,6 +38,7 @@ export type SyncConflict = {
 export type SyncStatus = "disabled" | "connecting" | "live" | "reconnecting" | "stopped";
 
 type WorkspaceValue = {
+  owner: string | null;
   status: SyncStatus;
   error: string | null;
   resources: SyncResource[];
@@ -73,17 +74,24 @@ export function RealtimeWorkspaceProvider({
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const physicalDrain = useRef<Promise<void> | null>(null);
   const [startupAttempt, setStartupAttempt] = useState(0);
+  const owner = useMemo(() => `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`, [client, token]);
+  const [activatedOwner, setActivatedOwner] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const native = getTokitoCompanionFfi();
+    native.activateWorkspace(client.baseUrl(), token, owner);
+    setActivatedOwner(owner);
+    return () => native.deactivateWorkspace(owner);
+  }, [client, token, owner]);
 
   useEffect(() => {
     const native = getTokitoCompanionFfi();
-    const owner = `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let disposed = false;
     const revoked = native.addListener("onAuthorizationRevoked", event => {
       if (ownsWorkspaceEvent(owner, event.owner, disposed)) onAuthorizationRevoked();
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const open = async (): Promise<void> => {
-      try { await native.startQueues(client.baseUrl(), token, owner); if (disposed) await native.stopQueues(owner); }
+      try { await native.startQueues(client.baseUrl(), token, owner); }
       catch (cause) {
         if (!disposed) {
           setError(retryableStartup(cause)
@@ -94,10 +102,11 @@ export function RealtimeWorkspaceProvider({
       }
     };
     void open();
-    return () => { disposed = true; revoked.remove(); clearTimeout(timer); void native.stopQueues(owner); };
-  }, [client, token, onAuthorizationRevoked]);
+    return () => { disposed = true; revoked.remove(); clearTimeout(timer); };
+  }, [client, token, owner, onAuthorizationRevoked]);
 
   useEffect(() => {
+    if (activatedOwner !== owner) return;
     if (!client.startSync || !client.addSyncListener || !client.stopSync) {
       setStatus("disabled");
       return;
@@ -168,7 +177,7 @@ export function RealtimeWorkspaceProvider({
         receive(event.subscriptionId, () => setError(event.message));
       }),
     ];
-    void client.startSync(token).then((id) => {
+    void client.startSync(token, undefined, owner).then((id) => {
       if (disposed) {
         void client.stopSync?.(id);
         return;
@@ -201,7 +210,7 @@ export function RealtimeWorkspaceProvider({
       subscriptions.forEach((item) => item.remove());
       if (activeId !== null) void client.stopSync?.(activeId);
     };
-  }, [client, token, startupAttempt]);
+  }, [client, token, owner, activatedOwner, startupAttempt]);
 
   const getResource = useCallback(
     (projectId: string, designId: string | null, resource: SyncResourceName) =>
@@ -287,6 +296,7 @@ export function RealtimeWorkspaceProvider({
   }, [client, subscriptionId]);
 
   const value = useMemo<WorkspaceValue>(() => ({
+    owner: activatedOwner === owner ? owner : null,
     status,
     error,
     resources: [...resourceMap.values()],
@@ -294,7 +304,7 @@ export function RealtimeWorkspaceProvider({
     getResource,
     update,
     resolveConflict,
-  }), [status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
+  }), [owner, activatedOwner, status, error, resourceMap, conflicts, getResource, update, resolveConflict]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

@@ -39,7 +39,7 @@ export type CloudClient = CompanionClientPort & {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; body: string }>;
-  startSync?(token: string, projectId?: string): Promise<string>;
+  startSync?(token: string, projectId: string | undefined, owner: string): Promise<string>;
   stopSync?(subscriptionId: string): Promise<void>;
   enqueueSyncCommand?(
     subscriptionId: string,
@@ -331,9 +331,9 @@ export class NativeCompanionClient implements CloudClient {
     }
   }
 
-  async startSync(token: string, projectId?: string): Promise<string> {
+  async startSync(token: string, projectId: string | undefined, owner: string): Promise<string> {
     try {
-      return await this.native.startSync(this.base, token, projectId ?? null);
+      return await this.native.startSync(this.base, token, projectId ?? null, owner);
     } catch (err) {
       throw mapNativeError(err);
     }

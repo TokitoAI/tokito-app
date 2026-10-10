@@ -11,7 +11,7 @@ export class ConversationClient {
   private watchId: string | null = null;
   private generation = 0;
 
-  async open(base: string, token: string, onChange: (change: Record<string, unknown>) => void): Promise<void> {
+  async open(base: string, token: string, onChange: (change: Record<string, unknown>) => void, owner: string): Promise<void> {
     if (this.closed) throw new Error("Conversation session is closed");
     this.subscription = this.native.addListener("onConversationChange", event => {
       if (this.closed || event.sessionId !== this.id || event.watchId !== "" && event.watchId !== this.watchId) return;
@@ -19,7 +19,7 @@ export class ConversationClient {
       catch { onChange({ type: "invalid_event" }); }
     });
     try {
-      await this.native.openConversations(base, token, this.id);
+      await this.native.openConversations(base, token, this.id, owner);
       // Opening can finish after navigation/sign-out. Dispose that late result.
       if (this.closed) await this.native.closeConversations(this.id);
     } catch (error) {

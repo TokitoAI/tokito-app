@@ -31,6 +31,8 @@ class TokitoCompanionFfiModule : Module() {
   private val reviews = ConcurrentHashMap<String, ReviewSession>()
   private val runs = ConcurrentHashMap<String, Pair<String, RunSubscription>>()
   private val queueLock = Any()
+  private val startupLock = Any()
+  private val teardown = java.util.concurrent.Executors.newSingleThreadExecutor()
   private val authorization = AuthorizationEpoch()
   private var queueScope: Pair<String, String>? = null
   private var queueOwner: String? = null
@@ -40,24 +42,32 @@ class TokitoCompanionFfiModule : Module() {
 
   private fun stopQueues() = synchronized(queueLock) {
     authorization.invalidate()
-    subscriptions.values.forEach { it.stop() }; subscriptions.clear()
-    queueTimer?.shutdownNow(); queueTimer = null
-    queueChat?.shutdown(); queueChat = null
-    queueReviews?.shutdown(); queueReviews = null
+    val retiredSubscriptions = subscriptions.values.toList(); subscriptions.clear()
+    val retiredTimer = queueTimer; queueTimer = null
+    val retiredChat = queueChat; queueChat = null
+    val retiredReviews = queueReviews; queueReviews = null
     conversations.clear(); reviews.clear()
-    runs.values.forEach { it.second.stop() }; runs.clear()
+    val retiredRuns = runs.values.map { it.second }; runs.clear()
     queueScope = null; queueOwner = null
+    // Activation is synchronous on the JS control plane. Retire ownership now;
+    // native shutdown and any future blocking disposal stay on a worker thread.
+    teardown.execute {
+      retiredTimer?.shutdownNow()
+      retiredSubscriptions.forEach { it.stop() }
+      retiredRuns.forEach { it.stop() }
+      retiredChat?.shutdown()
+      retiredReviews?.shutdown()
+    }
   }
   private fun revoked(lease: AuthorizationEpoch.Lease?) = synchronized(queueLock) {
-    if (!authorization.owns(lease)) return@synchronized
+    if (!authorization.invalidateIfOwned(lease)) return@synchronized
     val owner = queueOwner
     stopQueues()
     if (owner != null) sendEvent("onAuthorizationRevoked", mapOf("owner" to owner))
   }
-  private fun ensureQueues(base: String, token: String) = synchronized(queueLock) {
-    if (queueScope == (base to token)) return@synchronized
-    stopQueues()
-    val lease = authorization.begin(base, token)
+  private fun ensureQueues(base: String, token: String, owner: String): AuthorizationEpoch.Lease = synchronized(startupLock) {
+    val lease = synchronized(queueLock) { authorization.requireOwner(base, token, owner) }
+    if (synchronized(queueLock) { queueScope == (base to token) }) return@synchronized lease
     val context = requireNotNull(appContext.reactContext)
     val preferences = context.getSharedPreferences("tokito-installation", 0)
     val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also { check(preferences.edit().putString("id", it).commit()) }
@@ -68,22 +78,23 @@ class TokitoCompanionFfiModule : Module() {
         conversations.keys.forEach { id -> sendEvent("onConversationChange", mapOf("sessionId" to id, "watchId" to "", "payloadJson" to payloadJson)) }
       }
     }
-    val chat = try {
-      CompanionClient(base).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
-    } catch (error: Exception) { authorization.invalidate(); throw error }
-    val review = try { CompanionClient(base).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath) } catch (error: Exception) { authorization.invalidate(); chat.shutdown(); throw error }
-    if (!authorization.owns(lease)) {
-      chat.shutdown(); review.shutdown()
-      throw CodedException("Unauthorized", "Session startup was superseded", null)
+    val chat = CompanionClient(base).openConversations(token, device, context.filesDir.resolve("tokito/conversations").absolutePath, listener)
+    val review = try { CompanionClient(base).openReviews(token, device, context.filesDir.resolve("tokito/reviews").absolutePath) } catch (error: Exception) { chat.shutdown(); throw error }
+    synchronized(queueLock) {
+      if (!authorization.owns(lease)) {
+        chat.shutdown(); review.shutdown()
+        throw CodedException("Unauthorized", "Session startup was superseded", null)
+      }
+      queueChat = chat; queueReviews = review; queueScope = base to token
+      queueTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor().also { executor ->
+        executor.scheduleWithFixedDelay({
+          try { review.replayPending() }
+          catch (error: CompanionException) { if (error is CompanionException.Unauthorized) revoked(lease) }
+          catch (_: Exception) { /* Durable commands remain pending; next tick retries. */ }
+        }, 0, 3, java.util.concurrent.TimeUnit.SECONDS)
+      }
     }
-    queueChat = chat; queueReviews = review; queueScope = base to token
-    queueTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor().also { executor ->
-      executor.scheduleWithFixedDelay({
-        try { review.replayPending() }
-        catch (error: CompanionException) { if (error is CompanionException.Unauthorized) revoked(lease) }
-        catch (_: Exception) { /* Durable commands remain pending; next tick retries. */ }
-      }, 0, 3, java.util.concurrent.TimeUnit.SECONDS)
-    }
+    lease
   }
 
   override fun definition() = ModuleDefinition {
@@ -92,23 +103,20 @@ class TokitoCompanionFfiModule : Module() {
 
     OnDestroy {
       stopQueues()
-      subscriptions.values.forEach { it.stop() }
-      subscriptions.clear()
-      runs.values.forEach { it.second.stop() }
-      runs.clear()
-      conversations.values.forEach { it.shutdown() }
-      conversations.clear()
-      reviews.values.forEach { it.shutdown() }
-      reviews.clear()
+      teardown.shutdown()
     }
 
-    AsyncFunction("startQueues") { base: String, token: String, owner: String -> runFfi {
-      synchronized(queueLock) {
-        if (queueOwner != null && queueOwner != owner) stopQueues()
-        ensureQueues(base, token)
-        queueOwner = owner
-      }
-    } }
+    // Synchronous control-plane activation precedes every asynchronous startup.
+    Function("activateWorkspace") { base: String, token: String, owner: String -> synchronized(queueLock) {
+      stopQueues()
+      authorization.begin(base, token, owner)
+      queueOwner = owner
+    }; Unit }
+    Function("deactivateWorkspace") { owner: String -> synchronized(queueLock) { if (queueOwner == owner) stopQueues() }; Unit }
+    AsyncFunction("startQueues") { base: String, token: String, owner: String ->
+      val lease = authorization.requireOwner(base, token, owner)
+      runFfi(lease) { ensureQueues(base, token, owner); Unit }
+    }
     AsyncFunction("stopQueues") { owner: String -> synchronized(queueLock) { if (queueOwner == owner) stopQueues() } }
 
     AsyncFunction("baseUrl") { baseUrl: String ->
@@ -122,16 +130,20 @@ class TokitoCompanionFfiModule : Module() {
       runFfi(authorization.matching(base, token)) { uniffi.tokito_companion_ffi.cachedSchematicPreview(base, token, project, design, version.toULong(), sheet, requireNotNull(appContext.reactContext).filesDir.resolve("tokito/preview-state").absolutePath) }
     }
 
-    AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String ->
-      runFfi {
+    AsyncFunction("openReviews") { baseUrl: String, token: String, sessionId: String, owner: String ->
+      val lease = authorization.requireOwner(baseUrl, token, owner)
+      runFfi(lease) {
         require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         val context = requireNotNull(appContext.reactContext)
         val preferences = context.getSharedPreferences("tokito-installation", 0)
         val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
           check(preferences.edit().putString("id", it).commit())
         }
-        ensureQueues(baseUrl, token)
-        reviews[sessionId] = requireNotNull(queueReviews)
+        ensureQueues(baseUrl, token, owner)
+        synchronized(queueLock) {
+          check(authorization.owns(lease)) { "Workspace startup was superseded" }
+          reviews[sessionId] = requireNotNull(queueReviews)
+        }
         sessionId
       }
     }
@@ -142,16 +154,20 @@ class TokitoCompanionFfiModule : Module() {
       runFfi { review(sessionId).decide(project, design, run, seq.toULong(), action, selection) }
     }
 
-    AsyncFunction("openConversations") { baseUrl: String, token: String, sessionId: String ->
-      runFfi {
+    AsyncFunction("openConversations") { baseUrl: String, token: String, sessionId: String, owner: String ->
+      val lease = authorization.requireOwner(baseUrl, token, owner)
+      runFfi(lease) {
         require(sessionId.matches(Regex("[A-Za-z0-9_-]{1,128}")))
         val context = requireNotNull(appContext.reactContext)
         val preferences = context.getSharedPreferences("tokito-installation", 0)
         val device = preferences.getString("id", null) ?: UUID.randomUUID().toString().also {
           check(preferences.edit().putString("id", it).commit())
         }
-        ensureQueues(baseUrl, token)
-        conversations[sessionId] = requireNotNull(queueChat)
+        ensureQueues(baseUrl, token, owner)
+        synchronized(queueLock) {
+          check(authorization.owns(lease)) { "Workspace startup was superseded" }
+          conversations[sessionId] = requireNotNull(queueChat)
+        }
         sessionId
       }
     }
@@ -369,10 +385,10 @@ class TokitoCompanionFfiModule : Module() {
       }
     }
 
-    AsyncFunction("startSync") { baseUrl: String, token: String, projectId: String? ->
-      runFfi {
-        ensureQueues(baseUrl, token)
-        val lease = authorization.matching(baseUrl, token)
+    AsyncFunction("startSync") { baseUrl: String, token: String, projectId: String?, owner: String ->
+      val lease = authorization.requireOwner(baseUrl, token, owner)
+      runFfi(lease) {
+        ensureQueues(baseUrl, token, owner)
         val context = requireNotNull(appContext.reactContext) { "React context unavailable" }
         val installationId = Settings.Secure.getString(
           context.contentResolver,

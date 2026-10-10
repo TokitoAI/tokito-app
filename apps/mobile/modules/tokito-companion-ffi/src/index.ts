@@ -29,16 +29,18 @@ export type NativeAccount = {
 };
 
 export type TokitoCompanionFfiNative = {
+  activateWorkspace(base: string, token: string, owner: string): void;
+  deactivateWorkspace(owner: string): void;
   startQueues(base: string, token: string, owner: string): Promise<void>;
   stopQueues(owner: string): Promise<void>;
   getSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string>;
   cachedSchematicPreview(base: string, token: string, project: string, design: string, version: string, sheet: string): Promise<string | null>;
-  openReviews(baseUrl: string, token: string, sessionId: string): Promise<string>;
+  openReviews(baseUrl: string, token: string, sessionId: string, owner: string): Promise<string>;
   closeReviews(sessionId: string): Promise<void>;
   loadReviews(sessionId: string, project: string, design: string): Promise<string>;
   localReviewCommands(sessionId: string, project: string, design: string): Promise<string>;
   decideReview(sessionId: string, project: string, design: string, run: string, eventSeq: string, action: string, selectedJson: string): Promise<string>;
-  openConversations(baseUrl: string, token: string, sessionId: string): Promise<string>;
+  openConversations(baseUrl: string, token: string, sessionId: string, owner: string): Promise<string>;
   closeConversations(sessionId: string): Promise<void>;
   conversationThreads(sessionId: string, project: string, design: string): Promise<string>;
   createConversation(sessionId: string, project: string, design: string, title: string): Promise<string>;
@@ -85,7 +87,7 @@ export type TokitoCompanionFfiNative = {
     projectId: string,
     name: string,
   ): Promise<{ contentType: string; bodyBase64: string }>;
-  startSync(baseUrl: string, token: string, projectId: string | null): Promise<string>;
+  startSync(baseUrl: string, token: string, projectId: string | null, owner: string): Promise<string>;
   stopSync(subscriptionId: string): Promise<void>;
   enqueueSyncCommand(
     subscriptionId: string,

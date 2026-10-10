@@ -54,7 +54,7 @@ test("a session finishing opening after sign-out is shut down again", async () =
     closeConversations: async () => { closed++; },
   } as unknown as TokitoCompanionFfiNative;
   const client = new ConversationClient(native);
-  const opening = client.open("https://api.example.test", "token", () => {});
+  const opening = client.open("https://api.example.test", "token", () => {}, "workspace-test");
   await client.close();
   finish(client.id);
   await opening;
@@ -99,7 +99,7 @@ test("late watch startup is stopped and its events cannot reach a newer conversa
     closeConversations: async () => {},
   } as unknown as TokitoCompanionFfiNative;
   const client = new ConversationClient(native);
-  await client.open("https://api.example.test", "token", change => received.push(change));
+  await client.open("https://api.example.test", "token", change => received.push(change), "workspace-test");
   const old = client.watch("old");
   await client.watch("new");
   listener({ sessionId: client.id, watchId: watches[0], payloadJson: '{"type":"event"}' });
