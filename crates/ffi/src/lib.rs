@@ -522,6 +522,20 @@ impl CompanionClient {
     }
 }
 
+fn admit_sync_bootstrap(
+    store: &SyncStateStore,
+    snapshot: &tokito_companion_core::SyncBootstrap,
+    project_id: Option<&str>,
+    listener: &dyn SyncListener,
+) -> Result<(), CloudError> {
+    let admitted = store.apply_bootstrap(snapshot, project_id)?;
+    // Admission preserves prior committed activity missing from older servers.
+    // Send that exact durable projection, not the unmerged HTTP snapshot.
+    let json = serde_json::to_string(&admitted.resources).map_err(|_| CloudError::Unexpected)?;
+    listener.on_bootstrap(admitted.cursor, json);
+    Ok(())
+}
+
 fn replay_sync_conflicts(
     store: &SyncStateStore,
     listener: &dyn SyncListener,
@@ -560,10 +574,7 @@ async fn run_sync_session(
         let connect = async {
             register_device(&base_url, &token, &device.0, &device.1, &device.2).await?;
             let snapshot = bootstrap_realtime(&base_url, &token, project_id.as_deref()).await?;
-            store.apply_bootstrap(&snapshot, project_id.as_deref())?;
-            let json =
-                serde_json::to_string(&snapshot.resources).map_err(|_| CloudError::Unexpected)?;
-            listener.on_bootstrap(snapshot.cursor, json);
+            admit_sync_bootstrap(&store, &snapshot, project_id.as_deref(), listener.as_ref())?;
             Ok::<u64, CloudError>(snapshot.cursor)
         };
         let result = tokio::select! {
@@ -717,6 +728,108 @@ mod tests {
             self.0.lock().unwrap().push((command, version, payload));
         }
         fn on_error(&self, _: String) {}
+    }
+
+    #[derive(Debug, Default)]
+    struct BootstrapListener(std::sync::Mutex<Vec<(u64, String)>>);
+
+    impl SyncListener for BootstrapListener {
+        fn on_status(&self, _: String) {}
+        fn on_bootstrap(&self, cursor: u64, json: String) {
+            self.0.lock().unwrap().push((cursor, json));
+        }
+        fn on_event(&self, _: String) {}
+        fn on_conflict(&self, _: String, _: u64, _: String) {}
+        fn on_error(&self, _: String) {}
+    }
+
+    #[test]
+    fn bootstrap_listener_receives_admitted_activity_and_scoped_authoritative_content() {
+        use tokito_companion_core::{SyncBootstrap, SyncEvent, SyncResource};
+        let store = SyncStateStore::open(Path::new(":memory:")).unwrap();
+        store
+            .apply_event(&SyncEvent {
+                seq: 1,
+                command_id: "chat".into(),
+                actor_device_id: "desktop".into(),
+                project_id: "p".into(),
+                design_id: Some("d".into()),
+                resource: "chat".into(),
+                version: 1,
+                payload: serde_json::json!({"messages": ["saved"]}),
+                created_at: 100,
+            })
+            .unwrap();
+        let unrelated = SyncResource {
+            project_id: "other".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 1,
+            payload: serde_json::json!({"name":"Untouched"}),
+            last_activity_at: Some(200),
+        };
+        let chat = store.resources(Some("p")).unwrap().remove(0);
+        store
+            .apply_bootstrap(
+                &SyncBootstrap {
+                    cursor: 1,
+                    resources: vec![chat.clone(), unrelated.clone()],
+                },
+                None,
+            )
+            .unwrap();
+        let tombstone = SyncResource {
+            project_id: "p".into(),
+            design_id: None,
+            resource: "project".into(),
+            version: 2,
+            payload: serde_json::json!({"deleted":true}),
+            last_activity_at: None,
+        };
+        let listener = BootstrapListener::default();
+        for activity in [None, Some(90)] {
+            let incoming = SyncResource {
+                last_activity_at: activity,
+                ..chat.clone()
+            };
+            let snapshot = SyncBootstrap {
+                cursor: 1,
+                resources: vec![incoming.clone(), tombstone.clone()],
+            };
+            admit_sync_bootstrap(&store, &snapshot, Some("p"), &listener).unwrap();
+            let events = listener.0.lock().unwrap();
+            let (cursor, json) = events.last().unwrap();
+            let emitted: Vec<SyncResource> = serde_json::from_str(json).unwrap();
+            assert_eq!(*cursor, 1);
+            assert_eq!(store.cursor().unwrap(), 1);
+            assert_eq!(emitted.len(), 2);
+            let emitted_chat = emitted
+                .iter()
+                .find(|resource| resource.resource == "chat")
+                .unwrap();
+            assert_eq!(emitted_chat.last_activity_at, Some(100));
+            assert_eq!(emitted_chat.payload, incoming.payload);
+            assert_eq!(emitted_chat.version, incoming.version);
+            assert!(emitted.contains(&tombstone));
+            assert_eq!(
+                store.resources(Some("other")).unwrap(),
+                vec![unrelated.clone()]
+            );
+            assert_eq!(snapshot.resources[0].last_activity_at, activity);
+        }
+        let count = listener.0.lock().unwrap().len();
+        assert!(admit_sync_bootstrap(
+            &store,
+            &SyncBootstrap {
+                cursor: 0,
+                resources: vec![]
+            },
+            None,
+            &listener
+        )
+        .is_err());
+        assert_eq!(listener.0.lock().unwrap().len(), count);
+        assert_eq!(store.cursor().unwrap(), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]

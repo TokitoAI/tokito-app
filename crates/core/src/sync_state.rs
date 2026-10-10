@@ -93,7 +93,7 @@ impl SyncStateStore {
         &self,
         bootstrap: &SyncBootstrap,
         project_id: Option<&str>,
-    ) -> Result<(), CloudError> {
+    ) -> Result<SyncBootstrap, CloudError> {
         let mut conn = self.conn.lock().map_err(|_| CloudError::Unexpected)?;
         let tx = conn.transaction().map_err(db_error)?;
         if bootstrap.cursor < read_cursor(&tx)? || bootstrap.cursor < acknowledged_cursor(&tx)? {
@@ -148,7 +148,11 @@ impl SyncStateStore {
             upsert_resource(&tx, resource)?;
         }
         set_cursor(&tx, bootstrap.cursor)?;
-        tx.commit().map_err(db_error)
+        tx.commit().map_err(db_error)?;
+        Ok(SyncBootstrap {
+            cursor: bootstrap.cursor,
+            resources: admitted_resources,
+        })
     }
 
     /// Apply one event and advance the durable cursor in the same transaction.
