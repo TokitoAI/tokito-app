@@ -14,6 +14,33 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceCallControllerTest {
+    @Test fun backendCancellationCannotLeaveCallThinking() = runTest {
+        val response = CompletableDeferred<Unit>()
+        val harness = Harness(this, responseGate = response)
+        harness.controller.start()
+        harness.controller.accept(final("find the component", 1))
+        testScheduler.runCurrent()
+        response.cancel()
+        advanceUntilIdle()
+        assertEquals(CallState.Idle, harness.controller.currentState())
+        assertTrue(harness.stops > 0)
+        harness.controller.start()
+        assertEquals(2, harness.preparations)
+        assertEquals(CallState.Listening, harness.controller.currentState())
+    }
+    @Test fun cancelledGenerationRepreparesBeforeNextMicrophoneStart() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val harness = Harness(this, responseGate = gate)
+        harness.controller.start()
+        harness.controller.accept(final("locate the MCU", 1))
+        testScheduler.runCurrent()
+        harness.controller.stop()
+        advanceUntilIdle()
+        harness.controller.start()
+        assertEquals(2, harness.preparations)
+        assertEquals(CallState.Listening, harness.controller.currentState())
+        harness.controller.stop()
+    }
     @Test fun foregroundRetirementInvalidatesEvenACompletedWarmup() = runTest {
         val harness = Harness(this)
         harness.controller.warmUp()

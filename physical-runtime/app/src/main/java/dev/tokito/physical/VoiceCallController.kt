@@ -137,8 +137,14 @@ internal class VoiceCallController(
                 }
                 if (active && owner == ownership) transition(CallState.Listening)
             } catch (failure: CancellationException) {
+                invalidatePreparation()
+                if (owner == ownership && active) {
+                    active = false
+                    transition(CallState.Idle)
+                }
                 throw failure
             } catch (failure: Throwable) {
+                invalidatePreparation()
                 if (owner == ownership) {
                     active = false
                     runCatching { stopListening() }

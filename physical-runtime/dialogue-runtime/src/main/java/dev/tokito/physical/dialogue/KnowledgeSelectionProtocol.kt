@@ -75,10 +75,22 @@ class KnowledgeSelectionRequest(
         try {
             require(raw.length <= 4096)
             // A model may wrap the entire JSON envelope in a Markdown code
-            // fence. Remove only that exact presentation wrapper, never search
-            // arbitrary prose for an object or relax evidence validation.
-            val trimmed = raw.trim()
-            val envelope = Regex("\\A```(?:json)?\\s*\\n([\\s\\S]*?)\\n```\\z")
+            // fence with commentary outside it. Admit exactly one fenced block;
+            // surrounding text cannot contain another object or fence, and is
+            // discarded, never spoken or used as engineering evidence. Raw JSON
+            // still rejects trailing content. All IDs remain strictly validated.
+            val outputText = raw.trim()
+            // Some Qwen exports emit a closed reasoning channel despite the
+            // non-thinking prefix. It has no authority: discard exactly one
+            // complete leading block, never extract evidence from its contents.
+            val trimmed = if (outputText.startsWith("<think>")) {
+                val end = outputText.indexOf("</think>")
+                require(end >= 7) { "Incomplete reasoning channel" }
+                require(!outputText.substring(7, end).contains("<think>")) { "Nested reasoning channel" }
+                outputText.substring(end + 8).trim()
+            } else outputText
+            require(!trimmed.contains("<think>") && !trimmed.contains("</think>")) { "Unexpected reasoning channel" }
+            val envelope = Regex("\\A[^`{}]*```(?:json)?\\s*\\n([\\s\\S]*?)\\n```[^`{}]*\\z")
                 .matchEntire(trimmed)?.groupValues?.get(1)?.trim() ?: trimmed
             require(envelope.startsWith("{") && envelope.endsWith("}")) { "Envelope boundary" }
             val tokenizer = org.json.JSONTokener(envelope)
@@ -89,9 +101,27 @@ class KnowledgeSelectionRequest(
             val ids = output.getJSONArray("facts")
             require(ids.length() in 0..48) { "Selection count exceeds supplied facts" }
             val cited = (0 until ids.length()).map { index ->
-                val id = ids.get(index)
-                require(id is String) { "Selection ID is not a string" }
-                facts.single { it.id == id }
+                val entry = ids.get(index)
+                val id = when (entry) {
+                    is String -> entry
+                    is JSONObject -> {
+                        require(entry.keys().asSequence().toSet().all {
+                            it in setOf("id", "source_board_id", "reference", "field", "value")
+                        }) { "Unknown selected fact field" }
+                        entry.get("id").also { require(it is String) { "Selection ID is not a string" } } as String
+                    }
+                    else -> throw IllegalArgumentException("Selection ID is not a string or supplied fact object")
+                }
+                val fact = facts.single { it.id == id }
+                // A copied source object is presentation, not new evidence. Its
+                // optional fields must exactly match the admitted source fact.
+                if (entry is JSONObject) {
+                    for ((key, expected) in mapOf("source_board_id" to fact.sourceBoardId,
+                        "reference" to fact.reference, "field" to fact.pointer, "value" to fact.value)) {
+                        if (entry.has(key)) require(entry.get(key) == expected) { "Selected fact differs from supplied evidence" }
+                    }
+                }
+                fact
             }
             // Validate every ID before imposing the spoken response budget.
             // An extra valid source selection is not hallucination; unchecked

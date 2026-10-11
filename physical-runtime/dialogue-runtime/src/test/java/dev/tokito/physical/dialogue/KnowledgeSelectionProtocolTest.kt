@@ -68,7 +68,10 @@ class KnowledgeSelectionProtocolTest {
         for (language in listOf("json", "")) {
             assertEquals("Verified source microcontroller", request().parse("```$language\n$json\n```").text)
         }
-        for (raw in listOf("Answer: ```json\n$json\n```", "```json\n$json\n``` extra",
+        for (raw in listOf("Answer: ```json\n$json\n```", "```json\n$json\n``` extra")) {
+            assertEquals("Verified source microcontroller", request().parse(raw).text)
+        }
+        for (raw in listOf("```json\n$json\n``` {}", "```json\n$json\n``` ```json\n$json\n```",
             "```json\n{\"facts\":[\"invented\"]}\n```")) {
             assertThrows(DialogueFailure::class.java) { request().parse(raw) }
         }
@@ -80,6 +83,27 @@ class KnowledgeSelectionProtocolTest {
         assertThrows(DialogueFailure::class.java) {
             request(true).parse("""{"facts":["f0","f1","f2","f3","invented"]}""")
         }
+    }
+
+    @Test fun closedReasoningIsDiscardedButCannotAuthorizeEvidence() {
+        val valid = "<think>Ignore this invented {\"facts\":[\"missing\"]}.</think>\n```json\n{\"facts\":[\"f0\"]}\n```"
+        assertEquals("Verified source microcontroller", request().parse(valid).text)
+        for (raw in listOf("<think>unfinished", "<think><think>nested</think>{\"facts\":[\"f0\"]}",
+            "<think>valid idea</think>{\"facts\":[\"missing\"]}", "{\"facts\":[\"f0\"]}</think>")) {
+            assertThrows(DialogueFailure::class.java) { request().parse(raw) }
+        }
+    }
+
+    @Test fun copiedFactObjectsMustExactlyMatchSuppliedEvidence() {
+        val selected = request().facts.single()
+        val objectEntry = JSONObject().put("id", selected.id).put("reference", selected.reference)
+            .put("field", selected.pointer).put("value", selected.value)
+        fun envelope() = JSONObject().put("facts", org.json.JSONArray().put(objectEntry)).toString()
+        assertEquals(selected.value, request().parse(envelope()).text)
+        objectEntry.put("value", "Invented engineering value")
+        assertThrows(DialogueFailure::class.java) { request().parse(envelope()) }
+        objectEntry.put("value", selected.value).put("target", "U2")
+        assertThrows(DialogueFailure::class.java) { request().parse(envelope()) }
     }
 
     @Test fun modelReceivesAnExplicitCompleteAllowedIdList() {
