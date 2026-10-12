@@ -7,7 +7,7 @@ import android.graphics.Paint
 import android.view.View
 import dev.tokito.physical.dialogue.LocalSegmentationRuntime
 
-/** Image-frame raw class predictions, never registered design guidance. */
+/** Image-frame masks/boxes with score captions, never registered design guidance. */
 class SegmentMaskView(context: Context) : View(context) {
     private var result: LocalSegmentationRuntime.Result? = null
     private var transform = Matrix()
@@ -56,7 +56,7 @@ class SegmentMaskView(context: Context) : View(context) {
             paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f*density
             paint.color = context.getColor(R.color.tokito_primary)
             canvas.drawPath(path,paint)
-            val text = "${box.label} ${"%.0f".format(java.util.Locale.ROOT,box.score*100)}%"
+            val text = segmentationConfidenceLabel(box.score)
             paint.textSize = font
             val padding = 4f*density
             val measured = paint.measureText(text) + padding*2

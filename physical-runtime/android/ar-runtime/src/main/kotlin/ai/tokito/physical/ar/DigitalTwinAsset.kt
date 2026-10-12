@@ -8,6 +8,8 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class Vector3Contract(val x: Double, val y: Double, val z: Double) {
@@ -43,7 +45,10 @@ data class DigitalTwinManifest(
     val defaultOpacity: Double = 0.42,
     val componentNodePrefix: String = "ref:",
     val boardPlaneCornerPointsMetres: List<Vector3Contract>? = null,
+    val physicalGeometryVerified: Boolean = false,
+    val arRegistrationVerified: Boolean = false,
 ) {
+    val registrationEligible: Boolean get() = physicalGeometryVerified && arRegistrationVerified
     /**
      * Metric board-plane landmarks in the same clockwise order required by
      * registration.
@@ -84,6 +89,7 @@ sealed interface DigitalTwinValidation {
         CONTEXT_MISMATCH,
         INVALID_GEOMETRY,
         INVALID_GLB,
+        RESOURCE_BUDGET,
         DIGEST_MISMATCH,
         IO_FAILURE,
     }
@@ -188,7 +194,34 @@ class DigitalTwinValidator(
         if (declared.length != 64 || !MessageDigest.isEqual(actual.toByteArray(), declared.toByteArray())) {
             return DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.DIGEST_MISMATCH, "GLB digest does not match manifest")
         }
+        validateSceneBudget(glb)?.let { return it }
         return DigitalTwinValidation.Accepted(DigitalTwinPackage(manifest, glb.copyOf()))
+    }
+
+    /** Byte limits alone do not bound native draw handles: STEP exports may have one primitive per face. */
+    private fun validateSceneBudget(bytes: ByteArray): DigitalTwinValidation.Rejected? {
+        val length = ByteBuffer.wrap(bytes, 12, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        fun budget(detail: String) = DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.RESOURCE_BUDGET, detail)
+        if (length > 4 * 1024 * 1024) return budget("GLB scene JSON exceeds renderer budget; optimize the source asset")
+        return try {
+            val scene = json.parseToJsonElement(bytes.copyOfRange(20, 20 + length).toString(Charsets.UTF_8)) as? JsonObject
+                ?: error("GLB scene is not an object")
+            fun array(key: String): JsonArray = scene[key]?.let { it as? JsonArray ?: error("Invalid scene array") } ?: JsonArray(emptyList())
+            if (array("nodes").size > 8192 || array("materials").size > 1024 || array("textures").size > 128) {
+                return budget("GLB object count exceeds renderer budget; optimize the source asset")
+            }
+            val meshes = array("meshes")
+            if (meshes.size > 8192) return budget("GLB mesh count exceeds renderer budget")
+            var primitives = 0L
+            meshes.forEach { mesh ->
+                val entries = (mesh as? JsonObject)?.get("primitives") as? JsonArray ?: error("Invalid mesh primitives")
+                primitives += entries.size
+                if (primitives > 8192) return budget("GLB draw primitives exceed renderer budget; optimize without removing component references")
+            }
+            null
+        } catch (_: RuntimeException) {
+            DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.INVALID_GLB, "GLB scene JSON is malformed")
+        }
     }
 
     private fun isGlbV2(bytes: ByteArray): Boolean {

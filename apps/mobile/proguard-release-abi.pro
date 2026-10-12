@@ -22,6 +22,8 @@
 -keep,includedescriptorclasses class dev.tokito.physical.model.InstalledModelBundle { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.LocalPoseVisionRuntime { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.LocalPoseVisionRuntime$Companion { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.model.VisionBundleProfiles { public *; }
+-keep,includedescriptorclasses class dev.tokito.physical.model.VisionBundleProfiles$Companion { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalSegmentationRuntime { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalSegmentationRuntime$Companion { public *; }
 -keep,includedescriptorclasses class dev.tokito.physical.dialogue.LocalSegmentationRuntime$Result { public *; }
@@ -151,3 +153,11 @@
 -keep class dev.tokito.physical.session.PhysicalSessionStore { public *; }
 -keep class dev.tokito.physical.session.PhysicalSessionStore$Companion { public *; }
 -keep class ai.tokito.physical.ar.ArCameraSurface { public *; }
+-keep class ai.tokito.physical.ar.CameraIntrinsics { public *; }
+-keep class ai.tokito.physical.ar.Point2 { public *; }
+-keep class dev.tokito.physical.PoseVisionObservation { public *; }
+-keep class dev.tokito.physical.ReferenceBoardTracker { public *; }
+-keep class dev.tokito.physical.ReferenceBoardTracker$Companion { public *; }
+-keep class dev.tokito.physical.ReferenceBoardTracker$Observation { public *; }
+-keep class dev.tokito.physical.model.ReferenceTwinCatalog { public *; }
+-keep class dev.tokito.physical.model.ReferenceTwinCatalog$Entry { public *; }

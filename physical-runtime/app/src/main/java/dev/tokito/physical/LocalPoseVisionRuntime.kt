@@ -48,21 +48,21 @@ class LocalPoseVisionRuntime private constructor(
     private var closed = false
 
     @Synchronized
-    fun analyze(frame: ArCameraSurface.CameraFrame): PoseVisionObservation? {
+    fun analyze(frame: ArCameraSurface.CameraFrame, recycleInput: Boolean = true): PoseVisionObservation? {
         if (geometryRevision != frame.geometryRevision) {
             stabilizer.reset()
             geometryRevision = frame.geometryRevision
         }
         if (closed) {
-            frame.bitmap.recycle()
+            if (recycleInput) frame.bitmap.recycle()
             return null
         }
         if (frame.previewWidth <= 0 || frame.previewHeight <= 0) {
-            frame.bitmap.recycle()
+            if (recycleInput) frame.bitmap.recycle()
             return null
         }
         val prepared = letterbox(frame.bitmap, manifest.inputSize)
-        frame.bitmap.recycle()
+        if (recycleInput) frame.bitmap.recycle()
         analyzedFrames += 1
         if (analyzedFrames == 1L) Log.d(TAG, "Analyzing first camera frame")
         interpreter.run(prepared.tensor, output)

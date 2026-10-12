@@ -261,6 +261,7 @@ class ModelBundleInstaller(
         require(manifest.getString("model_id").isNotBlank() && manifest.getString("model_revision").isNotBlank())
         require(manifest.getJSONArray("artifacts").length() > 0)
         require(manifest.getJSONArray("artifacts").length() <= policy.maxEntries - 2) { "too many model artifacts" }
+        require(!manifest.has("vision_profiles") || policy.capability == "vision") { "vision profiles target another capability" }
     }
 
     private fun activate(staging: File) {

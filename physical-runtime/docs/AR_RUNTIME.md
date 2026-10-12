@@ -97,6 +97,57 @@ decision.
 
 ## Verification
 
+Signed reference-twin entries may include a `tracking` profile. It binds an
+image digest and four explicit paired image/metric landmarks. SIFT features are
+extracted only inside the projected board plane. Each camera observation fits a
+fresh RANSAC homography against the source image, rejecting poor support,
+reflection, clipping, reprojection error and ambiguous competing templates.
+There is no accumulated frame-to-frame drift. A matched source package loads
+automatically and its metric camera pose is refreshed even while stationary.
+Tracking loss, zoom and lifecycle changes revoke geometry. Unqualified source
+models remain explicitly dynamic reference comparisons, not verified physical
+revision/component identity or authorization for spoken positional claims.
+
+Camera analysis requests 1280x720 rather than the low-resolution default; the
+actual selected size remains CameraX-owned. Preview transforms are refreshed
+when the stream becomes active because camera OPEN can precede transform
+availability. Features stay native and bounded to 3,000 per image.
+
+The GLB admission gate bounds the scene JSON to 4 MiB and the whole scene to
+8,192 nodes, 8,192 draw primitives, 1,024 materials and 128 textures before
+invoking the native loader. File byte size alone does not protect the renderer:
+STEP face exports can exhaust native draw handles despite a small GLB. Optimize
+such exports with pinned `gltfpack@1.3.0 -kn -km -ke -noq` (no simplification),
+then run `tools/admit_optimized_twin.py` against the original bound manifest.
+The verifier requires identical component names, renderability and metric bounds
+within 1 micrometre. The resulting manifest rebinds bytes and digest; it does not
+grant physical or registration qualification. The optimizer may remove degenerate
+triangles. Inspect and device-test the resulting model before signing a bundle.
+
+Component highlights compensate emissive radiance for the current Filament
+camera aperture, shutter speed and ISO. They override only selected component
+material instances, and restore the original instances on expiry or replacement;
+global scene exposure and source material ownership are unchanged.
+
+Image-frame segmentation shows masks, bounding boxes and confidence percentages
+without raw class-name captions or status lists. These percentages are model
+scores, not calibrated identity confidence. Class labels remain in the inference
+contract; presentation does not promote them to registered component identities.
+
+The shipping host installs one native CameraX frame listener. Pose and component
+segmentation borrow that frame serially; the listener owns its final recycling.
+Pose inference has a 250 ms minimum interval rather than executing a CPU model
+on every preview frame. This bounds load; it is not qualification of the
+100 ms motion-to-overlay release target or a substitute for lightweight tracking.
+Segmentation retains its bounded cadence and heavy-work admission. Queued
+results are checked against geometry revision, lifecycle and model ownership.
+Neither a generic component label nor a mask grants board/refdes identity.
+
+A signed vision bundle can declare `vision_profiles` with distinct `board_pose`
+and `component_segmentation` tasks and app-private subdirectories. Both profiles
+use the same signed artifact inventory and conformance gate. There is no scan of
+unadmitted model folders or automatic use of a rollback as a second model.
+
 Automated JVM tests cover projective fitting/inversion, graph composition,
 revision isolation, expiry, cycle termination, scene ordering, abstention,
 registration invalidation, and stale-scene rejection. Android CI must run unit

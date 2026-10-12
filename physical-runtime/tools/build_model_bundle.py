@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import subprocess
 import tempfile
@@ -64,6 +65,25 @@ def manifest_bytes(args: argparse.Namespace, artifacts: list[dict[str, object]])
         raise ValueError("model id, model revision, and runtime revision must be non-empty")
     if not document["supported_abis"]:
         raise ValueError("at least one ABI is required")
+    profiles = getattr(args, "vision_profile", [])
+    if profiles:
+        if args.capability != "vision" or len(profiles) > 2:
+            raise ValueError("vision profiles require a vision bundle with at most two tasks")
+        tasks, directories, routes = set(), set(), []
+        inventory = {str(artifact["path"]) for artifact in artifacts}
+        for profile in profiles:
+            task, separator, directory = profile.partition("=")
+            if (not separator or task not in {"board_pose", "component_segmentation"}
+                    or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", directory)
+                    or task in tasks or directory in directories):
+                raise ValueError("invalid or ambiguous signed vision profile")
+            config = "segmentation.json" if task == "component_segmentation" else "manifest.json"
+            if f"{directory}/{config}" not in inventory:
+                raise ValueError("vision profile config is absent from the signed inventory")
+            tasks.add(task)
+            directories.add(directory)
+            routes.append({"task": task, "directory": directory})
+        document["vision_profiles"] = sorted(routes, key=lambda route: route["task"])
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
@@ -108,6 +128,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--runtime-revision", default="1")
     result.add_argument("--abi", action="append", default=[])
     result.add_argument("--license", default="apache-2.0")
+    result.add_argument("--vision-profile", action="append", default=[], metavar="TASK=DIRECTORY")
     return result
 
 

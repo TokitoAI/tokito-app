@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.util.AttributeSet
 import android.util.Log
+import android.util.Size
 import android.view.ViewGroup
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -49,6 +50,7 @@ class ArCameraSurface @JvmOverloads constructor(
     private var cameraStateObserver: Observer<CameraState>? = null
     private var zoomSource: LiveData<ZoomState>? = null
     private var zoomObserver: Observer<ZoomState>? = null
+    private var streamObserver: Observer<PreviewView.StreamState>? = null
     var onZoomChanged: ((Float?, Float?, Float?) -> Unit)? = null
     var onCameraGeometryChanged: (() -> Unit)? = null
     @Volatile var geometryRevision: Long = 0
@@ -122,10 +124,17 @@ class ArCameraSurface @JvmOverloads constructor(
                 setPinchToZoomEnabled(false) // The guidance overlay owns single-tap registration.
                 setImageAnalysisBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 setImageAnalysisOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                setImageAnalysisTargetSize(androidx.camera.view.CameraController.OutputSize(Size(1280, 720)))
             }
             configureAnalyzer(next)
             preview.controller = next
             next.bindToLifecycle(lifecycleOwner)
+            // OPEN precedes PreviewView's transformation metadata on some devices.
+            // Refresh when frames actually start streaming, not just when the camera opens.
+            streamObserver = Observer { state ->
+                if (state == PreviewView.StreamState.STREAMING) refreshSensorToPreview()
+            }
+            preview.previewStreamState.observe(lifecycleOwner, requireNotNull(streamObserver))
             val source = next.cameraInfo?.cameraState
             val observer = Observer<CameraState> { state ->
                 val status = state.error?.let { Status.Unavailable("camera error ${it.code}") } ?: when (state.type) {
@@ -167,6 +176,8 @@ class ArCameraSurface @JvmOverloads constructor(
     }
 
     fun stop() {
+        streamObserver?.let { preview.previewStreamState.removeObserver(it) }
+        streamObserver = null
         zoomObserver?.let { zoomSource?.removeObserver(it) }
         zoomObserver = null
         zoomSource = null
@@ -203,6 +214,7 @@ class ArCameraSurface @JvmOverloads constructor(
 
     private fun analyzeFrame(image: ImageProxy) {
         val revision = geometryRevision
+        if (sensorToPreview == null) preview.post(::refreshSensorToPreview)
         val listener = frameListener
         if (listener == null) {
             image.close()
@@ -233,7 +245,8 @@ class ArCameraSurface @JvmOverloads constructor(
         }
         image.close()
         deliveredFrames += 1
-        if (deliveredFrames == 1L) Log.d(TAG, "Delivered first camera analysis frame")
+        if (deliveredFrames == 1L || deliveredFrames % 150L == 0L) Log.i(TAG,
+            "Camera frame ${bitmap.width}x${bitmap.height}; mapped=${analysisToPreview != null}; revision=$revision")
         if (revision != geometryRevision) { bitmap.recycle(); return }
         listener(CameraFrame(bitmap, timestamp, preview.width, preview.height, analysisToPreview, revision))
     }
@@ -270,7 +283,20 @@ class ArCameraSurface @JvmOverloads constructor(
         if (preview.width <= 0 || preview.height <= 0) return null
         val camera2 = Camera2CameraInfo.from(info)
         val calibration = camera2.getCameraCharacteristic(android.hardware.camera2.CameraCharacteristics.LENS_INTRINSIC_CALIBRATION)
-            ?: return null
+            ?: run {
+                // Camera2 devices may omit calibrated intrinsics but provide their
+                // physical sensor size, pixel array and focal length. These define
+                // a nominal pinhole model; do not invent an FOV or screen ratio.
+                val sensor = camera2.getCameraCharacteristic(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+                    ?: return null
+                val pixels = camera2.getCameraCharacteristic(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                    ?: return null
+                val focal = camera2.getCameraCharacteristic(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                    ?.singleOrNull() ?: return null
+                if (sensor.width <= 0f || sensor.height <= 0f || focal <= 0f) return null
+                floatArrayOf(focal * pixels.width / sensor.width, focal * pixels.height / sensor.height,
+                    pixels.width / 2f, pixels.height / 2f)
+            }
         if (calibration.size < 4) return null
         val transform = preview.sensorToViewTransform ?: return null
         val points = floatArrayOf(

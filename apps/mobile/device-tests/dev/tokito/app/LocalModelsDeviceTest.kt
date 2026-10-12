@@ -35,8 +35,9 @@ class LocalModelsDeviceTest {
             assertNotNull("Missing ${capability.wireValue}", repository.activeBundle(capability))
         }
         val visionRoot = repository.activeDirectory(ModelCapability.VISION)!!
-        if (LocalSegmentationRuntime.isBundle(visionRoot)) LocalSegmentationRuntime.open(visionRoot).use { }
-        else LocalPoseVisionRuntime.load(visionRoot).use { }
+        val profiles = dev.tokito.physical.model.VisionBundleProfiles.fromAdmittedBundle(visionRoot)
+        profiles.segmentation?.let { LocalSegmentationRuntime.open(it).use { } }
+        profiles.pose?.let { LocalPoseVisionRuntime.load(it).use { } }
         VoiceModelBundle.verify(repository.activeDirectory(ModelCapability.VOICE)!!)
     }
 

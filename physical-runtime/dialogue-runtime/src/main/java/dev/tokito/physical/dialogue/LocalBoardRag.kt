@@ -27,21 +27,24 @@ class LocalBoardRag(
         /** Revision of the selected reference scope, not an AR registration. */
         val scopeRevision: String,
         val expiresAtElapsedMs: Long,
+        val physicalIdentityVerified: Boolean = false,
     ) {
         init {
             require(boardId == null || (boardId.isNotBlank() && boardId.length <= 128 && boardId.none(Char::isISOControl)))
             require(corpusRevision.matches(Regex("[a-f0-9]{64}")))
             require(scopeRevision.isNotBlank() && scopeRevision.length <= 256 && scopeRevision.none(Char::isISOControl))
             require(expiresAtElapsedMs > 0)
+            require(!physicalIdentityVerified || boardId != null)
         }
     }
 
     suspend fun answer(utterance: String): DialogueOutcome.Response = operation.withLock {
         DialogueProtocol(DialogueLimits()).validateRequest(DialogueRequest(utterance))
-        if (Regex("(?i)\\b(?:this|my|our)\\s+(?:board|pcb|circuit|device|component)|\\bis\\s+this\\b").containsMatchIn(utterance)) {
+        SocialConversationPolicy.reply(utterance)?.let { return@withLock it }
+        val binding = currentBinding() ?: return@withLock DialogueOutcome.Response("Name the board reference you want to ask about.")
+        if (!binding.physicalIdentityVerified && Regex("(?i)\\b(?:this|my|our)\\s+(?:board|pcb|circuit|device|component)|\\bis\\s+this\\b").containsMatchIn(utterance)) {
             return@withLock DialogueOutcome.Response("The reference documentation cannot identify the physical board. I need verified board identification before answering about this board.")
         }
-        val binding = currentBinding() ?: return@withLock DialogueOutcome.Response("Name the board reference you want to ask about.")
         fun requireCurrent() {
             require(binding.corpusRevision == store.corpusRevision && currentBinding() == binding &&
                 elapsedRealtimeMs() < binding.expiresAtElapsedMs) {

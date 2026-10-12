@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     private var visionPreparationJob: Job? = null
     @Volatile private var destroyed = false
     private var digitalTwinAttempted = false
+    private var referenceTwins = emptyList<dev.tokito.physical.model.ReferenceTwinCatalog.Entry>()
+    private var referenceSelectionRevision = 0L
     private var vision: LocalPoseVisionRuntime? = null
     private var segmentation: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
     private var cameraPermissionRequested = false
@@ -328,7 +330,28 @@ class MainActivity : AppCompatActivity() {
         }
         binding.permissionRecoveryButton.setOnClickListener { requestCameraPermission() }
         binding.registerArButton.setOnClickListener { ar.beginRegistration() }
-        binding.previewDigitalTwinButton.setOnClickListener { ar.previewDigitalTwin() }
+        binding.previewDigitalTwinButton.setOnClickListener {
+            if (boardReference != null || referenceTwins.isEmpty()) ar.previewDigitalTwin()
+            else com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Choose reference model")
+                .setItems(referenceTwins.map { it.label }.toTypedArray()) { _, index ->
+                    val entry = referenceTwins[index]
+                    val epoch = foregroundEpoch
+                    val selectionRevision = ++referenceSelectionRevision
+                    lifecycleScope.launch {
+                        renderArState(ArSessionController.State("Loading reference model", "Checking the selected source package"))
+                        val result = withContext(Dispatchers.IO) {
+                            ai.tokito.physical.ar.DigitalTwinValidator().load(entry.manifest, entry.glb, entry.contextRevision)
+                        }
+                        requireForeground(epoch)
+                        if (selectionRevision != referenceSelectionRevision) return@launch
+                        if (ar.activateReferenceTwin(result) !is ai.tokito.physical.ar.DigitalTwinValidation.Accepted)
+                            renderArState(ArSessionController.State("Reference model unavailable", "The selected package was rejected"))
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
         binding.resetRegistrationButton.setOnClickListener { ar.reset() }
         binding.recordMeasurementButton.setOnClickListener {
             lifecycleScope.launch { beginMeasurementCapture() }
@@ -486,6 +509,13 @@ class MainActivity : AppCompatActivity() {
         }
         caller.ensureActive()
         requireForeground(epoch)
+        val generatorState = localGenerator?.state?.value
+        if (generatorState is dev.tokito.physical.dialogue.DialogueRuntimeState.Failed ||
+            generatorState == dev.tokito.physical.dialogue.DialogueRuntimeState.Closed) {
+            localGenerator?.close()
+            localGenerator = null
+            localRag = null
+        }
         if (knowledgePackage != null && localGenerator == null) {
             val generator = TokitoDialogueRuntime(this, this)
             localGenerator = generator
@@ -501,7 +531,7 @@ class MainActivity : AppCompatActivity() {
                 generator.initialize(model)
                 checkpoint()
                 localRag = LocalBoardRag(requireNotNull(knowledgePackage).store, requireNotNull(embedding), generator,
-                    { referenceScope }, android.os.SystemClock::elapsedRealtime)
+                    { currentReferenceScope() }, android.os.SystemClock::elapsedRealtime)
             } catch (failure: Throwable) {
                 generator.close()
                 if (localGenerator === generator) localGenerator = null
@@ -515,6 +545,8 @@ class MainActivity : AppCompatActivity() {
         val caller = coroutineContext
         var created: LocalPoseVisionRuntime? = null
         var createdSegment: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
+        var createdTracker: ReferenceBoardTracker? = null
+        var catalog = emptyList<dev.tokito.physical.model.ReferenceTwinCatalog.Entry>()
         val runtime = try {
             withContext(Dispatchers.IO) { heavyWork.withLock {
                 caller.ensureActive()
@@ -528,21 +560,26 @@ class MainActivity : AppCompatActivity() {
                     Math.addExact(total, file.length())
                 }
                 requireHeavyWork("Local vision", Math.multiplyExact(installedBytes, 2))
-                if (dev.tokito.physical.dialogue.LocalSegmentationRuntime.isBundle(modelRoot)) {
-                    createdSegment = dev.tokito.physical.dialogue.LocalSegmentationRuntime.open(modelRoot)
-                    null
-                } else LocalPoseVisionRuntime.load(modelRoot).also { created = it }
+                catalog = dev.tokito.physical.model.ReferenceTwinCatalog.read(modelRoot)
+                createdTracker = ReferenceBoardTracker.load(catalog)
+                val profiles = dev.tokito.physical.model.VisionBundleProfiles.fromAdmittedBundle(modelRoot)
+                profiles.segmentation?.let { createdSegment = dev.tokito.physical.dialogue.LocalSegmentationRuntime.open(it) }
+                profiles.pose?.let { LocalPoseVisionRuntime.load(it).also { created = it } }
             } }
         } catch (failure: CancellationException) {
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { createdTracker?.close() }
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { created?.close() }
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { createdSegment?.close() }
             throw failure
         } catch (failure: Throwable) {
+            createdTracker?.close()
+            created?.close()
+            createdSegment?.close()
             android.util.Log.e("TokitoPoseVision", "Local vision bundle was rejected", failure)
             return
         }
         if (!caller[Job]!!.isActive || !foregroundActive || epoch != foregroundEpoch || destroyed) {
-            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { runtime?.close(); createdSegment?.close() }
+            withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { runtime?.close(); createdSegment?.close(); createdTracker?.close() }
             throw CancellationException("Vision preparation retired")
         }
         createdSegment?.let { model ->
@@ -556,11 +593,28 @@ class MainActivity : AppCompatActivity() {
                 } finally { heavyWork.unlock() }
             }
             android.util.Log.i("TokitoSegmentation", "Local segmentation runtime admitted classes=${model.labels.size}")
-            return
         }
-        android.util.Log.i("TokitoPoseVision", "Local pose runtime admitted")
-        vision = runtime
-        ar.enableAutomaticRegistration(requireNotNull(runtime))
+        referenceTwins = catalog
+        runtime?.let {
+            android.util.Log.i("TokitoPoseVision", "Local pose runtime admitted")
+            vision = it
+            ar.enableAutomaticRegistration(it) { work ->
+                if (!heavyWork.tryLock()) false else try {
+                    requireHeavyWork("Board pose", 256L * 1024 * 1024)
+                    work()
+                    true
+                } finally { heavyWork.unlock() }
+            }
+        }
+        createdTracker?.let { tracker ->
+            ar.enableReferenceTracking(tracker) { work ->
+                if (!heavyWork.tryLock()) false else try {
+                    requireHeavyWork("Board tracking", 128L * 1024 * 1024)
+                    work()
+                    true
+                } finally { heavyWork.unlock() }
+            }
+        }
     }
 
     private fun requireHeavyWork(capability: String, requiredBytes: Long) {
@@ -577,20 +631,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** In-process bench entry point shared by voice and installed-device conformance. */
+    private fun currentReferenceScope(): LocalBoardRag.Binding? {
+        val scope = referenceScope ?: return null
+        if (!scope.physicalIdentityVerified) {
+            if (scope.scopeRevision.startsWith("inspection:")) {
+                val inspected = ar.inspectedReference() ?: return null
+                return scope.takeIf { it.boardId == inspected.boardIdentity && it.scopeRevision == inspected.scopeRevision }
+            }
+            return scope
+        }
+        val registered = ar.registeredReference() ?: return null
+        return scope.takeIf { it.boardId == registered.boardIdentity && it.scopeRevision == registered.scopeRevision }
+    }
+
     suspend fun respondLocally(utterance: String): String {
         val epoch = foregroundEpoch
         val caller = coroutineContext
+        caller.ensureActive()
+        requireForeground(epoch)
+        dev.tokito.physical.dialogue.SocialConversationPolicy.reply(utterance)?.let { return it.text }
         val reference = boardReference
         val dataset = knowledgePackage
         if (dataset != null) {
             // No name/alias allow-list gates microphone or typed questions.
             // Semantic retrieval searches the admitted corpus, not camera identity.
-            referenceScope = LocalBoardRag.Binding(null,
-                dataset.store.corpusRevision, "reference-library:$epoch", Long.MAX_VALUE)
+            val registered = ar.registeredReference()
+            val selectedReference = registered ?: ar.inspectedReference()
+            referenceScope = LocalBoardRag.Binding(selectedReference?.boardIdentity,
+                dataset.store.corpusRevision, selectedReference?.scopeRevision ?: "reference-library:$epoch",
+                Long.MAX_VALUE, physicalIdentityVerified = registered != null)
             val rag = requireNotNull(localRag) { "Local reference reasoning is not ready. Install the knowledge and conversation bundles." }
             val result = heavyWork.withLock { rag.answer(utterance) }
             caller.ensureActive()
             requireForeground(epoch)
+            val citedBoards = result.sourceFacts.map { it.sourceBoardId }.distinct()
+            if (citedBoards.size == 1) {
+                // Use validated selected source facts, never search generated
+                // speech for a chip name or infer camera identity from retrieval.
+                val references = result.sourceFacts.map { it.reference }.toSet()
+                ar.highlightSourceComponents(citedBoards.single(), references)
+            }
             return result.text
         }
         val grounded = withContext(Dispatchers.IO) { heavyWork.withLock {

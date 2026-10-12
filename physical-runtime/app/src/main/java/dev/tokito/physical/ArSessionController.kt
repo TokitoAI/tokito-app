@@ -39,13 +39,23 @@ class ArSessionController(
     private var activeTwin: DigitalTwinManifest? = null
     private var hasRegistration = false
     private var registrationRevision: Long? = null
+    private var metricRegistrationValid = false
+    private var referenceScopeEpoch = 0L
+    @Volatile private var inspectingSource = false
     private var sequence = 0L
-    private var vision: LocalPoseVisionRuntime? = null
-    private var segmentation: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
+    @Volatile private var vision: LocalPoseVisionRuntime? = null
+    @Volatile private var referenceTracker: ReferenceBoardTracker? = null
+    private var dynamicReferenceComparison = false
+    private var acquiringReferenceAsset = false
+    private val acquisition = TrackingAcquisition()
+    @Volatile private var segmentation: dev.tokito.physical.dialogue.LocalSegmentationRuntime? = null
+    @Volatile private var segmentationAdmission: ((() -> Unit) -> Boolean)? = null
+    @Volatile private var poseAdmission: ((() -> Unit) -> Boolean)? = null
     private val masks = SegmentMaskView(surface.context)
     @Volatile private var masksEnabled = true
     @Volatile private var maskEpoch = 0L
     private var lastMaskFrame = 0L
+    private var lastPoseFrame = 0L
     private var manualRegistration = false
     private var lastAutomaticRegistrationNanos = 0L
     private var automaticRegistrationActive = false
@@ -54,12 +64,18 @@ class ArSessionController(
     init {
         surface.addView(masks, android.widget.FrameLayout.LayoutParams(-1, -1))
         ArPresenter(runtime, surface.overlay) { reason ->
-            onState(
+            if (!inspectingSource) onState(
                 if (hasRegistration) State("Registration lost", reason)
                 else State("Register board", "Tap the four board corners clockwise"),
             )
         }.bind(owner)
-        surface.overlay.setOnBoardTapListener(::acceptCorner)
+        surface.overlay.setOnBoardTapListener { point ->
+            if (manualRegistration && corners.size < 4) acceptCorner(point)
+            else surface.digitalTwin.pickComponent(point) { reference ->
+                if (reference != null) onState(State("Source component $reference",
+                    "Selected authored model geometry; physical board identity and fit are not established by this selection", hasRegistration))
+            }
+        }
         surface.onCameraGeometryChanged = ::reset
         reset()
     }
@@ -78,6 +94,8 @@ class ArSessionController(
     }
 
     fun stop() {
+        referenceScopeEpoch++
+        inspectingSource = false
         maskEpoch++
         masks.clear()
         automaticRegistrationActive = false
@@ -93,6 +111,8 @@ class ArSessionController(
 
     fun destroy() {
         surface.setFrameListener(null)
+        referenceTracker?.close()
+        referenceTracker = null
         segmentation?.let { old -> Thread({ old.close() }, "tokito-segmentation-close").start() }
         segmentation = null
         vision?.close()
@@ -111,59 +131,132 @@ class ArSessionController(
         model: dev.tokito.physical.dialogue.LocalSegmentationRuntime,
         admittedWork: (() -> Unit) -> Boolean,
     ) {
+        val previous = segmentation
         segmentation = model
-        surface.setFrameListener { frame ->
-            val epoch = maskEpoch
-            if (!masksEnabled || frame.timestampNanos - lastMaskFrame < 500_000_000L || frame.analysisToPreview == null) {
-                frame.bitmap.recycle()
-            } else {
-                lastMaskFrame = frame.timestampNanos
-                var prediction: dev.tokito.physical.dialogue.LocalSegmentationRuntime.Result? = null
-                var failed = false
-                try {
-                    admittedWork { prediction = model.analyze(frame.bitmap) }
-                } catch (failure: Exception) {
-                    failed = true
-                    android.util.Log.e("TokitoSegmentation", "Inference failed", failure)
-                } finally { frame.bitmap.recycle() }
-                val result = prediction
-                surface.post {
-                    if (epoch != maskEpoch || !masksEnabled || frame.geometryRevision != surface.geometryRevision ||
-                        !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
-                        System.nanoTime() - frame.timestampNanos > 3_000_000_000L) {
-                        result?.bitmap?.recycle()
-                    } else if (result != null) {
-                        masks.show(result, requireNotNull(frame.analysisToPreview), frame.timestampNanos)
-                        onState(State("Component predictions · ${result.count}",
-                            if (result.count == 0) "No new detections; previous overlay expires within three seconds. This is not proof of absence"
-                            else "Experimental · " + result.labels.joinToString(", ")))
-                        android.util.Log.i("TokitoSegmentation", "predictionCount=${result.count} elapsedMs=${(System.nanoTime()-frame.timestampNanos)/1_000_000}")
-                    } else if (failed) { masks.clear(); onState(State("Detection unavailable", "Retry after reopening the bench")) }
-                }
-            }
-        }
+        segmentationAdmission = admittedWork
+        if (previous != null && previous !== model) Thread({ previous.close() }, "tokito-segmentation-close").start()
+        installFramePipeline()
         onState(State("Component detection", "Experimental masks, labels and boxes; not verified part identity"))
     }
 
-    fun enableAutomaticRegistration(runtime: LocalPoseVisionRuntime) {
-        vision?.close()
-        vision = runtime
-        manualRegistration = false
+    /** One CameraX analyzer owns each bitmap; both native consumers borrow it serially.
+     * No queue or full-frame copy is introduced, and heavy inference can be declined.
+     */
+    private fun installFramePipeline() {
         surface.setFrameListener { frame ->
-            val observation = runCatching { runtime.analyze(frame) }.getOrElse { failure ->
-                android.util.Log.e("TokitoPoseVision", "Local pose inference failed", failure)
-                null
-            }
-            surface.post {
-                if (frame.geometryRevision != surface.geometryRevision) return@post
-                if (observation == null) handleAutomaticMiss() else acceptAutomaticRegistration(observation)
+            val epoch = maskEpoch
+            try {
+                processPoseFrame(frame, epoch)
+                processSegmentationFrame(frame, epoch)
+            } finally { if (!frame.bitmap.isRecycled) frame.bitmap.recycle() }
+        }
+    }
+
+    private fun processSegmentationFrame(frame: ArCameraSurface.CameraFrame, epoch: Long) {
+        val model = segmentation ?: return
+        if (!masksEnabled || frame.timestampNanos - lastMaskFrame < 2_000_000_000L || frame.analysisToPreview == null) return
+        lastMaskFrame = frame.timestampNanos
+        var prediction: dev.tokito.physical.dialogue.LocalSegmentationRuntime.Result? = null
+        var failed = false
+        try {
+            segmentationAdmission?.invoke { prediction = model.analyze(frame.bitmap) }
+        } catch (failure: Exception) {
+            failed = true
+            android.util.Log.e("TokitoSegmentation", "Inference failed", failure)
+        }
+        val result = prediction
+        surface.post {
+            if (epoch != maskEpoch || model !== segmentation || !masksEnabled || frame.geometryRevision != surface.geometryRevision ||
+                !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                System.nanoTime() - frame.timestampNanos > 3_000_000_000L) {
+                result?.bitmap?.recycle()
+            } else if (result != null) {
+                masks.show(result, requireNotNull(frame.analysisToPreview), frame.timestampNanos)
+                if (!hasRegistration && !inspectingSource) onState(State("Component predictions · ${result.count}",
+                    if (result.count == 0) "No new detections; previous overlay expires within three seconds. This is not proof of absence"
+                    else "Experimental masks and model scores; not verified component identity"))
+                android.util.Log.i("TokitoSegmentation", "predictionCount=${result.count} elapsedMs=${(System.nanoTime()-frame.timestampNanos)/1_000_000}")
+            } else if (failed) {
+                masks.clear()
+                onState(State("Detection unavailable", "Retry after reopening the bench"))
             }
         }
+    }
+
+    private fun processPoseFrame(frame: ArCameraSurface.CameraFrame, epoch: Long) {
+        if (inspectingSource) return
+        referenceTracker?.let { tracker ->
+            if (manualRegistration || frame.timestampNanos - lastPoseFrame < REFERENCE_TRACKING_INTERVAL_NANOS) return
+            lastPoseFrame = frame.timestampNanos
+            var observed: ReferenceBoardTracker.Observation? = null
+            val admitted = runCatching { poseAdmission?.invoke { observed = tracker.analyze(frame) } == true }
+                .getOrElse { android.util.Log.e("TokitoReferenceTracking", "Reference tracking failed", it); false }
+            surface.post {
+                if (epoch != maskEpoch || tracker !== referenceTracker || frame.geometryRevision != surface.geometryRevision ||
+                    !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@post
+                val result = observed
+                if (!admitted || result == null) { acquisition.reset(); handleAutomaticMiss() }
+                else if (!acquiringReferenceAsset && activeTwin?.assetId != result.validation.packageData.manifest.assetId) {
+                    if (!acquisition.accept(result.validation.packageData.manifest.assetId, result.pose.timestampNanos)) return@post
+                    acquiringReferenceAsset = true
+                    val accepted = activateValidatedTwin(result.validation)
+                    if (accepted !is DigitalTwinValidation.Accepted) acquiringReferenceAsset = false
+                    dynamicReferenceComparison = accepted is DigitalTwinValidation.Accepted
+                } else if (!acquiringReferenceAsset) {
+                    dynamicReferenceComparison = true
+                    acceptAutomaticRegistration(result.pose)
+                }
+            }
+            return
+        }
+        val poseRuntime = vision ?: return
+        // Compact inference is still CPU work, not a free camera-frame operation.
+        // Latest-only acquisition plus a bounded cadence avoids 30 model runs/s.
+        if (frame.timestampNanos - lastPoseFrame < POSE_INFERENCE_INTERVAL_NANOS) return
+        lastPoseFrame = frame.timestampNanos
+        var observation: PoseVisionObservation? = null
+        val admitted = runCatching {
+            poseAdmission?.invoke { observation = poseRuntime.analyze(frame, recycleInput = false) } == true
+        }.getOrElse { failure ->
+            android.util.Log.e("TokitoPoseVision", "Local pose inference failed", failure)
+            false
+        }
+        surface.post {
+            if (epoch != maskEpoch || poseRuntime !== vision || frame.geometryRevision != surface.geometryRevision ||
+                !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@post
+            val result = observation
+            if (!admitted || result == null) handleAutomaticMiss() else acceptAutomaticRegistration(result)
+        }
+    }
+
+    fun enableAutomaticRegistration(runtime: LocalPoseVisionRuntime, admittedWork: (() -> Unit) -> Boolean) {
+        val previous = vision
+        vision = runtime
+        poseAdmission = admittedWork
+        if (previous != null && previous !== runtime) Thread({ previous.close() }, "tokito-pose-close").start()
+        manualRegistration = false
+        installFramePipeline()
         onState(State("Finding board", "Local pose detection is active"))
     }
 
+    fun enableReferenceTracking(tracker: ReferenceBoardTracker, admittedWork: (() -> Unit) -> Boolean) {
+        val previous = referenceTracker
+        referenceTracker = tracker
+        poseAdmission = admittedWork
+        previous?.takeIf { it !== tracker }?.close()
+        reset()
+        installFramePipeline()
+        onState(State("Finding board", "Matching board features to installed source models"))
+    }
+
     fun reset() {
+        referenceScopeEpoch++
+        inspectingSource = false
+        acquisition.reset()
+        dynamicReferenceComparison = false
         maskEpoch++
+        lastPoseFrame = 0L
+        metricRegistrationValid = false
         masks.clear()
         manualRegistration = false
         corners.clear()
@@ -213,14 +306,17 @@ class ArSessionController(
     }
 
     fun previewDigitalTwin() {
+        manualRegistration = false
         corners.clear()
         hasRegistration = false
         registrationRevision = null
         runtime.suspend()
         surface.overlay.render(null)
         if (surface.digitalTwin.showUnregisteredPreview()) {
+            inspectingSource = true
             onState(State("3D preview", "Validated model inspection; not AR registered"))
         } else {
+            inspectingSource = false
             onState(State("3D unavailable", "The validated model is still loading or unavailable"))
         }
     }
@@ -229,19 +325,6 @@ class ArSessionController(
         val revision = registrationRevision ?: return false
         val now = System.nanoTime()
         val expiry = now + HIGHLIGHT_VALIDITY_NANOS
-        // Isolate the answered component in the digital twin for the same
-        // validity window the 2D marker uses, then restore the full twin.
-        // target.label is the verified reference designator (the board
-        // reference requires it to cite reviewed authored-design evidence),
-        // and the twin names its nodes by that same designator, so this
-        // lights up exactly one component and nothing else.
-        surface.digitalTwin.post {
-            surface.digitalTwin.showOnlyComponents(setOf(target.label))
-        }
-        surface.digitalTwin.postDelayed(
-            { surface.digitalTwin.showOnlyComponents(null) },
-            HIGHLIGHT_VALIDITY_NANOS / 1_000_000L,
-        )
         val scene = OverlayScene(
             sequence = ++sequence,
             transformRevision = revision,
@@ -268,17 +351,69 @@ class ArSessionController(
                 ),
             ),
         )
-        return runtime.submit(scene) is SceneSubmission.Accepted
+        if (runtime.submit(scene) !is SceneSubmission.Accepted) return false
+        // Selection uses reviewed reference identity, never a detector class or
+        // model-generated label. A missing mesh still permits verified 2D guidance.
+        surface.digitalTwin.highlightComponents(setOf(target.label), HIGHLIGHT_VALIDITY_NANOS / 1_000_000L)
+        return true
     }
 
-    private fun activateValidatedTwin(validation: DigitalTwinValidation): DigitalTwinValidation {
+    /** Dataset retrieval may propose source refs, but cannot establish camera identity.
+     * Explicit source inspection may select its exact authored mesh without claiming
+     * physical registration. Live guidance still requires a current qualified pose.
+     */
+    fun highlightSourceComponents(boardIdentity: String, references: Set<String>): Boolean {
+        val twin = activeTwin ?: return false
+        if (twin.boardIdentity != boardIdentity ||
+            !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return false
+        if (inspectingSource) {
+            return surface.digitalTwin.highlightComponents(references, HIGHLIGHT_VALIDITY_NANOS / 1_000_000L)
+        }
+        if (!hasRegistration || !metricRegistrationValid || registrationRevision == null || !twin.registrationEligible ||
+            runtime.render() !is RenderDecision.Ready) return false
+        return surface.digitalTwin.highlightComponents(references, HIGHLIGHT_VALIDITY_NANOS / 1_000_000L)
+    }
+
+    data class RegisteredReference(val boardIdentity: String, val scopeRevision: String)
+
+    /** Explicit source inspection narrows reference retrieval, not camera identity. */
+    fun inspectedReference(): RegisteredReference? {
+        val twin = activeTwin ?: return null
+        if (!inspectingSource || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return null
+        return RegisteredReference(twin.boardIdentity, "inspection:$referenceScopeEpoch:${twin.assetId}")
+    }
+
+    /** Manual or source-feature registration binds an already-qualified reference.
+     * A generic pose detector alone cannot select or prove a board variant.
+     */
+    fun registeredReference(): RegisteredReference? {
+        val twin = activeTwin ?: return null
+        val revision = registrationRevision ?: return null
+        if ((!manualRegistration && !dynamicReferenceComparison) || !hasRegistration || !metricRegistrationValid || !twin.registrationEligible ||
+            !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || runtime.render() !is RenderDecision.Ready) return null
+        // Pose updates change transforms, not immutable source evidence identity.
+        // Loss/replacement revokes this scope; speech can use the current fresh pose.
+        return RegisteredReference(twin.boardIdentity, "registered:$referenceScopeEpoch:${twin.assetId}")
+    }
+
+    fun activateReferenceTwin(validation: DigitalTwinValidation): DigitalTwinValidation {
+        if (validation is DigitalTwinValidation.Accepted && validation.packageData.manifest.assetId == CalibrationBoardAsset.ASSET_ID)
+            return DigitalTwinValidation.Rejected(DigitalTwinValidation.Code.INVALID_MANIFEST, "calibration data is not a source model")
+        return activateValidatedTwin(validation, preview = true)
+    }
+
+    private fun activateValidatedTwin(validation: DigitalTwinValidation, preview: Boolean = false): DigitalTwinValidation {
         if (validation !is DigitalTwinValidation.Accepted) {
+            reset()
             activeTwin = null
             surface.digitalTwin.clearAsset()
             return validation
         }
+        reset()
         activeTwin = validation.packageData.manifest
         when (surface.digitalTwin.load(validation) { result ->
+            acquiringReferenceAsset = false
+            if (result is DigitalTwinRenderResult.Loaded && preview) previewDigitalTwin()
             if (result !is DigitalTwinRenderResult.Loaded) {
                 activeTwin = null
                 surface.digitalTwin.clearAsset()
@@ -303,7 +438,7 @@ class ArSessionController(
                 surface.overlay.render(null)
                 onState(State("Camera unavailable", status.reason))
             }
-            ArCameraSurface.Status.Open -> if (corners.isEmpty()) {
+            ArCameraSurface.Status.Open -> if (corners.isEmpty() && !inspectingSource) {
                 onState(State("Register board", "Tap the four board corners clockwise"))
             }
             ArCameraSurface.Status.Closed -> if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
@@ -328,24 +463,21 @@ class ArSessionController(
     }
 
     private fun acceptAutomaticRegistration(observation: PoseVisionObservation) {
-        if (manualRegistration || System.nanoTime() - observation.timestampNanos > AUTOMATIC_OBSERVATION_MAX_AGE_NANOS) return
+        if (inspectingSource || manualRegistration || System.nanoTime() - observation.timestampNanos > AUTOMATIC_OBSERVATION_MAX_AGE_NANOS) return
         lastAutomaticObservationNanos = System.nanoTime()
         if (observation.timestampNanos - lastAutomaticRegistrationNanos < AUTOMATIC_REGISTRATION_INTERVAL_NANOS) return
-        if (hasRegistration && corners.indices.all { index ->
-                kotlin.math.hypot(
-                    corners[index].x - observation.corners[index].x,
-                    corners[index].y - observation.corners[index].y,
-                ) < AUTOMATIC_MINIMUM_MOVEMENT_PX
-            }) return
+        // Even a stationary board needs renewed source timestamps and pose expiry.
+        // Reusing an old receipt on small movement eventually hides a valid model.
         lastAutomaticRegistrationNanos = observation.timestampNanos
         installRegistration(observation.corners, automatic = true, observedAtNanos = observation.timestampNanos)
     }
 
     private fun handleAutomaticMiss() {
-        if (manualRegistration || !automaticRegistrationActive ||
+        if (inspectingSource || manualRegistration || !automaticRegistrationActive ||
             System.nanoTime() - lastAutomaticObservationNanos <= AUTOMATIC_TRACKING_LOSS_NANOS
         ) return
         automaticRegistrationActive = false
+        referenceScopeEpoch++
         corners.clear()
         hasRegistration = false
         registrationRevision = null
@@ -356,8 +488,10 @@ class ArSessionController(
     }
 
     private fun installRegistration(points: List<Point2>, automatic: Boolean, observedAtNanos: Long) {
+        metricRegistrationValid = false
         val now = System.nanoTime()
-        val registration = registrar.register(points, observedAtNanos, REGISTRATION_VALIDITY_NANOS)
+        val validity = if (automatic) AUTOMATIC_TRACKING_LOSS_NANOS else REGISTRATION_VALIDITY_NANOS
+        val registration = registrar.register(points, observedAtNanos, validity)
         if (registration == null || !runtime.installTransforms(listOf(registration.transform), registration.revision)) {
             if (!automatic) {
                 corners.clear()
@@ -370,24 +504,51 @@ class ArSessionController(
         hasRegistration = true
         automaticRegistrationActive = automatic
         registrationRevision = registration.revision
-        if (runtime.submit(conformanceScene(registration.revision, now)) !is SceneSubmission.Accepted) {
+        if (runtime.submit(conformanceScene(registration.revision, now, validity)) !is SceneSubmission.Accepted) {
             onState(State("Registration changed", "Reset and register the board again"))
             return
         }
         val twin = activeTwin
         val registeredLabel = "Board registered"
-        if (twin != null) surface.digitalTwin.updateScreenRegistration(points)
+        val referenceComparison = twin != null && !twin.registrationEligible &&
+            ((manualRegistration && !automatic) || (automatic && dynamicReferenceComparison))
+        val metricFailure = if (twin != null && (twin.registrationEligible || referenceComparison)) {
+            val intrinsics = surface.calibratedPreviewIntrinsics()
+            if (intrinsics == null) {
+                surface.digitalTwin.updateRegistration(null, null)
+                "Camera calibration is unavailable; metric 3D AR cannot be registered"
+            } else {
+                val landmarks = twin.boardPlaneCorners()
+                when (val estimated = NativeMetricPoseEstimator(validityNanos = validity)
+                    .estimate(landmarks, points, intrinsics, registration.revision, observedAtNanos)) {
+                    is PoseEstimation.Accepted -> {
+                        surface.digitalTwin.updateRegistration(estimated.pose, intrinsics, compareReference = referenceComparison)
+                        metricRegistrationValid = true
+                        null
+                    }
+                    is PoseEstimation.Rejected -> {
+                        surface.digitalTwin.updateRegistration(null, null)
+                        estimated.reason
+                    }
+                }
+            }
+        } else null
+        if (metricFailure != null) android.util.Log.i("TokitoMetricAR", metricFailure)
         when (val decision = runtime.render()) {
             is RenderDecision.Suppressed -> onState(State("Overlay suppressed", decision.reason))
             is RenderDecision.Ready -> when {
                 twin == null -> onState(State(registeredLabel, "2D guidance active; no validated project digital twin", true))
+                metricFailure != null -> onState(State("3D registration unavailable", metricFailure, true))
+                referenceComparison -> onState(State(if (automatic) "Dynamic reference AR" else "Reference AR · unverified fit",
+                    "Source model follows matched board features; physical revision and component identity remain unverified", true))
+                !twin.registrationEligible -> onState(State(registeredLabel, "2D guidance active; source model requires manual reference comparison", true))
                 else -> onState(State(if (automatic) "3D auto registered" else "3D registered", "Digital twin follows the tracked board", true))
             }
         }
     }
 
-    private fun conformanceScene(revision: Long, now: Long): OverlayScene {
-        val expiry = now + REGISTRATION_VALIDITY_NANOS
+    private fun conformanceScene(revision: Long, now: Long, validity: Long = REGISTRATION_VALIDITY_NANOS): OverlayScene {
+        val expiry = now + validity
         return OverlayScene(
             sequence = ++sequence,
             transformRevision = revision,
@@ -426,8 +587,9 @@ class ArSessionController(
         const val REGISTRATION_VALIDITY_NANOS = 120_000_000_000L
         const val HIGHLIGHT_VALIDITY_NANOS = 15_000_000_000L
         const val AUTOMATIC_OBSERVATION_MAX_AGE_NANOS = 1_000_000_000L
-        const val AUTOMATIC_REGISTRATION_INTERVAL_NANOS = 300_000_000L
-        const val AUTOMATIC_MINIMUM_MOVEMENT_PX = 3.0
+        const val POSE_INFERENCE_INTERVAL_NANOS = 250_000_000L
+        const val REFERENCE_TRACKING_INTERVAL_NANOS = 250_000_000L
+        const val AUTOMATIC_REGISTRATION_INTERVAL_NANOS = 100_000_000L
         const val AUTOMATIC_TRACKING_LOSS_NANOS = 900_000_000L
     }
 }

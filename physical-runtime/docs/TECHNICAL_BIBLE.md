@@ -85,6 +85,12 @@ Natural-language confidence is never a substitute for a typed result.
     of a physical board's identity. Qwen may select relevant source facts across
     references but must not substitute an undocumented model or variant.
 
+Pure greetings, thanks and farewells are social interaction, not technical
+questions. They receive a brief local response before retrieval and cannot
+produce evidence, tool proposals or component selection. The social route
+matches the whole utterance; a greeting followed by a technical request must
+still use admitted source reasoning. It is not a free-form technical fallback.
+
 ## 3. Runtime boundary
 
 The standalone application owns a local dialogue and planning loop, AR
@@ -210,6 +216,16 @@ calibration object may prove renderer conformance but is never substituted for
 a missing project asset. Asset production is independent from runtime control
 flow and cannot introduce board-name branches.
 
+The product host uses calibrated metric perspective pose, never a screen-space
+orthographic fit as an AR fallback. A manually matched, physically qualified
+project may bind local reference reasoning to its board identity and current
+registration revision. That scope is revoked on loss or replacement; generic
+component predictions, a named source reference and unqualified candidate GLBs
+cannot establish it.
+Manual calibrated reference AR comparison may render an unqualified source
+package with explicit unverified-fit feedback. This visual comparison is not a
+physical identity observation and cannot authorize physical component advice.
+
 An inference request contains task type, ROI, source frame revision, context,
 deadline, required confidence, and cancellation token. Processing stages are:
 
@@ -331,6 +347,10 @@ shipping hot path uses Android-native orchestration and native inference. See
   through host preparation rather than become apparent readiness.
 - Thermal degradation reduces capture/inference frequency or capability and is
   emitted as a state change; it never silently changes accuracy thresholds.
+- Android SEVERE thermal pressure alone must not reject local bench inference.
+  MODERATE/SEVERE admission reports constrained concurrency; CRITICAL and higher
+  reject new heavyweight work. Never override Android firmware throttling or
+  shutdown protections. Memory-headroom admission remains independent.
 - Out-of-memory risk causes preflight rejection or controlled degradation, not
   process death.
 

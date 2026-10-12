@@ -37,8 +37,10 @@ directory fallback.
 
 The shipping Activity reads Android's current `MemoryInfo` and thermal status
 before loading dialogue and vision models. It reserves 512 MiB of system
-headroom, rejects low-memory or severe-thermal admission, and reports moderate
-thermal pressure as constrained concurrency. This is a safety preflight, not
+headroom, rejects low-memory or critical-and-higher thermal admission, and reports
+moderate/severe thermal pressure as constrained concurrency. Severe pressure alone
+does not block local bench work; Android's own throttling remains authoritative.
+This is a safety preflight, not
 the missing exact-device benchmark evidence.
 
 **How to apply:** use the versioned profile capture procedure for each firmware
@@ -103,7 +105,10 @@ general release backend until issue #38 and Gate 5 pass.
 
 The active FRDM detector is a manifest-bound YOLO11n pose export running through
 LiteRT 2.2.0 on CPU. It supplies a four-corner board quad to the presentation
-layer; the GLB follows that quad and clears after tracking expiry. Its manifest
+layer. Qualified GLBs use metric pose estimation with calibrated preview
+intrinsics, not an orthographic scale/rotation fit; missing calibration or
+rejected reprojection suppresses 3D while independently registered 2D remains.
+The renderer checks pose expiry on every rendered frame. Its manifest
 explicitly marks the smoke evidence as not release-eligible, so it is an
 experimental FRDM product path rather than proof of the general vision gate.
 
@@ -261,8 +266,12 @@ responses still fail closed. Playback is not factual-quality qualification.
 Signed embedding bundles may include the validated SQLite reference corpus and
 its manifest. Bench reference questions use that admitted corpus and the same
 384-dimensional encoder; they do not require a GLB or camera registration.
-Every microphone and typed question searches the full admitted corpus through
+Every technical microphone and typed question searches the full admitted corpus through
 the encoder. Dataset aliases are metadata, not an allow-list or routing gate.
+Whole-utterance greetings/thanks/farewells use `SocialConversationPolicy`
+before retrieval; they neither invoke Qwen nor produce component references.
+**Why:** nearest-neighbor retrieval always finds some board records, even for
+"hi". Technical requests prefixed by a greeting cannot take this social route.
 Bench queries start fresh: no previous question or generated answer enters
 retrieval or the next prompt. Source descriptions and
 other records share the bounded fact budget, retaining their original citations.
@@ -277,8 +286,19 @@ code reconstructs speech from the cited source values. The selector cannot
 authorize component highlights or invent physical identity.
 **Why:** unfamiliar reference names must be answered from retrieved documentation,
 not rejected based on model recall. Extra schema fields make small local-model
-selection less reliable without adding authority. Whole-response JSON fences
-are presentation wrappers only; unknown IDs and arbitrary prose still fail.
+selection less reliable without adding authority. A single JSON fence may have
+plain surrounding commentary; only the fenced evidence object is read, never
+the commentary. Multiple objects/fences, unknown IDs and extra schema fields
+still fail. Cancelled or failed voice generation invalidates preparation; the
+next microphone start reinitializes a failed/closed generator before listening.
+A complete leading Qwen reasoning block may be discarded before parsing the
+evidence object; incomplete/nested blocks fail. No reasoning text is spoken or
+used for component targeting. Explicit model inspection scopes vectors to that
+asset's dataset board ID and revokes the scope when inspection changes.
+Copied fact objects are accepted only with an existing ID, no unknown fields,
+and exact equality of every included source field to the retrieved fact.
+Speech and target references still come from native admitted evidence, never
+from the generated object's text.
 **How to apply:** keep facts/aliases in the pinned dataset, not board-specific
 application branches. Test multiple references on the optimized installed APK,
 including local playback, and retain independent physical-identity gates.
@@ -291,6 +311,19 @@ inside the existing overall deadline; partial output is never accepted.
 **Why:** deterministic decoding is not a factual guardrail and can create
 repetition loops. More available output space is not proof of a repetition or
 factual-quality fix; qualify complete answers independently.
+
+Digital-twin selectors may name a non-renderable parent containing many meshes.
+Resolve the complete authored hierarchy once at load; never identify components
+by flat renderable names, YOLO class names, or generated answer text. Native
+highlight material instances are owned by the viewer and must be restored and
+destroyed before the model is unloaded. Source GLBs without explicit physical
+and AR qualification cannot authorize physical identity or component guidance.
+Manual calibrated registration may render them as clearly labelled reference
+AR comparisons; it never marks their qualification flags true.
+Explicit source-model inspection can highlight cited component references only
+when retrieval and the displayed asset have the exact same board identity.
+This selects authored meshes, not observed physical components; live guidance
+retains current-pose and physical qualification checks.
 
 Streaming speech recognition uses bounded `modified_beam_search` with four
 active paths, not greedy token pruning. **Why:** technical names need competing
@@ -313,6 +346,43 @@ retrieval failures without retaining microphone transcripts or stale turn text.
 The caption and voice controls share one horizontal layout dock and one inset
 owner. Never restore absolute caption offsets beside independently inset-adjusted
 controls; those overlap on landscape phones with navigation bars or larger fonts.
+
+The selectable GLB index includes renderer-owned outer transform ancestry,
+without assigning component selectors to those external entities. **Why:**
+Filament's imported scene can have a parent outside `asset.entities`; rejecting
+that valid parent prevents every source model from loading. Keep bounded parent
+closure, cycle/depth checks and authored-only `ref:` identities. Native rendered
+entity picking maps a selected mesh back to its complete authored component
+group. A source-model selection does not establish physical-board identity.
+
+Bound total GLB primitives before invoking Filament, not just file bytes.
+**Why:** per-face STEP exports can exhaust native handles and crash in a job
+thread, outside Kotlin exception handling. Keep the 8,192-primitive scene budget;
+optimize with named component nodes preserved and verify per-component metric
+bounds using `tools/admit_optimized_twin.py`. Filament's daylight camera exposure
+also attenuates unit emissive highlights: compensate using actual aperture,
+shutter and ISO, without altering scene exposure or shared source materials.
+
+Offline source references are explicit entries of the signed vision bundle's
+bounded `reference-twins.json` catalog. **Why:** standalone bench sessions must
+not silently rely on Cloud project context to provision a GLB, and selecting a
+model must not be treated as detecting that board. Installation validates each
+manifest/GLB/context tuple; the Material model picker does not auto-select an
+identity. Inspection status owns its lifecycle and must not be overwritten by
+pose callbacks or collect registration taps. Calibrated manual reference AR
+remains visibly unqualified until physical fit and registration are verified.
+
+Signed source-reference entries can bind `tracking.json` and a digest-verified
+photo with four explicit image/metric landmark pairs. The native OpenCV 4.11
+SIFT/RANSAC tracker masks reference background, matches each fresh frame to the
+source (not the preceding frame), and rejects weak/distributed-poor support,
+ambiguous competing models, clipped/reflected quads and reprojection error.
+Three fresh matches precede automatic twin replacement. It refreshes stationary
+poses and expires automatic geometry after 900 ms, independently of manual
+registration's lifetime. **Why:** old unbound FRDM pose never chose a model,
+and movement-only refresh allowed a valid stationary model to expire.
+Unqualified packages render as dynamic reference comparisons; matching a photo
+cannot verify PCB revision or authorize source component identity in speech.
 
 Camera zoom uses CameraX-reported bounds and actual observed ratio. The surface
 intercepts only multi-touch zoom so the guidance overlay retains single-tap

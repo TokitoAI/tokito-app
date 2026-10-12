@@ -7,11 +7,21 @@ import tempfile
 import unittest
 import zipfile
 
-from build_model_bundle import MANIFEST, SIGNATURE, artifact_inventory, build
+from build_model_bundle import MANIFEST, SIGNATURE, artifact_inventory, build, manifest_bytes
 
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl is required")
 class ModelBundleBuilderTest(unittest.TestCase):
+    def test_signed_vision_profiles_are_explicit_and_inventory_bound(self) -> None:
+        args = argparse.Namespace(capability="vision", model_id="paired", model_revision="1", runtime_revision="1",
+            abi=["arm64-v8a"], license="agpl-3.0-only", vision_profile=["board_pose=pose", "component_segmentation=segment"])
+        artifacts = [{"path": "pose/manifest.json"}, {"path": "segment/segmentation.json"}]
+        self.assertEqual(2, len(json.loads(manifest_bytes(args, artifacts))["vision_profiles"]))
+        for profiles in (["board_pose=../escape"], ["board_pose=pose", "board_pose=pose"], ["unknown=pose"], ["board_pose=missing"]):
+            args.vision_profile = profiles
+            with self.assertRaises(ValueError):
+                manifest_bytes(args, artifacts)
+
     def test_bundle_inventory_and_signature_match_runtime_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

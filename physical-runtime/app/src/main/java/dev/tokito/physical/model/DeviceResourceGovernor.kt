@@ -33,7 +33,7 @@ class DeviceResourceGovernor(
             return HeavyWorkAdmission(false, 0, "memory_limited")
         }
         return when {
-            state.thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE ->
+            state.thermalStatus >= PowerManager.THERMAL_STATUS_CRITICAL ->
                 HeavyWorkAdmission(false, 0, "thermal_limited")
             state.thermalStatus >= PowerManager.THERMAL_STATUS_MODERATE ->
                 HeavyWorkAdmission(true, 1, "thermal_constrained")

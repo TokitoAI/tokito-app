@@ -8,6 +8,42 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DigitalTwinAssetTest {
+    private fun validateScene(scene: String): DigitalTwinValidation {
+        val json = scene.padEnd((scene.length + 3) / 4 * 4, ' ').toByteArray()
+        val glb = java.nio.ByteBuffer.allocate(20 + json.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .putInt(0x46546c67).putInt(2).putInt(20 + json.size)
+            .putInt(json.size).putInt(0x4e4f534a).put(json).array()
+        val manifest = CalibrationBoardAsset.create().manifest.copy(
+            glbBytes = glb.size.toLong(),
+            glbSha256 = java.security.MessageDigest.getInstance("SHA-256").digest(glb).joinToString("") { "%02x".format(it) },
+        )
+        return validator.validate(manifest, glb, manifest.assemblyContextRevision)
+    }
+
+    @Test fun excessiveNativeDrawHandlesAreRejectedBeforeRendering() {
+        val primitives = List(8193) { "{}" }.joinToString(",")
+        assertEquals(DigitalTwinValidation.Code.RESOURCE_BUDGET,
+            assertIs<DigitalTwinValidation.Rejected>(validateScene("{\"meshes\":[{\"primitives\":[$primitives]}]}")).code)
+    }
+
+    @Test fun malformedSceneCannotReachNativeLoader() {
+        assertEquals(DigitalTwinValidation.Code.INVALID_GLB,
+            assertIs<DigitalTwinValidation.Rejected>(validateScene("{\"meshes\":42}")).code)
+    }
+
+    @Test fun primitiveBudgetIsAcrossAllMeshes() {
+        val meshes = List(3) { "{\"primitives\":[" + List(3000) { "{}" }.joinToString(",") + "]}" }.joinToString(",")
+        assertEquals(DigitalTwinValidation.Code.RESOURCE_BUDGET,
+            assertIs<DigitalTwinValidation.Rejected>(validateScene("{\"meshes\":[$meshes]}")).code)
+    }
+    @Test
+    fun `inspection acceptance does not grant physical registration`() {
+        val source = CalibrationBoardAsset.create().manifest
+        assertFalse(source.registrationEligible)
+        assertFalse(source.copy(physicalGeometryVerified = true).registrationEligible)
+        assertFalse(source.copy(arRegistrationVerified = true).registrationEligible)
+        assertTrue(source.copy(physicalGeometryVerified = true, arRegistrationVerified = true).registrationEligible)
+    }
     @Test
     fun `board pose corners come from signed asset bounds`() {
         val manifest = CalibrationBoardAsset.create().manifest.copy(

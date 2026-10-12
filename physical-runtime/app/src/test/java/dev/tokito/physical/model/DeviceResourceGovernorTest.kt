@@ -19,15 +19,29 @@ class DeviceResourceGovernorTest {
     }
 
     @Test
-    fun severeThermalStateFailsClosedWithoutChangingBackend() {
+    fun criticalAndHigherThermalStatesFailClosedWithoutChangingBackend() {
+        for (status in PowerManager.THERMAL_STATUS_CRITICAL..PowerManager.THERMAL_STATUS_SHUTDOWN) {
+            val governor = DeviceResourceGovernor(
+                snapshot = { DeviceResourceSnapshot(10_000, lowMemory = false, status) },
+                memoryReserveBytes = 100,
+            )
+            val admission = governor.admit(100)
+            assertFalse(admission.allowed)
+            assertEquals(0, admission.maxConcurrency)
+            assertEquals("thermal_limited", admission.reason)
+        }
+    }
+
+    @Test
+    fun severeThermalStateRemainsAvailableWithConstrainedAdmission() {
         val governor = DeviceResourceGovernor(
             snapshot = { DeviceResourceSnapshot(10_000, lowMemory = false, PowerManager.THERMAL_STATUS_SEVERE) },
             memoryReserveBytes = 100,
         )
         val admission = governor.admit(100)
-        assertFalse(admission.allowed)
-        assertEquals(0, admission.maxConcurrency)
-        assertEquals("thermal_limited", admission.reason)
+        assertTrue(admission.allowed)
+        assertEquals(1, admission.maxConcurrency)
+        assertEquals("thermal_constrained", admission.reason)
     }
 
     @Test

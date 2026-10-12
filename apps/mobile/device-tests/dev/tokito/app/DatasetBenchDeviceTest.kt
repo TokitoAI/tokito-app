@@ -22,6 +22,58 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Actual signed dataset -> production bench -> Qwen -> local audio, not fixture facts. */
 class DatasetBenchDeviceTest {
+    @Test fun socialTurnsDoNotProduceTechnicalReplies() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        ForegroundDeviceQa.launch()
+        val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
+        val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        try {
+            for ((query, expected) in listOf("hi" to "Hi! How can I help?", "Hello Tokito!" to "Hi! How can I help?",
+                "thank you" to "You're welcome.")) {
+                ForegroundDeviceQa.requireResumed(bench)
+                val start = android.os.SystemClock.elapsedRealtime()
+                val answer = withTimeout(5_000) { withContext(Dispatchers.Main) { bench.respondLocally(query) } }
+                assertEquals(expected, answer)
+                instrumentation.sendStatus(2, Bundle().apply {
+                    putString("social_reply", answer)
+                    putLong("social_response_ms", android.os.SystemClock.elapsedRealtime() - start)
+                })
+            }
+        } finally { instrumentation.runOnMainSync { bench.finish() } }
+    }
+    @Test fun ultimakerMcuEvidenceSelectionSpeaksOnInstalledModels() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        ForegroundDeviceQa.launch()
+        val session = PhysicalSessionStore.open(context).use { it.startSession(PhysicalSessionContext()) }
+        val bench = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SESSION_ID, session.id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val voice = TokitoVoiceRuntime(context)
+        try {
+            withTimeout(150_000) {
+                while (withContext(Dispatchers.Main) { bench.localReasoningState } !is DialogueRuntimeState.Ready) {
+                    assertFalse("Bench initialization failed", withContext(Dispatchers.Main) { bench.localReasoningState } is DialogueRuntimeState.Failed)
+                    delay(200)
+                }
+            }
+            voice.initialize()
+            for (question in listOf("Where is the MCU on the Ultimaker board?", "Where is the MCU in Ultimaker boat?")) {
+                ForegroundDeviceQa.requireResumed(bench)
+                val answer = withTimeout(65_000) { withContext(Dispatchers.Main) { bench.respondLocally(question) } }
+                assertTrue("No cited MCU evidence: $answer", answer.contains("ATmega", ignoreCase = true))
+                val played = AtomicBoolean(false)
+                voice.speak(answer, SpeechQueuePolicy.REPLACE) { played.set(true) }
+                withTimeout(65_000) { while (!played.get()) delay(20) }
+                withTimeout(190_000) { while (voice.state.value !is VoiceRuntimeState.Ready) delay(50) }
+                instrumentation.sendStatus(2, Bundle().apply { putString("reference_question", question); putString("source_answer", answer) })
+            }
+        } finally {
+            voice.close()
+            instrumentation.runOnMainSync { bench.finish() }
+        }
+    }
     @Test fun repeatedReferenceTurnsFinishWithoutTokenExhaustion() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

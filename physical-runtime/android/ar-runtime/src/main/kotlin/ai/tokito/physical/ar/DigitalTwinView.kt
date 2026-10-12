@@ -7,6 +7,8 @@ import android.view.TextureView
 import android.widget.FrameLayout
 import com.google.android.filament.Camera
 import com.google.android.filament.Engine
+import com.google.android.filament.MaterialInstance
+import com.google.android.filament.Material
 import com.google.android.filament.View
 import com.google.android.filament.android.UiHelper
 import com.google.android.filament.utils.ModelViewer
@@ -46,6 +48,11 @@ class DigitalTwinView @JvmOverloads constructor(
     private var intrinsics: CameraIntrinsics? = null
     private var screenCorners: List<Point2>? = null
     private var inspectionPreview = false
+    private var referenceComparison = false
+    private var componentIndex: ComponentEntityIndex? = null
+    private data class HighlightMaterial(val entity: Int, val primitive: Int, val original: MaterialInstance, val selected: MaterialInstance)
+    private val highlightMaterials = mutableListOf<HighlightMaterial>()
+    private var highlightRevision = 0L
 
     init {
         addView(texture, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -94,32 +101,65 @@ class DigitalTwinView @JvmOverloads constructor(
     private fun loadAccepted(accepted: DigitalTwinValidation.Accepted): DigitalTwinRenderResult {
         val currentViewer = viewer ?: return DigitalTwinRenderResult.Initializing
         return try {
-            if (packageData?.manifest?.glbSha256 == accepted.packageData.manifest.glbSha256 &&
+            if (packageData?.manifest == accepted.packageData.manifest &&
                 currentViewer.asset != null
             ) {
                 applyRenderState()
                 return DigitalTwinRenderResult.Loaded
             }
+            clearComponentHighlight()
+            componentIndex = null
+            packageData = null
             if (currentViewer.asset != null) currentViewer.destroyModel()
             currentViewer.loadModelGlb(ByteBuffer.wrap(accepted.packageData.glb))
             val asset = currentViewer.asset ?: return DigitalTwinRenderResult.Rejected("Filament rejected the GLB")
             if (!boundsMatch(asset.boundingBox.center, asset.boundingBox.halfExtent, accepted.packageData.manifest.boundsMetres)) {
+                android.util.Log.e("TokitoDigitalTwin", "Decoded bounds mismatch: center=${asset.boundingBox.center.contentToString()} half=${asset.boundingBox.halfExtent.contentToString()} declared=${accepted.packageData.manifest.boundsMetres}")
                 currentViewer.destroyModel()
                 return DigitalTwinRenderResult.Rejected("decoded GLB bounds differ from the signed manifest")
             }
             packageData = accepted.packageData
+            val transforms = currentViewer.engine.transformManager
+            // ModelViewer may parent the imported scene under its own transform.
+            // Include that renderer-owned ancestry, without inventing selectors
+            // for entities that were not authored in the GLB.
+            val authoredEntities = (asset.entities.toList() + asset.root).toSet()
+            val hierarchy = linkedMapOf<Int, ComponentEntityIndex.Node>()
+            val pending = java.util.ArrayDeque<Int>().apply { addAll(authoredEntities) }
+            while (pending.isNotEmpty()) {
+                val entity = pending.removeFirst()
+                if (entity in hierarchy) continue
+                require(hierarchy.size < 100_000) { "Renderer hierarchy exceeds entity budget" }
+                val instance = transforms.getInstance(entity)
+                val parent = if (instance == 0) 0 else transforms.getParent(instance)
+                hierarchy[entity] = ComponentEntityIndex.Node(entity, parent,
+                    if (entity in authoredEntities) asset.getName(entity) else null)
+                if (parent != 0 && parent !in hierarchy) pending.addLast(parent)
+            }
+            componentIndex = ComponentEntityIndex.build(
+                hierarchy.values.toList(), asset.renderableEntities.toSet(), accepted.packageData.manifest.componentNodePrefix,
+            )
             applyRenderState()
             DigitalTwinRenderResult.Loaded
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            android.util.Log.e("TokitoDigitalTwin", "Validated source asset failed renderer admission", failure)
+            componentIndex = null
+            currentViewer.destroyModel()
             packageData = null
             visibility = INVISIBLE
             DigitalTwinRenderResult.Rejected("3D asset could not be created by the renderer")
         }
     }
 
-    fun updateRegistration(nextPose: MetricBoardPose?, nextIntrinsics: CameraIntrinsics?) {
+    fun updateRegistration(nextPose: MetricBoardPose?, nextIntrinsics: CameraIntrinsics?, compareReference: Boolean = false) {
         checkMainThread()
+        // A fresh pose for the same loaded asset moves the selected geometry;
+        // it must not erase selection on every tracking frame. Loss still revokes it.
+        if (nextPose == null || nextIntrinsics == null || referenceComparison != compareReference) clearComponentHighlight()
         inspectionPreview = false
+        referenceComparison = compareReference && nextPose != null && nextIntrinsics != null
+        texture.contentDescription = if (referenceComparison) "Registered source reference overlay; physical identity and fit unverified"
+            else "Registered three-dimensional PCB digital twin"
         pose = nextPose
         intrinsics = nextIntrinsics
         screenCorners = null
@@ -129,8 +169,10 @@ class DigitalTwinView @JvmOverloads constructor(
     /** Maps the admitted board asset directly to a tracked screen-space quadrilateral. */
     fun updateScreenRegistration(nextCorners: List<Point2>?) {
         checkMainThread()
+        clearComponentHighlight()
         require(nextCorners == null || nextCorners.size == 4)
         inspectionPreview = false
+        referenceComparison = false
         pose = null
         intrinsics = null
         screenCorners = nextCorners?.toList()
@@ -146,6 +188,7 @@ class DigitalTwinView @JvmOverloads constructor(
         intrinsics = null
         screenCorners = null
         inspectionPreview = true
+        referenceComparison = false
         val bounds = packageData!!.manifest.boundsMetres
         val centerX = (bounds.minimum.x + bounds.maximum.x) / 2.0
         val centerY = (bounds.minimum.y + bounds.maximum.y) / 2.0
@@ -188,21 +231,109 @@ class DigitalTwinView @JvmOverloads constructor(
         return true
     }
 
-    fun showOnlyComponents(referenceDesignators: Set<String>?) {
+    fun showOnlyComponents(referenceDesignators: Set<String>?): Boolean {
         checkMainThread()
-        val currentViewer = viewer ?: return
-        val asset = currentViewer.asset ?: return
-        val selected = referenceDesignators?.map { packageData!!.manifest.componentNodePrefix + it }?.toSet()
+        val currentViewer = viewer ?: return false
+        val asset = currentViewer.asset ?: return false
+        val index = componentIndex ?: return false
+        val selected = referenceDesignators?.let(index::resolve)
         val manager = currentViewer.engine.renderableManager
         asset.renderableEntities.forEach { entity ->
-            val name = asset.getName(entity).orEmpty()
-            val visible = selected == null || !name.startsWith(packageData!!.manifest.componentNodePrefix) || name in selected
+            val visible = selected == null || entity !in index.referencesByRenderable || entity in selected
             manager.getInstance(entity).takeIf { it != 0 }?.let { manager.setLayerMask(it, 0xff, if (visible) 0x01 else 0x00) }
         }
+        return referenceDesignators == null || selected != null
+    }
+
+    /** Picks rendered source geometry, never a detector-class approximation. */
+    fun pickComponent(point: Point2, onSelected: (String?) -> Unit): Boolean {
+        checkMainThread()
+        val currentViewer = viewer ?: return false
+        val index = componentIndex ?: return false
+        if (destroyed || visibility != VISIBLE || !scheduled.get() ||
+            !point.x.isFinite() || !point.y.isFinite() ||
+            point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) return false
+        clearComponentHighlight()
+        val revision = highlightRevision
+        val currentPackage = packageData
+        currentViewer.view.pick(point.x.toInt(), height - 1 - point.y.toInt(),
+            android.os.Handler(android.os.Looper.getMainLooper())) { result ->
+            if (destroyed || revision != highlightRevision || packageData !== currentPackage ||
+                visibility != VISIBLE || !scheduled.get() ||
+                (!inspectionPreview && pose?.let { System.nanoTime() > it.expiresAtNanos } == true)) return@pick
+            val reference = index.referencesByRenderable[result.renderable]
+            if (reference != null && highlightComponents(setOf(reference), 15_000)) onSelected(reference)
+            else onSelected(null)
+        }
+        return true
+    }
+
+    /** Highlights every authored mesh in a component without hiding the rest of the board.
+     * Cloned material instances keep shared source materials and textures untouched.
+     */
+    fun highlightComponents(references: Set<String>, validityMillis: Long): Boolean {
+        checkMainThread()
+        require(validityMillis in 1..60_000)
+        val currentViewer = viewer ?: return false
+        val selected = componentIndex?.resolve(references) ?: return false
+        clearComponentHighlight()
+        val manager = currentViewer.engine.renderableManager
+        // glTF emissive radiance is pre-exposed by Filament. Unit emission is
+        // invisible at the viewer's daylight exposure; compensate using the
+        // actual camera settings rather than changing the whole scene exposure.
+        val camera = currentViewer.camera
+        val exposureDenominator = 1.2 * camera.aperture.toDouble() * camera.aperture /
+            camera.shutterSpeed * (100.0 / camera.sensitivity)
+        if (!exposureDenominator.isFinite() || exposureDenominator <= 0.0) return false
+        val emission = (0.8 * exposureDenominator).coerceIn(1.0, 100_000.0).toFloat()
+        try {
+            // Admit the entire selection before installing any overrides.
+            for (entity in selected) {
+                val instance = manager.getInstance(entity)
+                require(instance != 0)
+                for (primitive in 0 until manager.getPrimitiveCount(instance)) {
+                    require(highlightMaterials.size < 4096) { "Component highlight exceeds primitive budget" }
+                    val original = manager.getMaterialInstanceAt(instance, primitive)
+                    require(original.material.parameters.any {
+                        it.name == "emissiveFactor" && it.type == Material.Parameter.Type.FLOAT3 && it.count == 1
+                    }) { "Material does not support component highlighting" }
+                    val duplicate = MaterialInstance.duplicate(original, "tokito-component-highlight")
+                    highlightMaterials.add(HighlightMaterial(entity, primitive, original, duplicate))
+                    duplicate.setParameter("emissiveFactor", 0.0f, emission, emission * 0.65f)
+                }
+            }
+            require(highlightMaterials.isNotEmpty())
+            highlightMaterials.forEach { slot ->
+                manager.setMaterialInstanceAt(manager.getInstance(slot.entity), slot.primitive, slot.selected)
+            }
+        } catch (_: RuntimeException) {
+            clearComponentHighlight()
+            return false
+        }
+        val revision = highlightRevision
+        postDelayed({ if (revision == highlightRevision) clearComponentHighlight() }, validityMillis)
+        return true
+    }
+
+    fun clearComponentHighlight() {
+        checkMainThread()
+        highlightRevision++
+        val currentViewer = viewer
+        if (currentViewer != null) {
+            val manager = currentViewer.engine.renderableManager
+            highlightMaterials.forEach { slot ->
+                val instance = manager.getInstance(slot.entity)
+                if (instance != 0) manager.setMaterialInstanceAt(instance, slot.primitive, slot.original)
+                currentViewer.engine.destroyMaterialInstance(slot.selected)
+            }
+        }
+        highlightMaterials.clear()
     }
 
     fun suspendRendering() {
+        clearComponentHighlight()
         inspectionPreview = false
+        referenceComparison = false
         pose = null
         screenCorners = null
         visibility = INVISIBLE
@@ -213,12 +344,14 @@ class DigitalTwinView @JvmOverloads constructor(
         checkMainThread()
         suspendRendering()
         viewer?.destroyModel()
+        componentIndex = null
         packageData = null
         texture.alpha = 1f
     }
 
     fun destroy() {
         checkMainThread()
+        clearComponentHighlight()
         destroyed = true
         unschedule()
         pendingLoad?.second?.invoke(DigitalTwinRenderResult.Rejected("renderer was destroyed before asset initialization"))
@@ -241,6 +374,10 @@ class DigitalTwinView @JvmOverloads constructor(
 
     override fun doFrame(frameTimeNanos: Long) {
         scheduled.set(false)
+        if (!inspectionPreview && pose?.let { System.nanoTime() > it.expiresAtNanos } == true) {
+            suspendRendering()
+            return
+        }
         if (visibility == VISIBLE && isAttachedToWindow && packageData != null && (pose != null || screenCorners != null || inspectionPreview)) {
             viewer?.render(frameTimeNanos)
             schedule()
@@ -256,6 +393,12 @@ class DigitalTwinView @JvmOverloads constructor(
             texture.alpha = 1f
             visibility = VISIBLE
             schedule()
+            return
+        }
+        val manifest = packageData?.manifest
+        if (manifest != null && !manifest.registrationEligible && !referenceComparison && manifest.assetId != CalibrationBoardAsset.ASSET_ID) {
+            visibility = INVISIBLE
+            unschedule()
             return
         }
         val trackedCorners = screenCorners

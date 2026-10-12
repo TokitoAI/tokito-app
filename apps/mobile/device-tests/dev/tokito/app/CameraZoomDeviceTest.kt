@@ -28,6 +28,11 @@ class CameraZoomDeviceTest {
         try {
             waitFor { it.isFinite() }
             ForegroundDeviceQa.requireResumed(bench)
+            val calibration = withContext(Dispatchers.Main) { surface.calibratedPreviewIntrinsics() }
+            instrumentation.sendStatus(2, android.os.Bundle().apply {
+                putBoolean("metric_ar_camera_calibration_available", calibration != null)
+                calibration?.let { putString("metric_ar_preview_intrinsics", "${it.fx},${it.fy},${it.cx},${it.cy},${it.widthPx},${it.heightPx}") }
+            })
             val initial = requireNotNull(ratio())
             withContext(Dispatchers.Main) { assertTrue(view("zoomInButton").isEnabled); view("zoomInButton").performClick() }
             waitFor { it > initial }

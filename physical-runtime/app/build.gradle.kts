@@ -70,6 +70,7 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("com.google.ai.edge.litert:litert:1.4.1")
+    implementation("org.opencv:opencv:4.11.0")
 
     testImplementation("junit:junit:4.13.2")
     // Android owns org.json at runtime. Packaging the desktop implementation

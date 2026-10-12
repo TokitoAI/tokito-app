@@ -4,7 +4,7 @@ package dev.tokito.physical.dialogue
 class LocalBenchDialoguePolicy {
     private val protocol = DialogueProtocol(DialogueLimits())
 
-    enum class Authority { ADMITTED_EVIDENCE, ABSTENTION }
+    enum class Authority { ADMITTED_EVIDENCE, ABSTENTION, SOCIAL }
     data class Answer(
         val text: String,
         val boardTarget: DesignBoardTarget? = null,
@@ -13,6 +13,7 @@ class LocalBenchDialoguePolicy {
 
     fun answer(utterance: String, index: LocalDesignContextIndex?): Answer {
         protocol.validateRequest(DialogueRequest(utterance = utterance))
+        SocialConversationPolicy.reply(utterance)?.let { return Answer(it.text, authority = Authority.SOCIAL) }
         val query = utterance.trim().replace(Regex("\\s+"), " ")
         val grounded = index?.groundedAnswer(query)
         val request = DialogueRequest(utterance = utterance, designContext = grounded?.designContext)

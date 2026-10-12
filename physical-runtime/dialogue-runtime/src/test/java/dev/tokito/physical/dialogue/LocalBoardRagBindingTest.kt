@@ -4,6 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LocalBoardRagBindingTest {
+    @Test(expected = IllegalArgumentException::class)
+    fun physicalScopeCannotSearchUnboundWholeCorpus() {
+        LocalBoardRag.Binding(null, "a".repeat(64), "registered:1", 10_000, physicalIdentityVerified = true)
+    }
+
+    @Test fun namedReferenceIsNotPhysicalIdentity() {
+        val reference = LocalBoardRag.Binding("esp32_board", "a".repeat(64), "reference:1", 10_000)
+        assertEquals(false, reference.physicalIdentityVerified)
+    }
     @Test fun wholeCorpusReferenceSearchNeedsNoNamedBoard() {
         val binding = LocalBoardRag.Binding(null, "a".repeat(64), "library:1", 10_000)
         assertEquals(null, binding.boardId)

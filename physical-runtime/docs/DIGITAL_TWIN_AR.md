@@ -16,10 +16,56 @@ are accepted; an unknown major version is rejected.
 
 Loading is bounded to 64 MiB. The complete GLB header/chunk structure, byte
 length, digest, finite bounds and context revision are verified before the
-package is atomically activated. Filament-decoded bounds are compared with the
-signed manifest. A rejected package never replaces the active package.
+package is admitted. Filament-decoded bounds and the component hierarchy are
+checked during renderer activation. Renderer rejection clears the display;
+it must not retain a prior model under the new package identity.
+
+Source models can be inspected without physical registration. Verified physical
+guidance and automatic source-model placement require both
+`physicalGeometryVerified` and `arRegistrationVerified` to be explicitly true.
+Manual registration may display an unqualified source as a labelled **reference
+AR comparison** after calibrated metric pose admission. This is actual camera
+registration for visual comparison, not proof of physical identity or fit. It
+does not grant physical RAG scope or source-component guidance. Clearing,
+replacement, expiry or lifecycle suspension revokes this comparison mode.
+Missing or false qualification flags cannot be promoted by GLB parsing,
+camera corner detection, or a source component-map coverage count.
+
+Component selection resolves the declared `ref:` root through all descendant
+renderables, including multi-mesh packages. Duplicate, nested, cyclic, detached,
+or over-budget hierarchies are rejected. Highlighting clones material instances,
+keeps the rest of the board visible, and restores originals before destroying
+the clones. Expiry, replacement, registration changes and lifecycle suspension
+clear selection. An older expiry cannot clear a newer selection.
+
+Native touch selection uses Filament's rendered-entity picking and the same
+authored hierarchy index. It does not infer a component from a detector label.
+Asynchronous picks are invalidated by newer selections, package replacement,
+registration changes and lifecycle suspension. Reference inspection may label
+and highlight source geometry, but that is not physical-board component advice.
+The explicit inspection mode owns its status and disables automatic pose
+replacement; tapping an inspection model must not accidentally start corner
+registration.
+
+Dataset RAG returns validated selected source facts alongside spoken text. The
+host may resolve their reference designators only against a current qualified
+twin with the exact same board identity. Multi-board answers, unregistered
+sources, missing meshes and mismatched identities do not create a highlight.
+Neither generated speech nor semantic retrieval establishes physical identity.
+The manually registered, already-qualified project provides an exact board
+scope to local RAG. That scope is checked again after retrieval and generation;
+registration loss, pose revision changes or asset replacement revoke it. A
+named documentation reference and a generic automatic corner detector do not
+grant this scope. Physical-scope queries never search an unbound whole corpus.
 
 ## Runtime geometry
+
+Offline reference models may ship as inventoried artifacts of the signed vision
+bundle. `reference-twins.json` declares a bounded catalog of labels, manifest/GLB
+paths and exact context revisions. Installation validates every package before
+activation. The native picker loads a selected model off the UI thread and
+clears prior registration; it never chooses the first model as detected identity.
+Source comparison does not require a Cloud project or legacy context file.
 
 The assembly board plane uses authored metric X/Y coordinates. A Y-up GLB maps
 asset X to board X, asset Z to board Y and asset Y to physical height. Camera
@@ -29,7 +75,10 @@ board-to-camera pose and reprojection error. A pose is accepted only while its
 absolute and frame-normalized reprojection errors satisfy the configured gate.
 
 The transparent Filament view consumes the same registration revision as 2D
-guidance. Missing calibration, stale pose, low confidence, lifecycle loss,
+guidance. The shipping host estimates a metric perspective pose from the signed
+X/Z landmarks and calibrated preview intrinsics; an orthographic screen fit is
+not a registration fallback. Pose expiry also suppresses the renderer directly,
+even if no further tracking callback arrives. Missing calibration, stale pose, low confidence, lifecycle loss,
 context mismatch, invalid GLB or renderer failure makes the 3D layer invisible;
 the last pose is never silently reused.
 
