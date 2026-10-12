@@ -173,6 +173,23 @@ def shared_exports(test_refs, test_defs, mapping, usage):
     return exports
 
 
+def reflection_methods(test_defs):
+    """Explicit reflection ABI omitted from DEX method references by design."""
+    if descriptor("dev.tokito.app.LocalQwenTokensDeviceTest") not in test_defs:
+        return set()
+    prefix = "dev.tokito.physical.dialogue."
+    tokenizer, metadata = descriptor(prefix + "NativeQwenTokenizer"), descriptor(prefix + "QairtContextMetadata")
+    return {
+        (descriptor(prefix + "NativeQwenTokenizer$Companion"), "open", tokenizer,
+         ("Landroid/content/Context;", "Ljava/io/File;")),
+        (tokenizer, "encode", "[I", ("Ljava/lang/String;",)),
+        (tokenizer, "close", "V", ()),
+        (descriptor(prefix + "QairtContextMetadata$Companion"), "admit", metadata,
+         ("Landroid/content/Context;", descriptor(prefix + "DialogueModel"))),
+        (metadata, "getCapacity", "I", ()),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, type=Path)
@@ -187,6 +204,9 @@ def main():
         raise SystemExit("Unstable vendor JNI ABI:\n" + "\n".join(vendor_errors))
     refs, defs, methods, _, _ = apk_types(args.test)
     exports = shared_exports(refs, defs, mapping, args.usage.read_text())
+    reflected = reflection_methods(defs)
+    exports.update(method[0] for method in reflected)
+    methods.update(reflected)
     if args.rules:
         for name in sorted(exports):
             print("-keep,includedescriptorclasses class " + name[1:-1].replace("/", ".") + " { public *; protected *; }")

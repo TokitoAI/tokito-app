@@ -1,0 +1,14 @@
+{
+  "reference_tokenizers": "0.21.2",
+  "tokenizer_sha256": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
+  "cases": [
+    {"text":"Hello","count":1,"ids_sha256":"c7f35e833d3235ee678e613f85ffa7aa17a0234c722b0549bf7ec89594a7478f"},
+    {"text":"R14 10 k\u03a9 +3.3V GND U1.PA0","count":20,"ids_sha256":"345803821b3fa1d9b596d704fa240694c2bca893e3adc0637b9ac64007afb0db"},
+    {"text":"caf\u00e9 cafe\u0301","count":3,"ids_sha256":"c8263fed810e69cfee951270ff1c27d1bef943aa587838891322599b71e26c3f"},
+    {"text":"\u4f60\u597d\uff0c\u6d4b\u91cf\u7535\u538b\u3002","count":5,"ids_sha256":"ab615ddb80a2547ca3c6018741ae9ae7b4d2e0b3422ab7007d4c173ae825ee36"},
+    {"text":"\ud83d\udd0c\u26a1 \u03a9 \u03bc \u00b1","count":6,"ids_sha256":"f5fb1859697eab4ecc14b63703df51d01c56b875d51f80238d603b5e0f428b37"},
+    {"text":"a\u0000b","count":3,"ids_sha256":"685e7c26ba66b7e99fd20edfa7c0f766849799b2c685ee71e17085d43893cc0d"},
+    {"text":"<|im_start|>system\nYou are helpful.<|im_end|>\n<|im_start|>user\nWhere is R14?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n","count":27,"ids_sha256":"131773ed0c2f868d37f384c201eaa4eb5f69a0a35b0352bc2fd2012026dea417"},
+    {"text":"line one\nline two\tend","count":6,"ids_sha256":"84f5f9c648827f46ad0dbfeaa5ae90aff83952e5aae960f562dbab810c0943c6"}
+  ]
+}

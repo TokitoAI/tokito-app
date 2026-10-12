@@ -27,14 +27,14 @@ class SpokenProfileTest {
         assertEquals(0f, config.minP)
     }
 
-    @Test fun spokenPromptHasOneConsistentSentenceBudgetWithoutAnswerFixtures() {
+    @Test fun spokenPromptHasOneConsistentConfigurableBudgetWithoutAnswerFixtures() {
         val protocol = DialogueProtocol(DialogueLimits())
-        assertTrue(protocol.conversationalSystemPrompt().contains("exactly one short sentence"))
-        assertTrue(protocol.conversationalSystemPrompt().contains("35 words"))
+        assertTrue(protocol.conversationalSystemPrompt().contains("160 words"))
+        assertTrue(protocol.conversationalSystemPrompt().contains("/no_think"))
         val question = "Explain inductance in general."
         val request = protocol.requestPrompt(DialogueRequest(question))
         assertTrue(request.contains(question))
-        assertTrue(request.contains("one sentence of at most 35 words"))
+        assertTrue(request.contains("at most 160 words"))
         assertFalse(request.contains("at most two"))
         assertFalse(request.contains("resistor"))
     }
