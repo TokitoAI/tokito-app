@@ -202,8 +202,9 @@ class TokitoDialogueRuntime(
     private suspend fun respondOwned(request: DialogueRequest): DialogueOutcome {
         protocol.ungroundedIdentityClarification(request)?.let { return it }
         val toolMode = request.capabilities.isNotEmpty()
+        val grounded = if (!toolMode && request.designContext != null) GroundedConversationProtocol(limits) else null
         requireDialogueMode(activeRuntime, toolMode)
-        val systemPrompt = if (toolMode) protocol.systemPrompt() else protocol.conversationalSystemPrompt()
+        val systemPrompt = if (toolMode) protocol.systemPrompt() else grounded?.systemPrompt() ?: protocol.conversationalSystemPrompt()
         val activeEngine = initialization.current()
             ?: throw DialogueFailure(DialogueFailureCode.MODEL_LOAD, "Dialogue model is not ready")
         val started = android.os.SystemClock.elapsedRealtime()
@@ -223,7 +224,7 @@ class TokitoDialogueRuntime(
                     }
                 } else null
                 val (prompt, formattedText, tokenBudget) = admitConversationWindow(request) { candidate ->
-                    val prompt = protocol.requestPrompt(candidate)
+                    val prompt = grounded?.requestPrompt(candidate) ?: protocol.requestPrompt(candidate)
                     val text = activeEngine.applyChatTemplate(arrayOf(ChatMessage("system", systemPrompt),
                         ChatMessage("user", prompt)), null, false).getOrThrow().formattedText
                     if (text.length > limits.maxPromptChars) {
@@ -287,7 +288,7 @@ class TokitoDialogueRuntime(
             }
             phase("native_returned")
             val outcome = try {
-                if (toolMode) protocol.parse(raw, request) else protocol.parseConversation(raw)
+                if (toolMode) protocol.parse(raw, request) else grounded?.parse(raw, request) ?: protocol.parseConversation(raw)
             } catch (failure: DialogueFailure) {
                 if (failure.code == DialogueFailureCode.INVALID_MODEL_OUTPUT) {
                     Log.w(
