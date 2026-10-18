@@ -14,7 +14,7 @@
     "audit": "node scripts/audit-gate.mjs",
     "audit:test": "node --test scripts/audit-gate.test.mjs scripts/dependency-patches.test.mjs",
     "release:validate": "node scripts/release-identity.mjs",
-    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/sync/physicalSync.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
+    "test": "node --import tsx --test src/cloud.test.ts src/auth/AuthService.test.ts src/api/cloudHttp.test.ts src/native/errorCopy.test.ts src/sync/physicalSync.test.ts scripts/release-identity.test.mjs scripts/native-bridge-contract.test.mjs scripts/physical-integration.test.mjs scripts/product-boundary.test.mjs",
     "forbid-js": "node scripts/forbid-js.mjs"
   },
   "engines": {
@@ -22,14 +22,14 @@
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
-    "expo": "~57.0.25",
+    "expo": "~57.0.30",
     "expo-asset": "~57.0.18",
     "expo-constants": "~57.0.19",
     "expo-document-picker": "~57.0.3",
     "expo-font": "~57.0.1",
     "expo-navigation-bar": "~57.0.3",
     "expo-secure-store": "~57.0.4",
-    "expo-splash-screen": "~57.0.9",
+    "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "phosphor-react-native": "^3.0.6",

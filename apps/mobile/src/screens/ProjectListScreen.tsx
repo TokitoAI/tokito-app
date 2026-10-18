@@ -18,6 +18,7 @@ import {
 import type { CloudClient } from "../native/bridge";
 import type { ProjectListItem } from "../api/cloudHttp";
 import { CompanionError } from "../native/types";
+import { planLabel } from "../native/errorCopy";
 import { tokens } from "../theme";
 import { useRealtimeWorkspace } from "../sync/RealtimeWorkspace";
 import { BrandTile, Card, ErrorText, Muted, PrimaryButton } from "../ui/primitives";
@@ -104,7 +105,7 @@ export function ProjectListScreen({
               {accountEmail}
             </Text>
             <View style={styles.accountMeta}>
-              <View style={styles.planPill}><Text style={styles.planText}>{accountPlan}</Text></View>
+              <View style={styles.planPill}><Text style={styles.planText}>{planLabel(accountPlan)}</Text></View>
               <View style={[styles.syncDot, realtime.status === "live" && styles.syncDotLive]} />
               <Text style={[styles.sync, realtime.status === "live" && styles.syncLive]}>{realtime.status}</Text>
             </View>

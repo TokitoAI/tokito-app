@@ -75,18 +75,49 @@ export interface Proposal {
   note?: string | null;
 }
 
-async function readStatus(res: Response): Promise<string | undefined> {
+interface ErrorBody {
+  status?: string;
+  reason?: string;
+  retry_after_secs?: number;
+}
+
+/** Which route failed; a verify 429 and a request 429 mean different things. */
+export type ErrorRoute = "otpRequest" | "otpVerify" | "other";
+
+async function readBody(res: Response): Promise<ErrorBody> {
   try {
-    const body = (await res.json()) as { status?: string };
-    return body.status;
+    const body = (await res.json()) as unknown;
+    return typeof body === "object" && body !== null ? (body as ErrorBody) : {};
   } catch {
-    return undefined;
+    return {};
   }
 }
 
-async function mapError(res: Response): Promise<CompanionError> {
-  const status = await readStatus(res);
-  if (res.status === 401) return CompanionError.unauthorized();
+/** Body `retry_after_secs`, falling back to a delta-seconds `Retry-After`. */
+function retryAfterSecs(res: Response, body: ErrorBody): number | undefined {
+  if (typeof body.retry_after_secs === "number" && Number.isFinite(body.retry_after_secs)) {
+    return body.retry_after_secs;
+  }
+  const header = res.headers.get("retry-after");
+  if (header !== null && /^\d+$/.test(header.trim())) return Number(header.trim());
+  return undefined;
+}
+
+export async function mapError(
+  res: Response,
+  route: ErrorRoute = "other",
+): Promise<CompanionError> {
+  const body = await readBody(res);
+  const status = body.status;
+  if (res.status === 401) {
+    if (status === "invalid_code") {
+      return body.reason === "too_many_attempts"
+        ? CompanionError.codeBurned()
+        : CompanionError.invalidCode();
+    }
+    return CompanionError.unauthorized();
+  }
+  if (res.status === 403) return CompanionError.forbidden();
   if (res.status === 503) {
     if (status === "companion_unavailable") {
       return CompanionError.unavailable(
@@ -100,13 +131,15 @@ async function mapError(res: Response): Promise<CompanionError> {
       "Companion API not found on this server (deploy tokito-api with /v1/companion/*)",
     );
   }
-  if (res.status === 403) {
-    return CompanionError.unauthorized();
-  }
   if (res.status === 429) {
-    return status === "rate_limited"
-      ? CompanionError.rateLimited()
-      : CompanionError.cooldown();
+    const secs = retryAfterSecs(res, body);
+    if (body.reason === "too_many_failed_attempts") {
+      return CompanionError.dailyCapReached(secs);
+    }
+    if (status === "cooldown") return CompanionError.cooldown(secs);
+    return route === "otpVerify"
+      ? CompanionError.networkRateLimited(secs)
+      : CompanionError.rateLimited(secs);
   }
   if (res.status === 502) return CompanionError.sendFailed();
   if (status === "invalid_code") return CompanionError.invalidCode();
@@ -148,7 +181,7 @@ export class HttpCloudClient implements CompanionClientPort {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: email.trim() }),
     });
-    if (!res.ok) throw await mapError(res);
+    if (!res.ok) throw await mapError(res, "otpRequest");
   }
 
   async otpVerify(email: string, code: string): Promise<Session> {
@@ -157,7 +190,7 @@ export class HttpCloudClient implements CompanionClientPort {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: email.trim(), code: code.trim() }),
     });
-    if (!res.ok) throw await mapError(res);
+    if (!res.ok) throw await mapError(res, "otpVerify");
     return (await res.json()) as Session;
   }
 

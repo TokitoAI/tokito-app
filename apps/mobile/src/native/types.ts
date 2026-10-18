@@ -3,6 +3,13 @@
  * Keep in lockstep with `crates/ffi/src/lib.rs`.
  */
 
+import { formatDuration, retryClause } from "./errorCopy";
+
+/**
+ * Plan names are server-owned and open-ended (new tiers ship without an app
+ * release). Never narrow this to a union: unknown values must decode and be
+ * displayed verbatim (see `planLabel`).
+ */
 export type Plan = string;
 
 export interface Session {
@@ -21,7 +28,11 @@ export type CompanionErrorKind =
   | "RateLimited"
   | "SendFailed"
   | "InvalidCode"
+  | "CodeBurned"
+  | "NetworkRateLimited"
+  | "DailyCapReached"
   | "Unauthorized"
+  | "Forbidden"
   | "Unavailable"
   | "Network"
   | "NativeCompatibility"
@@ -40,12 +51,52 @@ export class CompanionError extends Error {
     }
   }
 
-  static cooldown(): CompanionError {
-    return new CompanionError("Cooldown", "wait a moment before requesting another code");
+  static cooldown(retryAfterSecs?: number): CompanionError {
+    const wait =
+      retryAfterSecs === undefined ? "a moment" : formatDuration(retryAfterSecs);
+    return new CompanionError(
+      "Cooldown",
+      `Please wait ${wait} before requesting another code.`,
+    );
   }
 
-  static rateLimited(): CompanionError {
-    return new CompanionError("RateLimited", "too many code requests; try again later");
+  /** Hourly cap on code requests. */
+  static rateLimited(retryAfterSecs?: number): CompanionError {
+    return new CompanionError(
+      "RateLimited",
+      `Too many code requests. Try again ${retryClause(retryAfterSecs)}.`,
+    );
+  }
+
+  /** Per-IP cap on verify attempts. */
+  static networkRateLimited(retryAfterSecs?: number): CompanionError {
+    return new CompanionError(
+      "NetworkRateLimited",
+      `Too many attempts from this network. Try again ${retryClause(retryAfterSecs)}.`,
+    );
+  }
+
+  /** Per-email daily cap on failed attempts. */
+  static dailyCapReached(retryAfterSecs?: number): CompanionError {
+    return new CompanionError(
+      "DailyCapReached",
+      `Too many failed attempts for this email. Sign in with Google or GitHub, or try again ${retryClause(retryAfterSecs)}.`,
+    );
+  }
+
+  /** The code was burned by too many wrong attempts. */
+  static codeBurned(): CompanionError {
+    return new CompanionError(
+      "CodeBurned",
+      "Too many attempts on that code. Request a new code.",
+    );
+  }
+
+  static forbidden(): CompanionError {
+    return new CompanionError(
+      "Forbidden",
+      "You don't have access to this. Ask an admin of the organization.",
+    );
   }
 
   static sendFailed(): CompanionError {

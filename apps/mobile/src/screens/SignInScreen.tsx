@@ -124,7 +124,9 @@ export function SignInScreen({
               <Field
                 label={`Code sent to ${email.trim()}`}
                 keyboardType="number-pad"
-                placeholder="6-digit code"
+                textContentType="oneTimeCode"
+                autoComplete="one-time-code"
+                placeholder="1234 5678"
                 value={code}
                 onChangeText={setCode}
                 editable={!busy}
@@ -148,7 +150,7 @@ export function SignInScreen({
               />
               <View style={styles.hintRow}>
                 <Key size={16} color={tokens.text3} weight="regular" />
-                <Text style={styles.hint}>Enter the 6-digit code from your inbox.</Text>
+                <Text style={styles.hint}>Enter the code from your email.</Text>
               </View>
             </View>
           )}
