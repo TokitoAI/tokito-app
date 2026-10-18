@@ -110,10 +110,18 @@ pub struct ArtifactBytes {
 /// Auth / sync failures mapped for UniFFI / RN UI copy.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum CompanionError {
-    #[error("wait a moment before requesting another code")]
-    Cooldown,
-    #[error("too many code requests; try again later")]
-    RateLimited,
+    #[error("Please wait before requesting another code.")]
+    Cooldown { retry_after_secs: Option<u64> },
+    #[error("Too many code requests. Try again later.")]
+    RateLimited { retry_after_secs: Option<u64> },
+    #[error("Too many attempts from this network. Try again later.")]
+    NetworkRateLimited { retry_after_secs: Option<u64> },
+    #[error("Too many failed attempts for this email. Sign in with Google or GitHub, or try again later.")]
+    DailyCapReached { retry_after_secs: Option<u64> },
+    #[error("Too many attempts on that code. Request a new code.")]
+    CodeBurned,
+    #[error("You don't have access to this. Ask an admin of the organization.")]
+    Forbidden,
     #[error("could not send the code; try again")]
     SendFailed,
     #[error("that code is invalid or expired")]
@@ -136,8 +144,16 @@ pub enum CompanionError {
 impl From<CloudError> for CompanionError {
     fn from(value: CloudError) -> Self {
         match value {
-            CloudError::Cooldown => Self::Cooldown,
-            CloudError::RateLimited => Self::RateLimited,
+            CloudError::Cooldown { retry_after_secs } => Self::Cooldown { retry_after_secs },
+            CloudError::RateLimited { retry_after_secs } => Self::RateLimited { retry_after_secs },
+            CloudError::NetworkRateLimited { retry_after_secs } => {
+                Self::NetworkRateLimited { retry_after_secs }
+            }
+            CloudError::DailyCapReached { retry_after_secs } => {
+                Self::DailyCapReached { retry_after_secs }
+            }
+            CloudError::CodeBurned => Self::CodeBurned,
+            CloudError::Forbidden => Self::Forbidden,
             CloudError::SendFailed => Self::SendFailed,
             CloudError::InvalidCode => Self::InvalidCode,
             CloudError::Unauthorized => Self::Unauthorized,

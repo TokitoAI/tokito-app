@@ -41,9 +41,34 @@ struct MeBody {
     plan: String,
 }
 
-#[derive(Deserialize)]
-struct StatusBody {
+#[derive(Deserialize, Default)]
+struct ErrorBody {
+    #[serde(default)]
     status: String,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    retry_after_secs: Option<u64>,
+}
+
+/// Which route failed: a verify 429 (per-IP) and a request 429 (hourly) differ.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Route {
+    OtpRequest,
+    OtpVerify,
+}
+
+/// Body `retry_after_secs`, falling back to a delta-seconds `Retry-After`.
+fn retry_after(headers: &reqwest::header::HeaderMap, body: &ErrorBody) -> Option<u64> {
+    body.retry_after_secs.or_else(|| {
+        headers
+            .get(reqwest::header::RETRY_AFTER)?
+            .to_str()
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    })
 }
 
 fn default_plan() -> String {
@@ -69,7 +94,7 @@ pub async fn otp_request(base: &str, email: &str) -> Result<(), CloudError> {
         .map_err(|e| CloudError::Network(e.to_string()))?;
     match resp.status().as_u16() {
         200 => Ok(()),
-        429 => Err(classify_429(resp).await),
+        429 => Err(classify_429(resp, Route::OtpRequest).await),
         502 => Err(CloudError::SendFailed),
         503 => Err(CloudError::Unavailable),
         _ => Err(CloudError::Unexpected),
@@ -86,7 +111,7 @@ pub async fn otp_verify(base: &str, email: &str, code: &str) -> Result<CloudSess
         .send()
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
-    session_from_response(resp).await
+    session_from_response(resp, Route::OtpVerify).await
 }
 
 /// `POST /v1/auth/oauth/exchange` — swap an OAuth pairing code for a session.
@@ -99,7 +124,7 @@ pub async fn oauth_exchange(base: &str, code: &str) -> Result<CloudSession, Clou
         .send()
         .await
         .map_err(|e| CloudError::Network(e.to_string()))?;
-    session_from_response(resp).await
+    session_from_response(resp, Route::OtpVerify).await
 }
 
 /// `GET /v1/auth/me` — probe the account behind a bearer token.
@@ -121,12 +146,16 @@ pub async fn me(base: &str, token: &str) -> Result<CloudAccount, CloudError> {
             })
         }
         401 => Err(CloudError::Unauthorized),
+        403 => Err(CloudError::Forbidden),
         503 => Err(CloudError::Unavailable),
         _ => Err(CloudError::Unexpected),
     }
 }
 
-async fn session_from_response(resp: reqwest::Response) -> Result<CloudSession, CloudError> {
+async fn session_from_response(
+    resp: reqwest::Response,
+    route: Route,
+) -> Result<CloudSession, CloudError> {
     match resp.status().as_u16() {
         200 => {
             let body: SessionBody = resp.json().await.map_err(|_| CloudError::Unexpected)?;
@@ -136,16 +165,33 @@ async fn session_from_response(resp: reqwest::Response) -> Result<CloudSession, 
                 plan: body.plan,
             })
         }
-        401 => Err(CloudError::InvalidCode),
+        401 => {
+            let body: ErrorBody = resp.json().await.unwrap_or_default();
+            if body.reason.as_deref() == Some("too_many_attempts") {
+                Err(CloudError::CodeBurned)
+            } else {
+                Err(CloudError::InvalidCode)
+            }
+        }
+        403 => Err(CloudError::Forbidden),
+        429 => Err(classify_429(resp, route).await),
         503 => Err(CloudError::Unavailable),
         _ => Err(CloudError::Unexpected),
     }
 }
 
-async fn classify_429(resp: reqwest::Response) -> CloudError {
-    match resp.json::<StatusBody>().await {
-        Ok(body) if body.status == "rate_limited" => CloudError::RateLimited,
-        _ => CloudError::Cooldown,
+async fn classify_429(resp: reqwest::Response, route: Route) -> CloudError {
+    let headers = resp.headers().clone();
+    let body: ErrorBody = resp.json().await.unwrap_or_default();
+    let retry_after_secs = retry_after(&headers, &body);
+    if body.reason.as_deref() == Some("too_many_failed_attempts") {
+        CloudError::DailyCapReached { retry_after_secs }
+    } else if body.status == "cooldown" {
+        CloudError::Cooldown { retry_after_secs }
+    } else if route == Route::OtpVerify {
+        CloudError::NetworkRateLimited { retry_after_secs }
+    } else {
+        CloudError::RateLimited { retry_after_secs }
     }
 }
 
@@ -188,7 +234,9 @@ mod tests {
 
         assert_eq!(
             otp_request(&server.uri(), "u@lab.dev").await.unwrap_err(),
-            CloudError::Cooldown
+            CloudError::Cooldown {
+                retry_after_secs: Some(60)
+            }
         );
     }
 
@@ -206,7 +254,9 @@ mod tests {
 
         assert_eq!(
             otp_request(&server.uri(), "u@lab.dev").await.unwrap_err(),
-            CloudError::RateLimited
+            CloudError::RateLimited {
+                retry_after_secs: Some(3600)
+            }
         );
     }
 
@@ -306,5 +356,88 @@ mod tests {
             me(&server.uri(), "jwt").await.unwrap_err(),
             CloudError::Unavailable
         );
+    }
+
+    async fn verify_with(resp: ResponseTemplate) -> CloudError {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/auth/otp/verify"))
+            .respond_with(resp)
+            .mount(&server)
+            .await;
+        otp_verify(&server.uri(), "u@lab.dev", "1234 5678")
+            .await
+            .unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn otp_verify_burned_code() {
+        let resp = ResponseTemplate::new(401)
+            .set_body_string(r#"{"status":"invalid_code","reason":"too_many_attempts"}"#);
+        assert_eq!(verify_with(resp).await, CloudError::CodeBurned);
+    }
+
+    #[tokio::test]
+    async fn otp_verify_per_ip_429_uses_body_then_header() {
+        let resp = ResponseTemplate::new(429)
+            .set_body_string(r#"{"status":"rate_limited","retry_after_secs":90}"#);
+        assert_eq!(
+            verify_with(resp).await,
+            CloudError::NetworkRateLimited {
+                retry_after_secs: Some(90)
+            }
+        );
+        let resp = ResponseTemplate::new(429)
+            .insert_header("Retry-After", "42")
+            .set_body_string(r#"{"status":"rate_limited"}"#);
+        assert_eq!(
+            verify_with(resp).await,
+            CloudError::NetworkRateLimited {
+                retry_after_secs: Some(42)
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn otp_verify_daily_cap() {
+        let resp = ResponseTemplate::new(429).set_body_string(
+            r#"{"status":"rate_limited","reason":"too_many_failed_attempts","retry_after_secs":7200}"#,
+        );
+        assert_eq!(
+            verify_with(resp).await,
+            CloudError::DailyCapReached {
+                retry_after_secs: Some(7200)
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn me_403_is_forbidden_not_unauthorized() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/auth/me"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        assert_eq!(
+            me(&server.uri(), "tok").await.unwrap_err(),
+            CloudError::Forbidden
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_plan_decodes_verbatim() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/auth/otp/verify"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"token":"t","email":"u@lab.dev","plan":"team_enterprise_2027"}"#,
+            ))
+            .mount(&server)
+            .await;
+        let s = otp_verify(&server.uri(), "u@lab.dev", "12345678")
+            .await
+            .unwrap();
+        assert_eq!(s.plan, "team_enterprise_2027");
     }
 }

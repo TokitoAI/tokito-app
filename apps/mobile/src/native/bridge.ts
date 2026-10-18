@@ -22,6 +22,7 @@ import type {
 import { normalizeBaseUrl } from "../cloud";
 import type { Account, CompanionClientPort, Session } from "./types";
 import { CompanionError } from "./types";
+import { mapNativeError } from "./nativeErrors";
 
 export type CloudClient = CompanionClientPort & {
   listProjects(token: string): Promise<ProjectListItem[]>;
@@ -67,36 +68,6 @@ export type SyncResourceName =
   | "chat"
   | "suggestions"
   | "physical_sessions";
-
-/** Map Expo CodedException codes from Kotlin CompanionException simple names. */
-function mapNativeError(err: unknown): CompanionError {
-  if (err instanceof CompanionError) return err;
-  const coded = err as { code?: string; message?: string };
-  const code = (coded.code ?? "").replace(/Exception$/i, "");
-  const message = coded.message ?? (err instanceof Error ? err.message : String(err));
-  switch (code) {
-    case "Cooldown":
-      return CompanionError.cooldown();
-    case "RateLimited":
-      return CompanionError.rateLimited();
-    case "SendFailed":
-      return CompanionError.sendFailed();
-    case "InvalidCode":
-      return CompanionError.invalidCode();
-    case "Unauthorized":
-      return CompanionError.unauthorized();
-    case "Unavailable":
-      return CompanionError.unavailable(message);
-    case "Network":
-      return CompanionError.network(message);
-    case "NativeCompatibility":
-      return CompanionError.nativeCompatibility();
-    case "Unexpected":
-      return CompanionError.unexpected();
-    default:
-      return CompanionError.unexpected();
-  }
-}
 
 function requireString(v: unknown, field: string): string {
   if (typeof v !== "string") {

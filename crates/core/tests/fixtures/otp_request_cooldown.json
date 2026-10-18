@@ -1,1 +1,1 @@
-{"status":"cooldown"}
+{"status":"cooldown","retry_after_secs":60}

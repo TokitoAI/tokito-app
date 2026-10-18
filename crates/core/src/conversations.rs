@@ -179,7 +179,9 @@ fn status_error(status: u16, body: &[u8]) -> CloudError {
     match status {
         401 | 403 => CloudError::Unauthorized,
         404 | 503 => CloudError::Unavailable,
-        429 => CloudError::RateLimited,
+        429 => CloudError::RateLimited {
+            retry_after_secs: None,
+        },
         409 => {
             let value: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
             CloudError::Conflict {
